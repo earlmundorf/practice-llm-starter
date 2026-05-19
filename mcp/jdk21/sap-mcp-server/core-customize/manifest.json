@@ -1,0 +1,26 @@
+{
+  "commerceSuiteVersion": "2211-jdk21.9",
+  "extensions": [],
+  "useConfig": {
+    "extensions": {
+      "location": "hybris/config/localextensions.xml"
+    },
+    "properties": [
+      {
+        "location": "hybris/config/local.properties"
+      },
+      {
+        "location": "hybris/config/local-dev.properties",
+        "persona": "development"
+      },
+      {
+        "location": "hybris/config/local-stg.properties",
+        "persona": "staging"
+      },
+      {
+        "location": "hybris/config/local-prod.properties",
+        "persona": "production"
+      }
+    ]
+  }
+}

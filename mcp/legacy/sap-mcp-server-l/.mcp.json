@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "coremcp": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["core-customize/scripts/mcp-stdio-bridge.py"],
+      "env": {
+        "MCP_BASE_URL": "https://localhost:9002",
+        "MCP_BASE_SITE": "electronics",
+        "MCP_CLIENT_ID": "trusted_client",
+        "MCP_CLIENT_SECRET": "secret",
+        "MCP_USERNAME": "",
+        "MCP_PASSWORD": ""
+      }
+    }
+  }
+}

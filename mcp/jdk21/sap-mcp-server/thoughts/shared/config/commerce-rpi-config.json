@@ -1,0 +1,23 @@
+{
+  "commerceSuiteVersion": "2211.50",
+  "customExtensions": ["coremcp", "sampledatamcp"],
+  "storefront": false,
+  "ootbModulesPresent": true,
+  "personas": ["development", "staging", "production"],
+  "atlassian": {
+    "enabled": true,
+    "cloudId": "779f3d75-2d32-4183-89f0-45c446022270",
+    "spaceId": "43909121",
+    "spaceKey": "HD",
+    "pages": {
+      "parentPage": "6146719745",
+      "research": "6146752513",
+      "plan": "6146785282",
+      "stories": "6146850818"
+    }
+  },
+  "research": {
+    "topic": "payment-processes",
+    "startDate": "2026-03-25"
+  }
+}

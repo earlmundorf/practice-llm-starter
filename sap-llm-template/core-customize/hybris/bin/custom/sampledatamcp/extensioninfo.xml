@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<extensioninfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="extensioninfo.xsd">
+
+    <extension abstractclassprefix="Generated" classprefix="Sampledatamcp" description="Sample data — store infrastructure, products, customers, orders" jaloLogicFree="true" managername="SampledatamcpManager" managersuperclass="de.hybris.platform.jalo.extension.Extension" name="sampledatamcp">
+
+        <requires-extension name="commercewebservices"/>
+        <requires-extension name="solrfacetsearch"/>
+
+        <coremodule generated="true" manager="com.sampledatamcp.jalo.SampledatamcpManager" packageroot="com.sampledatamcp"/>
+
+    </extension>
+
+</extensioninfo>

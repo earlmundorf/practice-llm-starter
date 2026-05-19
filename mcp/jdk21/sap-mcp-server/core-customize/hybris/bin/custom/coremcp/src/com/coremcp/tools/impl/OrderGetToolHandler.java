@@ -1,0 +1,65 @@
+package com.coremcp.tools.impl;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.coremcp.tools.McpToolHandler;
+import com.coremcp.tools.McpToolResult;
+import de.hybris.platform.commercefacades.order.OrderFacade;
+
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+public class OrderGetToolHandler implements McpToolHandler
+{
+	private OrderFacade orderFacade;
+	private final ObjectMapper objectMapper = new ObjectMapper();
+
+	@Override
+	public String getName()
+	{
+		return "order_get";
+	}
+
+	@Override
+	public String getDescription()
+	{
+		return "Get details for a specific order by its order code (e.g., 'THINK-0001'). " +
+			"Returns order status, line items, totals, delivery address, and payment information. " +
+			"Use this when the user asks 'where is my order', 'track order', or wants details about " +
+			"a specific order. Use order_history to list all orders first if the code is unknown. " +
+			"Requires customer authentication.";
+	}
+
+	@Override
+	public Map<String, Object> getInputSchema()
+	{
+		final Map<String, Object> schema = new LinkedHashMap<>();
+		schema.put("type", "object");
+		schema.put("properties", Map.of(
+			"code", Map.of("type", "string", "description", "Order code (e.g., 'THINK-0001')")
+		));
+		schema.put("required", List.of("code"));
+		return schema;
+	}
+
+	@Override
+	public McpToolResult execute(final Map<String, Object> args)
+	{
+		try
+		{
+			final String code = (String) args.get("code");
+			final Object result = orderFacade.getOrderDetailsForCode(code);
+			return McpToolResult.success(objectMapper.writeValueAsString(result));
+		}
+		catch (final Exception e)
+		{
+			return McpToolResult.error("Order not found: " + e.getMessage());
+		}
+	}
+
+	public void setOrderFacade(final OrderFacade orderFacade)
+	{
+		this.orderFacade = orderFacade;
+	}
+}

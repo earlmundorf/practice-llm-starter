@@ -1,0 +1,155 @@
+# ---------------------------------------------------------------------------
+# ThinkShop Solr faceted search configuration
+#
+# Loaded automatically during "ant initialize" and "ant updatesystem"
+# (filename matches essentialdata-*.impex)
+#
+# Sorts after essentialdata-infrastructure.impex ('s' > 'i') so Currency,
+# Catalog, and CatalogVersion exist before this file references them.
+#
+# Creates: SolrFacetSearchConfig, SolrIndexedType, indexed properties,
+#          value ranges, sorts, indexer queries, cron jobs
+#
+# Prerequisites: solrserver, solrfacetsearch extensions must be enabled
+# ---------------------------------------------------------------------------
+
+#% impex.setLocale(new java.util.Locale("en"));
+
+# Macros
+$productCatalog = electronicsProductCatalog
+$catalogVersions = catalogVersions(catalog(id),version)
+$facetSearchConfigName = thinkshopIndex
+$searchIndexNamePrefix = thinkshop
+$solrIndexedType = thinkshopProductType
+$indexBaseSite = electronics
+
+
+# ==========================================================================
+# Solr Facet Search Config
+# ==========================================================================
+# References "Default" SolrServerConfig, SolrIndexConfig, and SolrSearchConfig
+# which are auto-created by solrfacetsearch essential data
+
+INSERT_UPDATE SolrFacetSearchConfig ; name[unique = true]      ; description              ; indexNamePrefix          ; languages(isocode) ; solrServerConfig(name) ; solrSearchConfig(description) ; solrIndexConfig(name) ; solrIndexedTypes(identifier) ; enabledLanguageFallbackMechanism
+                                    ; $facetSearchConfigName   ; ThinkShop Product Search ; $searchIndexNamePrefix   ; en                 ; Default                ; Default                       ; Default               ; $solrIndexedType             ; true
+
+# Collection attributes require a separate UPDATE after initial creation
+UPDATE SolrFacetSearchConfig ; name[unique = true]    ; currencies(isocode) ; $catalogVersions
+                             ; $facetSearchConfigName ; USD                 ; $productCatalog:Online,$productCatalog:Staged
+
+
+# ==========================================================================
+# Solr Indexed Type
+# ==========================================================================
+
+INSERT_UPDATE SolrIndexedType ; identifier[unique = true] ; type(code) ; variant ; sorts(&sortRefID)
+                              ; $solrIndexedType          ; Product    ; false   ; sortRef1,sortRef2,sortRef3,sortRef4,sortRef5
+
+
+# ==========================================================================
+# Value Range Set — USD Price Ranges
+# (MUST be defined before indexed properties that reference them)
+# ==========================================================================
+
+INSERT_UPDATE SolrValueRangeSet ; name[unique = true]      ; qualifier ; type   ; solrValueRanges(&rangeValueRefID)
+                                ; thinkshopPriceRangeUSD   ; USD       ; double ; rangeRefUSD1,rangeRefUSD2,rangeRefUSD3,rangeRefUSD4,rangeRefUSD5
+
+INSERT_UPDATE SolrValueRange ; &rangeValueRefID ; solrValueRangeSet(name)[unique = true] ; name[unique = true] ; from ; to
+                             ; rangeRefUSD1     ; thinkshopPriceRangeUSD                 ; $0-$99.99           ; 0    ; 99.99
+                             ; rangeRefUSD2     ; thinkshopPriceRangeUSD                 ; $100-$299.99        ; 100  ; 299.99
+                             ; rangeRefUSD3     ; thinkshopPriceRangeUSD                 ; $300-$699.99        ; 300  ; 699.99
+                             ; rangeRefUSD4     ; thinkshopPriceRangeUSD                 ; $700-$999.99        ; 700  ; 999.99
+                             ; rangeRefUSD5     ; thinkshopPriceRangeUSD                 ; $1,000-$2,000       ; 1000 ; 2000
+
+
+# ==========================================================================
+# Indexed Properties — Searchable (text fields)
+# ==========================================================================
+
+INSERT_UPDATE SolrIndexedProperty ; solrIndexedType(identifier)[unique = true] ; name[unique = true] ; type(code) ; sortableType(code) ; currency[default = false] ; localized[default = false] ; multiValue[default = false] ; useForSpellchecking[default = false] ; useForAutocomplete[default = false] ; fieldValueProvider    ; valueProviderParameter
+                                  ; $solrIndexedType                           ; code                ; string     ;                    ;                           ;                            ;                             ;                                      ; true                                ; springELValueProvider ; code
+                                  ; $solrIndexedType                           ; name                ; text       ; sortabletext       ;                           ; true                       ;                             ; true                                 ; true                                ; springELValueProvider ; getName(#lang)
+                                  ; $solrIndexedType                           ; summary             ; text       ;                    ;                           ; true                       ;                             ; true                                 ;                                     ; springELValueProvider ; getSummary(#lang)
+                                  ; $solrIndexedType                           ; description         ; text       ;                    ;                           ; true                       ;                             ; true                                 ;                                     ; springELValueProvider ; getDescription(#lang)
+
+
+# ==========================================================================
+# Indexed Properties — Facets
+# ==========================================================================
+
+INSERT_UPDATE SolrIndexedProperty ; solrIndexedType(identifier)[unique = true] ; name[unique = true] ; type(code) ; sortableType(code) ; currency[default = false] ; localized[default = false] ; multiValue[default = false] ; facet[default = true] ; facetType(code) ; facetSort(code) ; priority ; visible ; useForSpellchecking[default = false] ; useForAutocomplete[default = false] ; fieldValueProvider                   ; rangeSets(name)
+                                  ; $solrIndexedType                           ; priceValue          ; double     ;                    ; true                      ;                            ;                             ;                       ; MultiSelectOr   ; Alpha           ; 4000     ; true    ;                                      ;                                     ; productPriceValueProvider            ; thinkshopPriceRangeUSD
+                                  ; $solrIndexedType                           ; price               ; double     ;                    ; true                      ;                            ;                             ; false                  ;                 ;                 ;          ;         ;                                      ;                                     ; productPriceValueProvider            ;
+                                  ; $solrIndexedType                           ; inStockFlag         ; boolean    ;                    ;                           ;                            ;                             ;                       ; MultiSelectOr   ; Alpha           ; 3000     ; true    ;                                      ;                                     ; productInStockFlagValueProvider      ;
+                                  ; $solrIndexedType                           ; stockLevelStatus    ; string     ;                    ;                           ;                            ;                             ;                       ; MultiSelectOr   ; Alpha           ; 2000     ; true    ;                                      ;                                     ; productStockLevelStatusValueProvider ;
+
+
+# ==========================================================================
+# Sorts
+# ==========================================================================
+
+INSERT_UPDATE SolrSort ; &sortRefID ; indexedType(identifier)[unique = true] ; code[unique = true] ; useBoost
+                       ; sortRef1   ; $solrIndexedType                       ; relevance           ; true
+                       ; sortRef2   ; $solrIndexedType                       ; name-asc            ; false
+                       ; sortRef3   ; $solrIndexedType                       ; name-desc           ; false
+                       ; sortRef4   ; $solrIndexedType                       ; price-asc           ; false
+                       ; sortRef5   ; $solrIndexedType                       ; price-desc          ; false
+
+INSERT_UPDATE SolrSortField ; sort(indexedType(identifier), code)[unique = true] ; fieldName[unique = true] ; ascending[unique = true]
+                            ; $solrIndexedType:relevance                         ; score                    ; false
+                            ; $solrIndexedType:relevance                         ; inStockFlag              ; false
+                            ; $solrIndexedType:name-asc                          ; name                     ; true
+                            ; $solrIndexedType:name-desc                         ; name                     ; false
+                            ; $solrIndexedType:price-asc                         ; price                    ; true
+                            ; $solrIndexedType:price-desc                        ; price                    ; false
+
+
+# ==========================================================================
+# Search Query Template + Properties (for free text search via OCC)
+# ==========================================================================
+
+INSERT_UPDATE SolrSearchQueryTemplate ; name[unique = true] ; indexedType(identifier)[unique = true] ; ftsQueryBuilder             ; enableHighlighting[default = true]
+                                      ; DEFAULT             ; $solrIndexedType                       ; defaultFreeTextQueryBuilder ;
+
+INSERT_UPDATE SolrSearchQueryProperty ; indexedProperty(name, solrIndexedType(identifier))[unique = true] ; searchQueryTemplate(name, indexedType(identifier))[unique = true] ; facet ; facetType(code)[default = Refine] ; ftsPhraseQuery[default = false] ; ftsPhraseQueryBoost ; ftsQuery[default = false] ; ftsQueryBoost ; ftsFuzzyQuery[default = false] ; ftsFuzzyQueryBoost ; ftsWildcardQuery[default = false] ; ftsWildcardQueryType(code)[default = POSTFIX] ; includeInResponse[default = true]
+                                      ; code:$solrIndexedType                                             ; DEFAULT:$solrIndexedType                                         ;       ;                                   ;                                 ;                     ; true                      ; 90            ;                                ;                    ;                                   ;                                                ;
+                                      ; name:$solrIndexedType                                             ; DEFAULT:$solrIndexedType                                         ;       ;                                   ; true                            ; 100                 ; true                      ; 50            ; true                           ; 25                 ; true                              ;                                                ;
+                                      ; summary:$solrIndexedType                                          ; DEFAULT:$solrIndexedType                                         ;       ;                                   ; true                            ; 50                  ; true                      ; 25            ;                                ;                    ;                                   ;                                                ;
+                                      ; description:$solrIndexedType                                      ; DEFAULT:$solrIndexedType                                         ;       ;                                   ;                                 ;                     ; true                      ; 10            ;                                ;                    ;                                   ;                                                ;
+                                      ; priceValue:$solrIndexedType                                       ; DEFAULT:$solrIndexedType                                         ; true  ; MultiSelectOr                     ;                                 ;                     ;                           ;               ;                                ;                    ;                                   ;                                                ;
+                                      ; price:$solrIndexedType                                            ; DEFAULT:$solrIndexedType                                         ;       ;                                   ;                                 ;                     ;                           ;               ;                                ;                    ;                                   ;                                                ; true
+                                      ; inStockFlag:$solrIndexedType                                      ; DEFAULT:$solrIndexedType                                         ; true  ; MultiSelectOr                     ;                                 ;                     ;                           ;               ;                                ;                    ;                                   ;                                                ;
+                                      ; stockLevelStatus:$solrIndexedType                                 ; DEFAULT:$solrIndexedType                                         ; true  ; MultiSelectOr                     ;                                 ;                     ;                           ;               ;                                ;                    ;                                   ;                                                ;
+
+
+# ==========================================================================
+# Indexer Queries
+# ==========================================================================
+
+INSERT_UPDATE SolrIndexerQuery ; solrIndexedType(identifier)[unique = true] ; identifier[unique = true]            ; type(code) ; injectCurrentDate[default = true] ; injectCurrentTime[default = true] ; injectLastIndexTime[default = false] ; query                                                                           ; user(uid)
+                               ; $solrIndexedType                           ; $facetSearchConfigName-fullQuery     ; full       ;                                   ;                                   ;                                      ; "SELECT {PK} FROM {Product}"                                                    ; admin
+                               ; $solrIndexedType                           ; $facetSearchConfigName-updateQuery   ; update     ;                                   ;                                   ; true                                 ; "SELECT {PK} FROM {Product} WHERE {modifiedtime} >= ?lastIndexTime"              ; admin
+
+
+# ==========================================================================
+# Indexer Cron Jobs
+# ==========================================================================
+
+INSERT_UPDATE SolrIndexerCronJob ; code[unique = true]                    ; job(code)      ; singleExecutable ; sessionLanguage(isocode) ; active ; facetSearchConfig(name) ; indexerOperation(code)
+                                 ; full-$facetSearchConfigName-cronJob    ; solrIndexerJob ; false            ; en                       ; false  ; $facetSearchConfigName  ; full
+                                 ; update-$facetSearchConfigName-cronJob  ; solrIndexerJob ; false            ; en                       ; false  ; $facetSearchConfigName  ; update
+
+# Trigger: incremental update every 5 minutes (inactive by default, matches cronJob active=false)
+INSERT_UPDATE Trigger ; cronJob(code)[unique = true]           ; active ; year ; month ; day ; hour ; minute ; second ; relative ; weekInterval ; daysOfWeek
+                      ; update-$facetSearchConfigName-cronJob  ; false  ; -1   ; -1    ; -1  ; -1   ; 5      ; 0      ; true     ; 0            ;
+
+
+# ==========================================================================
+# Wire Solr config to BaseStore and CMSSite
+# ==========================================================================
+
+UPDATE BaseStore ; uid[unique = true] ; solrFacetSearchConfiguration(name)
+                 ; $indexBaseSite     ; $facetSearchConfigName
+
+UPDATE CMSSite ; uid[unique = true] ; solrFacetSearchConfiguration(name)
+               ; $indexBaseSite     ; $facetSearchConfigName

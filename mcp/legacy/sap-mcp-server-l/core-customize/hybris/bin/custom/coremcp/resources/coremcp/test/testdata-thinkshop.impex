@@ -1,0 +1,258 @@
+# ---------------------------------------------------------------------------
+# ThinkShop demo data — test-specific version
+#
+# Derived from projectdata-coremcp.impex with fixes for the JUnit tenant:
+#   - Removed invalid 'currency' attribute from CatalogVersion
+#   - Replaced ImpEx scripting with plain UPDATE statements
+#   - Removed OAuth clients (not needed for integration tests)
+# ---------------------------------------------------------------------------
+
+#% impex.setLocale(new java.util.Locale("en"));
+
+$productCatalog = electronicsProductCatalog
+$catalogVersion = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Online'])
+$defaultPassword = 1234
+$customergroup = customergroup
+
+
+# ==========================================================================
+# Language
+# ==========================================================================
+
+INSERT_UPDATE Language ; isocode[unique = true] ; active
+                       ; en                     ; true
+
+
+# ==========================================================================
+# Currency
+# ==========================================================================
+
+INSERT_UPDATE Currency ; isocode[unique = true] ; active ; conversion ; digits ; symbol
+                       ; USD                    ; true   ; 1          ; 2      ; $
+
+
+# ==========================================================================
+# Country
+# ==========================================================================
+
+INSERT_UPDATE Country ; isocode[unique = true] ; name[lang = en] ; active
+                      ; US                     ; United States   ; true
+
+
+# ==========================================================================
+# Unit
+# ==========================================================================
+
+INSERT_UPDATE Unit ; unitType[unique = true] ; code[unique = true] ; name[lang = en] ; conversion
+                   ; pieces                  ; pieces              ; Pieces          ; 1
+
+
+# ==========================================================================
+# Catalog & Catalog Versions
+# ==========================================================================
+
+INSERT_UPDATE Catalog ; id[unique = true]     ; name[lang = en]
+                      ; $productCatalog       ; Electronics Product Catalog
+
+INSERT_UPDATE CatalogVersion ; catalog(id)[unique = true] ; version[unique = true] ; active ; languages(isocode)
+                             ; $productCatalog            ; Staged                 ; false  ; en
+                             ; $productCatalog            ; Online                 ; true   ; en
+
+
+# ==========================================================================
+# Vendor (required by Warehouse)
+# ==========================================================================
+
+INSERT_UPDATE Vendor ; code[unique = true]  ; name[lang = en]
+                     ; electronics-vendor   ; Electronics Vendor
+
+
+# ==========================================================================
+# Warehouse
+# ==========================================================================
+
+INSERT_UPDATE Warehouse ; code[unique = true]   ; name[lang = en]       ; vendor(code)       ; default
+                        ; electronics-warehouse ; Electronics Warehouse ; electronics-vendor ; true
+
+
+# ==========================================================================
+# Tax Groups & Tax (0% — prices display as entered)
+# ==========================================================================
+
+INSERT_UPDATE UserTaxGroup ; code[unique = true]
+                           ; us-taxes
+
+INSERT_UPDATE ProductTaxGroup ; code[unique = true]
+                              ; us-sales-tax-full
+
+INSERT_UPDATE Tax ; code[unique = true] ; value ; currency(isocode)
+                  ; us-sales-tax-full   ; 0
+
+# TaxRow links Tax ↔ ProductTaxGroup ↔ UserTaxGroup within the catalog
+INSERT_UPDATE TaxRow ; $catalogVersion ; tax(code)[unique = true] ; pg(code)[unique = true] ; ug(code)[unique = true]
+                     ;                 ; us-sales-tax-full        ; us-sales-tax-full       ; us-taxes
+
+
+# ==========================================================================
+# Delivery Mode
+# ==========================================================================
+
+INSERT_UPDATE DeliveryMode ; code[unique = true] ; name[lang = en]   ; active
+                           ; standard-gross      ; Standard Delivery ; true
+
+
+# ==========================================================================
+# Payment Mode
+# ==========================================================================
+
+INSERT_UPDATE StandardPaymentMode ; code[unique = true] ; name[lang = en] ; description[lang = en] ; active ; paymentinfotype(code)
+                                  ; advance             ; Advance         ; payment in advance     ; true   ; AdvancePaymentInfo
+
+INSERT_UPDATE StandardPaymentModeValue ; paymentMode(code)[unique = true] ; value ; currency(isocode)[unique = true]
+                                       ; advance                          ; 0.00  ; USD
+
+
+# ==========================================================================
+# Base Store
+# ==========================================================================
+
+INSERT_UPDATE BaseStore ; uid[unique = true] ; catalogs(id)    ; currencies(isocode) ; defaultCurrency(isocode) ; defaultLanguage(isocode) ; languages(isocode) ; net   ; taxGroup(code) ; warehouses(code)
+                        ; electronics        ; $productCatalog ; USD                 ; USD                      ; en                       ; en                 ; false ; us-taxes       ; electronics-warehouse
+
+
+# ==========================================================================
+# Base Site
+# ==========================================================================
+
+INSERT_UPDATE BaseSite ; uid[unique = true] ; stores(uid) ; defaultLanguage(isocode) ; channel(code)
+                       ; electronics        ; electronics ; en                       ; B2C
+
+
+# ==========================================================================
+# Products (10)
+# ==========================================================================
+
+$taxGroup = Europe1PriceFactory_PTG(code)[default = us-sales-tax-full]
+
+INSERT_UPDATE Product ; code[unique = true]   ; name[lang = en]       ; summary[lang = en]                                                       ; description[lang = en]                                                                                                                                                                                                                                       ; $catalogVersion ; unit(code)[default = 'pieces'] ; approvalStatus(code)[default = 'approved'] ; $taxGroup
+                      ; LAPTOP_PRO_15         ; Laptop Pro 15         ; High-performance laptop with 16GB RAM and 512GB SSD                      ; The Laptop Pro 15 delivers exceptional performance with its 10th-gen Intel Core i7 processor, 16GB DDR4 RAM, and 512GB NVMe SSD. Features a stunning 15.6-inch IPS display with thin bezels, backlit keyboard, and all-day battery life up to 10 hours.        ;                 ;                                ;                                            ;
+                      ; SMARTPHONE_X          ; Smartphone X          ; Latest smartphone with 5G connectivity and 128GB storage                 ; Experience next-gen connectivity with Smartphone X. Powered by the latest Snapdragon chipset with 5G support, 128GB storage, and 8GB RAM. The 6.7-inch AMOLED display brings vibrant colors, while the triple-camera system captures stunning photos.          ;                 ;                                ;                                            ;
+                      ; WIRELESS_HEADPHONES   ; Wireless Headphones   ; Noise-cancelling wireless headphones with 30-hour battery                ; Immerse yourself in pure audio with advanced active noise cancellation. These over-ear wireless headphones deliver rich, balanced sound with 40mm custom drivers. Enjoy up to 30 hours of battery life, quick charge, and a comfortable memory-foam design.     ;                 ;                                ;                                            ;
+                      ; TABLET_AIR            ; Tablet Air            ; Lightweight tablet with 10.5-inch display and stylus support             ; The Tablet Air combines portability with power. Its 10.5-inch 2K display is perfect for work and play, with stylus support for drawing and note-taking. Octa-core processor, 64GB storage, and 12-hour battery life make it the ideal everyday companion.      ;                 ;                                ;                                            ;
+                      ; SMART_WATCH_PRO       ; Smart Watch Pro       ; Fitness tracking smartwatch with heart rate monitor                      ; Track your fitness goals with the Smart Watch Pro. Features continuous heart rate monitoring, GPS tracking, sleep analysis, and 50m water resistance. The always-on OLED display and 7-day battery life keep you connected without compromise.                 ;                 ;                                ;                                            ;
+                      ; MECHANICAL_KEYBOARD   ; Mechanical Keyboard   ; RGB mechanical gaming keyboard with Cherry MX switches                   ; Elevate your typing experience with genuine Cherry MX mechanical switches. Per-key RGB backlighting with 16.8 million colors, aircraft-grade aluminum frame, full N-key rollover, and programmable macros. USB-C detachable cable included.                     ;                 ;                                ;                                            ;
+                      ; WIRELESS_GAMING_MOUSE ; Wireless Gaming Mouse ; High-precision wireless gaming mouse with customizable buttons           ; Dominate the competition with a 25,600 DPI optical sensor and 1ms wireless response time. Features 8 programmable buttons, adjustable weight system, and up to 70 hours of battery life. Ergonomic design with textured side grips for extended gaming.        ;                 ;                                ;                                            ;
+                      ; MONITOR_4K_27         ; 4K Monitor 27"        ; Ultra HD 4K monitor with HDR support and 144Hz refresh rate              ; See every detail on this 27-inch Ultra HD 4K IPS display with HDR10 support and 144Hz refresh rate. Covers 99% sRGB color space, with AMD FreeSync Premium and NVIDIA G-Sync compatibility. USB-C with 65W power delivery and height-adjustable stand.        ;                 ;                                ;                                            ;
+                      ; HD_WEBCAM             ; HD Webcam             ; 1080p webcam with built-in microphone and auto-focus                     ; Crystal-clear 1080p video at 60fps for professional video calls and streaming. Features a wide-angle lens with auto-focus, dual noise-cancelling microphones, and automatic low-light correction. Universal clip fits any monitor or laptop.                  ;                 ;                                ;                                            ;
+                      ; BLUETOOTH_SPEAKER     ; Bluetooth Speaker     ; Portable Bluetooth speaker with 360-degree sound and waterproof design   ; Take your music anywhere with this IP67 waterproof and dustproof Bluetooth speaker. Delivers powerful 360-degree sound with deep bass from dual passive radiators. 20-hour battery life, built-in power bank, and pairs with a second speaker for stereo.      ;                 ;                                ;                                            ;
+
+
+# ==========================================================================
+# Price Rows
+# ==========================================================================
+
+INSERT_UPDATE PriceRow ; productId[unique = true] ; unit(code)[default = 'pieces'] ; currency(isocode)[unique = true] ; price   ; minqtd ; net   ; $catalogVersion
+                       ; LAPTOP_PRO_15            ;                                ; USD                              ; 1299.99 ; 1      ; false ;
+                       ; SMARTPHONE_X             ;                                ; USD                              ; 799.99  ; 1      ; false ;
+                       ; WIRELESS_HEADPHONES      ;                                ; USD                              ; 199.99  ; 1      ; false ;
+                       ; TABLET_AIR               ;                                ; USD                              ; 649.99  ; 1      ; false ;
+                       ; SMART_WATCH_PRO          ;                                ; USD                              ; 349.99  ; 1      ; false ;
+                       ; MECHANICAL_KEYBOARD      ;                                ; USD                              ; 149.99  ; 1      ; false ;
+                       ; WIRELESS_GAMING_MOUSE    ;                                ; USD                              ; 79.99   ; 1      ; false ;
+                       ; MONITOR_4K_27            ;                                ; USD                              ; 499.99  ; 1      ; false ;
+                       ; HD_WEBCAM                ;                                ; USD                              ; 89.99   ; 1      ; false ;
+                       ; BLUETOOTH_SPEAKER        ;                                ; USD                              ; 129.99  ; 1      ; false ;
+
+
+# ==========================================================================
+# Stock Levels
+# ==========================================================================
+
+INSERT_UPDATE StockLevel ; productCode[unique = true] ; warehouse(code)[unique = true] ; available ; inStockStatus(code)
+                         ; LAPTOP_PRO_15              ; electronics-warehouse          ; 25        ; notSpecified
+                         ; SMARTPHONE_X               ; electronics-warehouse          ; 50        ; notSpecified
+                         ; WIRELESS_HEADPHONES        ; electronics-warehouse          ; 100       ; notSpecified
+                         ; TABLET_AIR                 ; electronics-warehouse          ; 40        ; notSpecified
+                         ; SMART_WATCH_PRO            ; electronics-warehouse          ; 75        ; notSpecified
+                         ; MECHANICAL_KEYBOARD        ; electronics-warehouse          ; 60        ; notSpecified
+                         ; WIRELESS_GAMING_MOUSE      ; electronics-warehouse          ; 80        ; notSpecified
+                         ; MONITOR_4K_27              ; electronics-warehouse          ; 30        ; notSpecified
+                         ; HD_WEBCAM                  ; electronics-warehouse          ; 45        ; notSpecified
+                         ; BLUETOOTH_SPEAKER          ; electronics-warehouse          ; 90        ; notSpecified
+
+# Link StockLevels to Products (wsTest pattern — explicit relation, not just productCode string match)
+UPDATE Product ; code[unique = true]   ; $catalogVersion ; stockLevels(productCode, warehouse(code))[mode = append]
+               ; LAPTOP_PRO_15         ;                 ; LAPTOP_PRO_15:electronics-warehouse
+               ; SMARTPHONE_X          ;                 ; SMARTPHONE_X:electronics-warehouse
+               ; WIRELESS_HEADPHONES   ;                 ; WIRELESS_HEADPHONES:electronics-warehouse
+               ; TABLET_AIR            ;                 ; TABLET_AIR:electronics-warehouse
+               ; SMART_WATCH_PRO       ;                 ; SMART_WATCH_PRO:electronics-warehouse
+               ; MECHANICAL_KEYBOARD   ;                 ; MECHANICAL_KEYBOARD:electronics-warehouse
+               ; WIRELESS_GAMING_MOUSE ;                 ; WIRELESS_GAMING_MOUSE:electronics-warehouse
+               ; MONITOR_4K_27         ;                 ; MONITOR_4K_27:electronics-warehouse
+               ; HD_WEBCAM             ;                 ; HD_WEBCAM:electronics-warehouse
+               ; BLUETOOTH_SPEAKER     ;                 ; BLUETOOTH_SPEAKER:electronics-warehouse
+
+
+# ==========================================================================
+# Customer Group (not present in JUnit tenant by default)
+# ==========================================================================
+
+INSERT_UPDATE UserGroup ; uid[unique = true]
+                        ; customergroup
+
+
+# ==========================================================================
+# Customers (3)
+# ==========================================================================
+
+INSERT_UPDATE Customer ; uid[unique = true]       ; name       ; groups(uid)    ; password[default = $defaultPassword] ; sessionLanguage(isocode) ; sessionCurrency(isocode) ; &userId
+                       ; john.doe@thinkshop.com   ; John Doe   ; $customergroup ;                                      ; en                       ; USD                      ; johnDoe
+                       ; jane.smith@thinkshop.com ; Jane Smith ; $customergroup ;                                      ; en                       ; USD                      ; janeSmith
+                       ; bob.wilson@thinkshop.com ; Bob Wilson ; $customergroup ;                                      ; en                       ; USD                      ; bobWilson
+
+
+# ==========================================================================
+# Customer Addresses
+# ==========================================================================
+
+INSERT_UPDATE Address ; &addId        ; owner(&userId)[unique = true] ; streetname[unique = true] ; postalcode[unique = true] ; duplicate[unique = true] ; town        ; country(isocode) ; billingAddress ; contactAddress ; shippingAddress ; firstname ; lastname ; email
+                      ; johnDoeAddr   ; johnDoe                       ; 100 Main St              ; 10001                    ; false                    ; New York    ; US               ; true           ; true           ; true            ; John      ; Doe      ; john.doe@thinkshop.com
+                      ; janeSmithAddr ; janeSmith                     ; 200 Oak Ave              ; 90210                    ; false                    ; Los Angeles ; US               ; true           ; true           ; true            ; Jane      ; Smith    ; jane.smith@thinkshop.com
+                      ; bobWilsonAddr ; bobWilson                     ; 300 Pine Rd              ; 60601                    ; false                    ; Chicago     ; US               ; true           ; true           ; true            ; Bob       ; Wilson   ; bob.wilson@thinkshop.com
+
+UPDATE Customer ; uid[unique = true]       ; defaultPaymentAddress(&addId) ; defaultShipmentAddress(&addId)
+                ; john.doe@thinkshop.com   ; johnDoeAddr                   ; johnDoeAddr
+                ; jane.smith@thinkshop.com ; janeSmithAddr                 ; janeSmithAddr
+                ; bob.wilson@thinkshop.com ; bobWilsonAddr                 ; bobWilsonAddr
+
+
+# ==========================================================================
+# Orders (3) — without ImpEx scripting for JUnit compatibility
+# ==========================================================================
+
+INSERT_UPDATE Order ; code[unique = true] ; user(uid)                ; date[dateformat = dd.MM.yyyy HH:mm] ; currency(isocode) ; net   ; paymentMode(code) ; deliveryMode(code) ; calculated ; site(uid)   ; store(uid)  ; status(code)
+                    ; THINK-0001          ; john.doe@thinkshop.com   ; 15.01.2026 10:30                    ; USD               ; false ; advance           ; standard-gross     ; false      ; electronics ; electronics ; COMPLETED
+                    ; THINK-0002          ; jane.smith@thinkshop.com ; 20.02.2026 14:15                    ; USD               ; false ; advance           ; standard-gross     ; false      ; electronics ; electronics ; CREATED
+                    ; THINK-0003          ; john.doe@thinkshop.com   ; 25.02.2026 09:45                    ; USD               ; false ; advance           ; standard-gross     ; false      ; electronics ; electronics ; COMPLETED
+
+# Set delivery and payment addresses on orders
+UPDATE Order ; code[unique = true] ; deliveryAddress(&addId) ; paymentAddress(&addId)
+             ; THINK-0001          ; johnDoeAddr             ; johnDoeAddr
+             ; THINK-0002          ; janeSmithAddr           ; janeSmithAddr
+             ; THINK-0003          ; johnDoeAddr             ; johnDoeAddr
+
+
+# ==========================================================================
+# Order Entries
+# ==========================================================================
+
+INSERT_UPDATE OrderEntry ; order(code)[unique = true] ; entryNumber[unique = true] ; product(code, $catalogVersion) ; quantity ; unit(code)[default = 'pieces'] ; basePrice ; totalPrice
+                         ; THINK-0001                 ; 0                          ; LAPTOP_PRO_15                  ; 1        ;                                ; 1299.99   ; 1299.99
+                         ; THINK-0001                 ; 1                          ; WIRELESS_HEADPHONES            ; 2        ;                                ; 199.99    ; 399.98
+                         ; THINK-0002                 ; 0                          ; SMARTPHONE_X                   ; 1        ;                                ; 799.99    ; 799.99
+                         ; THINK-0002                 ; 1                          ; TABLET_AIR                     ; 1        ;                                ; 649.99    ; 649.99
+                         ; THINK-0002                 ; 2                          ; SMART_WATCH_PRO                ; 1        ;                                ; 349.99    ; 349.99
+                         ; THINK-0003                 ; 0                          ; MECHANICAL_KEYBOARD            ; 1        ;                                ; 149.99    ; 149.99
+                         ; THINK-0003                 ; 1                          ; WIRELESS_GAMING_MOUSE          ; 1        ;                                ; 79.99     ; 79.99
+                         ; THINK-0003                 ; 2                          ; MONITOR_4K_27                  ; 1        ;                                ; 499.99    ; 499.99

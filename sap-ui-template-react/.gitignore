@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment (keep .env.example)
+.env
+.env.local
+.env.*.local
+
+# Claude Code local settings (machine-specific permissions, globally gitignored)
+# Copy .claude/settings.local.json.example to .claude/settings.local.json
+.claude/settings.local.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

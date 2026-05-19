@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git remote:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "Bash(git rm:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(chmod:*)",
+      "Bash(bash --version)",
+      "Bash(gh api:*)",
+      "Bash(gh repo:*)",
+      "Bash(./gradlew:*)",
+      "Bash(./scripts/*)",
+      "Bash(./.claude/skills/impex/scripts/lint-impex.sh *)",
+      "Bash(./.claude/skills/impex/scripts/hac-import.sh *)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "WebSearch"
+    ]
+  },
+  "enableAllProjectMcpServers": true
+}

@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ coremcp — Service-layer Spring beans.
+ Tool handlers, MCP services, and Agent services.
+-->
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+           http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/context
+           http://www.springframework.org/schema/context/spring-context.xsd">
+
+    <context:annotation-config/>
+
+    <!-- ===================================================================
+         Tool Handlers
+         =================================================================== -->
+
+    <alias name="defaultProductSearchToolHandler" alias="productSearchToolHandler"/>
+    <bean id="defaultProductSearchToolHandler"
+          class="com.coremcp.tools.impl.ProductSearchToolHandler">
+        <property name="productSearchFacade" ref="productSearchFacade"/>
+    </bean>
+
+    <alias name="defaultProductGetToolHandler" alias="productGetToolHandler"/>
+    <bean id="defaultProductGetToolHandler"
+          class="com.coremcp.tools.impl.ProductGetToolHandler">
+        <property name="productFacade" ref="productFacade"/>
+    </bean>
+
+    <alias name="defaultCartGetToolHandler" alias="cartGetToolHandler"/>
+    <bean id="defaultCartGetToolHandler"
+          class="com.coremcp.tools.impl.CartGetToolHandler">
+        <property name="cartFacade" ref="cartFacade"/>
+    </bean>
+
+    <alias name="defaultCartAddProductToolHandler" alias="cartAddProductToolHandler"/>
+    <bean id="defaultCartAddProductToolHandler"
+          class="com.coremcp.tools.impl.CartAddProductToolHandler">
+        <property name="cartFacade" ref="cartFacade"/>
+    </bean>
+
+    <alias name="defaultCartUpdateEntryToolHandler" alias="cartUpdateEntryToolHandler"/>
+    <bean id="defaultCartUpdateEntryToolHandler"
+          class="com.coremcp.tools.impl.CartUpdateEntryToolHandler">
+        <property name="cartFacade" ref="cartFacade"/>
+    </bean>
+
+    <alias name="defaultCartRemoveEntryToolHandler" alias="cartRemoveEntryToolHandler"/>
+    <bean id="defaultCartRemoveEntryToolHandler"
+          class="com.coremcp.tools.impl.CartRemoveEntryToolHandler">
+        <property name="cartFacade" ref="cartFacade"/>
+    </bean>
+
+    <alias name="defaultOrderGetToolHandler" alias="orderGetToolHandler"/>
+    <bean id="defaultOrderGetToolHandler"
+          class="com.coremcp.tools.impl.OrderGetToolHandler">
+        <property name="orderFacade" ref="orderFacade"/>
+    </bean>
+
+    <alias name="defaultOrderHistoryToolHandler" alias="orderHistoryToolHandler"/>
+    <bean id="defaultOrderHistoryToolHandler"
+          class="com.coremcp.tools.impl.OrderHistoryToolHandler">
+        <property name="orderFacade" ref="orderFacade"/>
+    </bean>
+
+    <alias name="defaultCustomerGetToolHandler" alias="customerGetToolHandler"/>
+    <bean id="defaultCustomerGetToolHandler"
+          class="com.coremcp.tools.impl.CustomerGetToolHandler">
+        <property name="customerFacade" ref="customerFacade"/>
+    </bean>
+
+    <alias name="defaultCustomerLookupToolHandler" alias="customerLookupToolHandler"/>
+    <bean id="defaultCustomerLookupToolHandler"
+          class="com.coremcp.tools.impl.CustomerLookupToolHandler">
+        <property name="customerFacade" ref="customerFacade"/>
+    </bean>
+
+    <alias name="defaultUIActionToolHandler" alias="uiActionToolHandler"/>
+    <bean id="defaultUIActionToolHandler"
+          class="com.coremcp.tools.impl.UIActionToolHandler"/>
+
+    <alias name="defaultCheckoutSetDeliveryAddressToolHandler" alias="checkoutSetDeliveryAddressToolHandler"/>
+    <bean id="defaultCheckoutSetDeliveryAddressToolHandler"
+          class="com.coremcp.tools.impl.CheckoutSetDeliveryAddressToolHandler">
+        <property name="checkoutFacade" ref="checkoutFacade"/>
+    </bean>
+
+    <alias name="defaultCheckoutSetDeliveryModeToolHandler" alias="checkoutSetDeliveryModeToolHandler"/>
+    <bean id="defaultCheckoutSetDeliveryModeToolHandler"
+          class="com.coremcp.tools.impl.CheckoutSetDeliveryModeToolHandler">
+        <property name="checkoutFacade" ref="checkoutFacade"/>
+    </bean>
+
+    <alias name="defaultCheckoutSetPaymentToolHandler" alias="checkoutSetPaymentToolHandler"/>
+    <bean id="defaultCheckoutSetPaymentToolHandler"
+          class="com.coremcp.tools.impl.CheckoutSetPaymentToolHandler">
+        <property name="checkoutFacade" ref="checkoutFacade"/>
+    </bean>
+
+    <alias name="defaultOrderPlaceToolHandler" alias="orderPlaceToolHandler"/>
+    <bean id="defaultOrderPlaceToolHandler"
+          class="com.coremcp.tools.impl.OrderPlaceToolHandler">
+        <property name="checkoutFacade" ref="checkoutFacade"/>
+    </bean>
+
+    <alias name="defaultPromotionsGetToolHandler" alias="promotionsGetToolHandler"/>
+    <bean id="defaultPromotionsGetToolHandler"
+          class="com.coremcp.tools.impl.PromotionsGetToolHandler">
+        <property name="promotionQueryService" ref="promotionQueryService"/>
+    </bean>
+
+    <!-- ===================================================================
+         Promotion Query Service (data access for promotions/coupons)
+         =================================================================== -->
+
+    <alias name="defaultPromotionQueryService" alias="promotionQueryService"/>
+    <bean id="defaultPromotionQueryService"
+          class="com.coremcp.services.impl.DefaultPromotionQueryService">
+        <property name="flexibleSearchService" ref="flexibleSearchService"/>
+        <property name="userService" ref="userService"/>
+    </bean>
+
+    <!-- ===================================================================
+         MCP Cart Session Service (cart loading/persistence for controllers)
+         =================================================================== -->
+
+    <alias name="defaultMcpCartSessionService" alias="mcpCartSessionService"/>
+    <bean id="defaultMcpCartSessionService"
+          class="com.coremcp.services.impl.DefaultMcpCartSessionService">
+        <property name="cartLoaderStrategy" ref="cartLoaderStrategy"/>
+        <property name="cartService" ref="cartService"/>
+    </bean>
+
+    <!-- ===================================================================
+         MCP Session Service
+         =================================================================== -->
+
+    <alias name="defaultMcpSessionService" alias="mcpSessionService"/>
+    <bean id="defaultMcpSessionService"
+          class="com.coremcp.services.impl.DefaultMcpSessionService"/>
+
+    <!-- ===================================================================
+         MCP Dispatcher Service
+         =================================================================== -->
+
+    <alias name="defaultMcpDispatcherService" alias="mcpDispatcherService"/>
+    <bean id="defaultMcpDispatcherService"
+          class="com.coremcp.services.impl.DefaultMcpDispatcherService">
+        <property name="mcpSessionService" ref="mcpSessionService"/>
+        <property name="toolHandlers">
+            <list>
+                <ref bean="productSearchToolHandler"/>
+                <ref bean="productGetToolHandler"/>
+                <ref bean="cartGetToolHandler"/>
+                <ref bean="cartAddProductToolHandler"/>
+                <ref bean="cartUpdateEntryToolHandler"/>
+                <ref bean="cartRemoveEntryToolHandler"/>
+                <ref bean="orderGetToolHandler"/>
+                <ref bean="orderHistoryToolHandler"/>
+                <ref bean="customerGetToolHandler"/>
+                <ref bean="customerLookupToolHandler"/>
+                <ref bean="checkoutSetDeliveryAddressToolHandler"/>
+                <ref bean="checkoutSetDeliveryModeToolHandler"/>
+                <ref bean="checkoutSetPaymentToolHandler"/>
+                <ref bean="orderPlaceToolHandler"/>
+                <ref bean="promotionsGetToolHandler"/>
+            </list>
+        </property>
+    </bean>
+
+    <!-- ===================================================================
+         Visual Search Service
+         =================================================================== -->
+
+    <alias name="defaultVisualSearchService" alias="visualSearchService"/>
+    <bean id="defaultVisualSearchService"
+          class="com.coremcp.services.impl.DefaultVisualSearchService">
+        <property name="openAiClient" ref="openAiClient"/>
+        <property name="productSearchFacade" ref="productSearchFacade"/>
+    </bean>
+
+    <!-- ===================================================================
+         OpenAI Client
+         =================================================================== -->
+
+    <alias name="defaultOpenAiClient" alias="openAiClient"/>
+    <bean id="defaultOpenAiClient"
+          class="com.coremcp.services.impl.DefaultOpenAiClient"/>
+
+    <!-- ===================================================================
+         OAuth2 Password Grant Converter
+
+         Re-introduces the password grant on top of Spring Authorization Server
+         (SAP 22.11 dropped it from the default token endpoint converters).
+         AuthorizationServerConfiguration autowires List<CustomAuthenticationConverter>
+         from the parent context, so registering the bean here is enough — no
+         filter chain customization required.
+         =================================================================== -->
+
+    <bean id="passwordGrantAuthenticationConverter"
+          class="com.coremcp.oauth.PasswordGrantAuthenticationConverter">
+        <constructor-arg ref="wsAuthenticationProvider"/>
+    </bean>
+
+    <!-- ===================================================================
+         Agent Service
+         =================================================================== -->
+
+    <alias name="defaultAgentService" alias="agentService"/>
+    <bean id="defaultAgentService"
+          class="com.coremcp.services.impl.DefaultAgentService">
+        <property name="openAiClient" ref="openAiClient"/>
+        <property name="toolHandlers">
+            <list>
+                <ref bean="productSearchToolHandler"/>
+                <ref bean="productGetToolHandler"/>
+                <ref bean="cartGetToolHandler"/>
+                <ref bean="cartAddProductToolHandler"/>
+                <ref bean="cartUpdateEntryToolHandler"/>
+                <ref bean="cartRemoveEntryToolHandler"/>
+                <ref bean="orderGetToolHandler"/>
+                <ref bean="orderHistoryToolHandler"/>
+                <ref bean="customerGetToolHandler"/>
+                <ref bean="customerLookupToolHandler"/>
+                <ref bean="checkoutSetDeliveryAddressToolHandler"/>
+                <ref bean="checkoutSetDeliveryModeToolHandler"/>
+                <ref bean="checkoutSetPaymentToolHandler"/>
+                <ref bean="orderPlaceToolHandler"/>
+                <ref bean="promotionsGetToolHandler"/>
+                <ref bean="uiActionToolHandler"/>
+            </list>
+        </property>
+    </bean>
+
+</beans>

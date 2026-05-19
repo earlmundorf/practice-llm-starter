@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<hybrisconfig
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="resources/schemas/extensions.xsd"
+>
+
+  <extensions>
+
+    <!-- ===== Extension discovery (does NOT load everything) ===== -->
+    <path dir="${HYBRIS_BIN_DIR}/platform/ext" />
+    <path dir="${HYBRIS_BIN_DIR}/modules" />
+    <path dir="${HYBRIS_BIN_DIR}/custom" />
+
+    <!-- ===== Auth ===== -->
+    <extension name="oauth2" />
+
+    <!-- ===== CMS ===== -->
+    <extension name="cms2" />
+    <extension name="cms2lib" />
+    <extension name="cmsfacades" />
+    <extension name="cmsocc" />
+
+    <!-- core/platform -->
+    <extension name="yempty" />
+    <extension name="platformservices" />
+    <extension name="processing" />
+    <extension name="hac" />
+    <extension name="yhacext" />
+
+    <!-- base commerce type system -->
+    <extension name="basecommerce" />
+    <extension name="commerceservices" />
+    <extension name="commercefacades" />
+    <extension name="acceleratorfacades" />
+
+    <!-- Promotion Engine (replaces legacy promotions) -->
+    <extension name="ruleengine" />
+    <extension name="ruleengineservices" />
+    <extension name="promotionengineservices" />
+    <extension name="promotions" />
+
+    <!-- Order Fulfillment Process -->
+    <extension name="yacceleratorcore" />
+    <extension name="yacceleratorfulfilmentprocess" />
+
+    <!-- Solr Search -->
+    <extension name="solrserver" />
+    <extension name="solrfacetsearch" />
+    <extension name="solrfacetsearchbackoffice" />
+    <extension name="backofficesolrsearch" />
+
+    <!-- webservices + OCC -->
+    <extension name="webservicescommons" />
+    <extension name="commercewebservicescommons" />
+    <extension name="commercewebservices" />
+    <extension name="yocc" />
+    <extension name="swaggerintegration" />
+
+    <!-- Backoffice -->
+    <extension name="backoffice" />
+    <extension name="platformbackoffice" />
+    <extension name="apiregistryservices" />
+    <extension name="apiregistrybackoffice" />
+    <extension name="promotionsbackoffice" />
+    <extension name="voucherbackoffice" />
+    <extension name="basecommercebackoffice" />
+    <extension name="commerceservicesbackoffice" />
+    <extension name="searchservices" />
+    <extension name="searchbackoffice" />
+    <extension name="acceleratorcms" />
+    <extension name="acceleratorbackoffice" />
+
+    <!-- Custom extensions -->
+    <extension dir="${HYBRIS_BIN_DIR}/custom/sampledatamcp"/>
+    <extension dir="${HYBRIS_BIN_DIR}/custom/llmtemplate"/>
+
+  </extensions>
+</hybrisconfig>

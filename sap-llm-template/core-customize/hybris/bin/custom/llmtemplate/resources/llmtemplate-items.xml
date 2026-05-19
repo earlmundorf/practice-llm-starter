@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!--
+ llmtemplate — No custom types in Phase 1.
+ Session management uses in-memory storage; items.xml types may be added
+ in a future phase for clustered session persistence.
+-->
+
+<items xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:noNamespaceSchemaLocation="items.xsd">
+
+    <itemtypes>
+    </itemtypes>
+</items>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!--
+ llmtemplate — DTO definitions.
+ Add DTOs here for tool responses that need beans.xml-generated data objects
+ (beyond raw JSON-RPC protocol messages).
+-->
+<beans xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="beans.xsd">
+
+</beans>

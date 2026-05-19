@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<extensioninfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="extensioninfo.xsd">
+
+    <extension abstractclassprefix="Generated" classprefix="Coremcp" description="MCP (Model Context Protocol) server extension for SAP Commerce" jaloLogicFree="true" managername="CoremcpManager" managersuperclass="de.hybris.platform.jalo.extension.Extension" name="coremcp">
+
+        <requires-extension name="commercewebservices"/>
+
+        <coremodule generated="true" manager="com.coremcp.jalo.CoremcpManager" packageroot="com.coremcp"/>
+
+    </extension>
+
+</extensioninfo>

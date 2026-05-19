@@ -1,0 +1,209 @@
+# ---------------------------------------------------------------------------
+# ThinkShop sample data
+#
+# Loaded automatically during "ant initialize" ONLY because the filename
+# matches the pattern: projectdata-*.impex
+#
+# Creates: 10 products (Staged + Online), 3 customers, 3 orders
+#
+# Prerequisites: essentialdata-infrastructure.impex (catalog, store, delivery modes)
+# ---------------------------------------------------------------------------
+
+#% impex.setLocale(new java.util.Locale("en"));
+
+$productCatalog = electronicsProductCatalog
+$onlineVersion = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Online'])[unique = true]
+$stagedVersion = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Staged'])[unique = true]
+$taxGroup = Europe1PriceFactory_PTG(code)[default = us-sales-tax-full]
+$defaultPassword = 1234
+$customergroup = customergroup
+$currency = USD
+$language = en
+$warehouse = electronics-warehouse
+$store = electronics
+$unit = pieces
+$paymentMode = advance
+$standardDeliveryMode = thinkshop-standard
+
+
+# ==========================================================================
+# Products (10)
+# ==========================================================================
+
+# Products are catalog-versioned — import to both Staged and Online
+# Staged version (content authoring)
+INSERT_UPDATE Product ; code[unique = true]   ; name[lang = $language]       ; summary[lang = $language]                                                       ; description[lang = $language]                                                                                                                                                                                                                                       ; $stagedVersion ; unit(code)[default = '$unit'] ; approvalStatus(code)[default = 'approved'] ; $taxGroup
+                      ; LAPTOP_PRO_15         ; Laptop Pro 15         ; High-performance laptop with 16GB RAM and 512GB SSD                      ; The Laptop Pro 15 delivers exceptional performance with its 10th-gen Intel Core i7 processor, 16GB DDR4 RAM, and 512GB NVMe SSD. Features a stunning 15.6-inch IPS display with thin bezels, backlit keyboard, and all-day battery life up to 10 hours.        ;                ;                               ;                                            ;
+                      ; SMARTPHONE_X          ; Smartphone X          ; Latest smartphone with 5G connectivity and 128GB storage                 ; Experience next-gen connectivity with Smartphone X. Powered by the latest Snapdragon chipset with 5G support, 128GB storage, and 8GB RAM. The 6.7-inch AMOLED display brings vibrant colors, while the triple-camera system captures stunning photos.          ;                ;                               ;                                            ;
+                      ; WIRELESS_HEADPHONES   ; Wireless Headphones   ; Noise-cancelling wireless headphones with 30-hour battery                ; Immerse yourself in pure audio with advanced active noise cancellation. These over-ear wireless headphones deliver rich, balanced sound with 40mm custom drivers. Enjoy up to 30 hours of battery life, quick charge, and a comfortable memory-foam design.     ;                ;                               ;                                            ;
+                      ; TABLET_AIR            ; Tablet Air            ; Lightweight tablet with 10.5-inch display and stylus support             ; The Tablet Air combines portability with power. Its 10.5-inch 2K display is perfect for work and play, with stylus support for drawing and note-taking. Octa-core processor, 64GB storage, and 12-hour battery life make it the ideal everyday companion.      ;                ;                               ;                                            ;
+                      ; SMART_WATCH_PRO       ; Smart Watch Pro       ; Fitness tracking smartwatch with heart rate monitor                      ; Track your fitness goals with the Smart Watch Pro. Features continuous heart rate monitoring, GPS tracking, sleep analysis, and 50m water resistance. The always-on OLED display and 7-day battery life keep you connected without compromise.                 ;                ;                               ;                                            ;
+                      ; MECHANICAL_KEYBOARD   ; Mechanical Keyboard   ; RGB mechanical gaming keyboard with Cherry MX switches                   ; Elevate your typing experience with genuine Cherry MX mechanical switches. Per-key RGB backlighting with 16.8 million colors, aircraft-grade aluminum frame, full N-key rollover, and programmable macros. USB-C detachable cable included.                     ;                ;                               ;                                            ;
+                      ; WIRELESS_GAMING_MOUSE ; Wireless Gaming Mouse ; High-precision wireless gaming mouse with customizable buttons           ; Dominate the competition with a 25,600 DPI optical sensor and 1ms wireless response time. Features 8 programmable buttons, adjustable weight system, and up to 70 hours of battery life. Ergonomic design with textured side grips for extended gaming.        ;                ;                               ;                                            ;
+                      ; MONITOR_4K_27         ; 4K Monitor 27"        ; Ultra HD 4K monitor with HDR support and 144Hz refresh rate              ; See every detail on this 27-inch Ultra HD 4K IPS display with HDR10 support and 144Hz refresh rate. Covers 99% sRGB color space, with AMD FreeSync Premium and NVIDIA G-Sync compatibility. USB-C with 65W power delivery and height-adjustable stand.        ;                ;                               ;                                            ;
+                      ; HD_WEBCAM             ; HD Webcam             ; 1080p webcam with built-in microphone and auto-focus                     ; Crystal-clear 1080p video at 60fps for professional video calls and streaming. Features a wide-angle lens with auto-focus, dual noise-cancelling microphones, and automatic low-light correction. Universal clip fits any monitor or laptop.                  ;                ;                               ;                                            ;
+                      ; BLUETOOTH_SPEAKER     ; Bluetooth Speaker     ; Portable Bluetooth speaker with 360-degree sound and waterproof design   ; Take your music anywhere with this IP67 waterproof and dustproof Bluetooth speaker. Delivers powerful 360-degree sound with deep bass from dual passive radiators. 20-hour battery life, built-in power bank, and pairs with a second speaker for stereo.      ;                ;                               ;                                            ;
+
+# Online version (live storefront)
+INSERT_UPDATE Product ; code[unique = true]   ; name[lang = $language]       ; summary[lang = $language]                                                       ; description[lang = $language]                                                                                                                                                                                                                                       ; $onlineVersion ; unit(code)[default = '$unit'] ; approvalStatus(code)[default = 'approved'] ; $taxGroup
+                      ; LAPTOP_PRO_15         ; Laptop Pro 15         ; High-performance laptop with 16GB RAM and 512GB SSD                      ; The Laptop Pro 15 delivers exceptional performance with its 10th-gen Intel Core i7 processor, 16GB DDR4 RAM, and 512GB NVMe SSD. Features a stunning 15.6-inch IPS display with thin bezels, backlit keyboard, and all-day battery life up to 10 hours.        ;                ;                                ;                                            ;
+                      ; SMARTPHONE_X          ; Smartphone X          ; Latest smartphone with 5G connectivity and 128GB storage                 ; Experience next-gen connectivity with Smartphone X. Powered by the latest Snapdragon chipset with 5G support, 128GB storage, and 8GB RAM. The 6.7-inch AMOLED display brings vibrant colors, while the triple-camera system captures stunning photos.          ;                ;                                ;                                            ;
+                      ; WIRELESS_HEADPHONES   ; Wireless Headphones   ; Noise-cancelling wireless headphones with 30-hour battery                ; Immerse yourself in pure audio with advanced active noise cancellation. These over-ear wireless headphones deliver rich, balanced sound with 40mm custom drivers. Enjoy up to 30 hours of battery life, quick charge, and a comfortable memory-foam design.     ;                ;                                ;                                            ;
+                      ; TABLET_AIR            ; Tablet Air            ; Lightweight tablet with 10.5-inch display and stylus support             ; The Tablet Air combines portability with power. Its 10.5-inch 2K display is perfect for work and play, with stylus support for drawing and note-taking. Octa-core processor, 64GB storage, and 12-hour battery life make it the ideal everyday companion.      ;                ;                                ;                                            ;
+                      ; SMART_WATCH_PRO       ; Smart Watch Pro       ; Fitness tracking smartwatch with heart rate monitor                      ; Track your fitness goals with the Smart Watch Pro. Features continuous heart rate monitoring, GPS tracking, sleep analysis, and 50m water resistance. The always-on OLED display and 7-day battery life keep you connected without compromise.                 ;                ;                                ;                                            ;
+                      ; MECHANICAL_KEYBOARD   ; Mechanical Keyboard   ; RGB mechanical gaming keyboard with Cherry MX switches                   ; Elevate your typing experience with genuine Cherry MX mechanical switches. Per-key RGB backlighting with 16.8 million colors, aircraft-grade aluminum frame, full N-key rollover, and programmable macros. USB-C detachable cable included.                     ;                ;                                ;                                            ;
+                      ; WIRELESS_GAMING_MOUSE ; Wireless Gaming Mouse ; High-precision wireless gaming mouse with customizable buttons           ; Dominate the competition with a 25,600 DPI optical sensor and 1ms wireless response time. Features 8 programmable buttons, adjustable weight system, and up to 70 hours of battery life. Ergonomic design with textured side grips for extended gaming.        ;                ;                                ;                                            ;
+                      ; MONITOR_4K_27         ; 4K Monitor 27"        ; Ultra HD 4K monitor with HDR support and 144Hz refresh rate              ; See every detail on this 27-inch Ultra HD 4K IPS display with HDR10 support and 144Hz refresh rate. Covers 99% sRGB color space, with AMD FreeSync Premium and NVIDIA G-Sync compatibility. USB-C with 65W power delivery and height-adjustable stand.        ;                ;                                ;                                            ;
+                      ; HD_WEBCAM             ; HD Webcam             ; 1080p webcam with built-in microphone and auto-focus                     ; Crystal-clear 1080p video at 60fps for professional video calls and streaming. Features a wide-angle lens with auto-focus, dual noise-cancelling microphones, and automatic low-light correction. Universal clip fits any monitor or laptop.                  ;                ;                                ;                                            ;
+                      ; BLUETOOTH_SPEAKER     ; Bluetooth Speaker     ; Portable Bluetooth speaker with 360-degree sound and waterproof design   ; Take your music anywhere with this IP67 waterproof and dustproof Bluetooth speaker. Delivers powerful 360-degree sound with deep bass from dual passive radiators. 20-hour battery life, built-in power bank, and pairs with a second speaker for stereo.      ;                ;                                ;                                            ;
+
+
+# ==========================================================================
+# Price Rows
+# ==========================================================================
+
+# PriceRow is catalog-versioned (part-of Product) — import to both Staged and Online
+INSERT_UPDATE PriceRow ; productId[unique = true] ; unit(code)[default = '$unit'] ; currency(isocode)[unique = true] ; price   ; minqtd ; net   ; $stagedVersion
+                       ; LAPTOP_PRO_15            ;                               ; $currency                        ; 1299.99 ; 1      ; false ;
+                       ; SMARTPHONE_X             ;                               ; $currency                        ; 799.99  ; 1      ; false ;
+                       ; WIRELESS_HEADPHONES      ;                               ; $currency                        ; 199.99  ; 1      ; false ;
+                       ; TABLET_AIR               ;                               ; $currency                        ; 649.99  ; 1      ; false ;
+                       ; SMART_WATCH_PRO          ;                               ; $currency                        ; 349.99  ; 1      ; false ;
+                       ; MECHANICAL_KEYBOARD      ;                               ; $currency                        ; 149.99  ; 1      ; false ;
+                       ; WIRELESS_GAMING_MOUSE    ;                               ; $currency                        ; 79.99   ; 1      ; false ;
+                       ; MONITOR_4K_27            ;                               ; $currency                        ; 499.99  ; 1      ; false ;
+                       ; HD_WEBCAM                ;                               ; $currency                        ; 89.99   ; 1      ; false ;
+                       ; BLUETOOTH_SPEAKER        ;                               ; $currency                        ; 129.99  ; 1      ; false ;
+
+INSERT_UPDATE PriceRow ; productId[unique = true] ; unit(code)[default = '$unit'] ; currency(isocode)[unique = true] ; price   ; minqtd ; net   ; $onlineVersion
+                       ; LAPTOP_PRO_15            ;                               ; $currency                        ; 1299.99 ; 1      ; false ;
+                       ; SMARTPHONE_X             ;                               ; $currency                        ; 799.99  ; 1      ; false ;
+                       ; WIRELESS_HEADPHONES      ;                               ; $currency                        ; 199.99  ; 1      ; false ;
+                       ; TABLET_AIR               ;                               ; $currency                        ; 649.99  ; 1      ; false ;
+                       ; SMART_WATCH_PRO          ;                               ; $currency                        ; 349.99  ; 1      ; false ;
+                       ; MECHANICAL_KEYBOARD      ;                               ; $currency                        ; 149.99  ; 1      ; false ;
+                       ; WIRELESS_GAMING_MOUSE    ;                               ; $currency                        ; 79.99   ; 1      ; false ;
+                       ; MONITOR_4K_27            ;                               ; $currency                        ; 499.99  ; 1      ; false ;
+                       ; HD_WEBCAM                ;                               ; $currency                        ; 89.99   ; 1      ; false ;
+                       ; BLUETOOTH_SPEAKER        ;                               ; $currency                        ; 129.99  ; 1      ; false ;
+
+
+# ==========================================================================
+# Stock Levels
+# ==========================================================================
+
+INSERT_UPDATE StockLevel ; productCode[unique = true] ; warehouse(code)[unique = true] ; available ; inStockStatus(code)
+                         ; LAPTOP_PRO_15              ; $warehouse          ; 25        ; notSpecified
+                         ; SMARTPHONE_X               ; $warehouse          ; 50        ; notSpecified
+                         ; WIRELESS_HEADPHONES        ; $warehouse          ; 100       ; notSpecified
+                         ; TABLET_AIR                 ; $warehouse          ; 40        ; notSpecified
+                         ; SMART_WATCH_PRO            ; $warehouse          ; 75        ; notSpecified
+                         ; MECHANICAL_KEYBOARD        ; $warehouse          ; 60        ; notSpecified
+                         ; WIRELESS_GAMING_MOUSE      ; $warehouse          ; 80        ; notSpecified
+                         ; MONITOR_4K_27              ; $warehouse          ; 30        ; notSpecified
+                         ; HD_WEBCAM                  ; $warehouse          ; 45        ; notSpecified
+                         ; BLUETOOTH_SPEAKER          ; $warehouse          ; 90        ; notSpecified
+
+# Link StockLevels to Products in both catalog versions
+# StockLevel itself is global, but the Product->StockLevel relation is per catalog version
+UPDATE Product ; code[unique = true]   ; $stagedVersion ; stockLevels(productCode, warehouse(code))[mode = append]
+               ; LAPTOP_PRO_15         ;                ; LAPTOP_PRO_15:$warehouse
+               ; SMARTPHONE_X          ;                ; SMARTPHONE_X:$warehouse
+               ; WIRELESS_HEADPHONES   ;                ; WIRELESS_HEADPHONES:$warehouse
+               ; TABLET_AIR            ;                ; TABLET_AIR:$warehouse
+               ; SMART_WATCH_PRO       ;                ; SMART_WATCH_PRO:$warehouse
+               ; MECHANICAL_KEYBOARD   ;                ; MECHANICAL_KEYBOARD:$warehouse
+               ; WIRELESS_GAMING_MOUSE ;                ; WIRELESS_GAMING_MOUSE:$warehouse
+               ; MONITOR_4K_27         ;                ; MONITOR_4K_27:$warehouse
+               ; HD_WEBCAM             ;                ; HD_WEBCAM:$warehouse
+               ; BLUETOOTH_SPEAKER     ;                ; BLUETOOTH_SPEAKER:$warehouse
+
+UPDATE Product ; code[unique = true]   ; $onlineVersion ; stockLevels(productCode, warehouse(code))[mode = append]
+               ; LAPTOP_PRO_15         ;                ; LAPTOP_PRO_15:$warehouse
+               ; SMARTPHONE_X          ;                ; SMARTPHONE_X:$warehouse
+               ; WIRELESS_HEADPHONES   ;                ; WIRELESS_HEADPHONES:$warehouse
+               ; TABLET_AIR            ;                ; TABLET_AIR:$warehouse
+               ; SMART_WATCH_PRO       ;                ; SMART_WATCH_PRO:$warehouse
+               ; MECHANICAL_KEYBOARD   ;                ; MECHANICAL_KEYBOARD:$warehouse
+               ; WIRELESS_GAMING_MOUSE ;                ; WIRELESS_GAMING_MOUSE:$warehouse
+               ; MONITOR_4K_27         ;                ; MONITOR_4K_27:$warehouse
+               ; HD_WEBCAM             ;                ; HD_WEBCAM:$warehouse
+               ; BLUETOOTH_SPEAKER     ;                ; BLUETOOTH_SPEAKER:$warehouse
+
+
+# ==========================================================================
+# Customers (3)
+# ==========================================================================
+
+# Test customers — password is $defaultPassword for all accounts
+INSERT_UPDATE Customer ; uid[unique = true]       ; name       ; groups(uid)    ; password[default = $defaultPassword] ; sessionLanguage(isocode) ; sessionCurrency(isocode) ; &userId
+                       ; john.doe@thinkshop.com   ; John Doe   ; $customergroup ;                                      ; $language                ; $currency                ; johnDoe
+                       ; jane.smith@thinkshop.com ; Jane Smith ; $customergroup ;                                      ; $language                ; $currency                ; janeSmith
+                       ; bob.wilson@thinkshop.com ; Bob Wilson ; $customergroup ;                                      ; $language                ; $currency                ; bobWilson
+
+
+# ==========================================================================
+# Customer Addresses
+# ==========================================================================
+
+INSERT_UPDATE Address ; &addId        ; owner(&userId)[unique = true] ; streetname[unique = true] ; postalcode[unique = true] ; duplicate[unique = true] ; town        ; country(isocode) ; billingAddress ; contactAddress ; shippingAddress ; firstname ; lastname ; email
+                      ; johnDoeAddr   ; johnDoe                       ; 100 Main St              ; 10001                    ; false                    ; New York    ; US               ; true           ; true           ; true            ; John      ; Doe      ; john.doe@thinkshop.com
+                      ; janeSmithAddr ; janeSmith                     ; 200 Oak Ave              ; 90210                    ; false                    ; Los Angeles ; US               ; true           ; true           ; true            ; Jane      ; Smith    ; jane.smith@thinkshop.com
+                      ; bobWilsonAddr ; bobWilson                     ; 300 Pine Rd              ; 60601                    ; false                    ; Chicago     ; US               ; true           ; true           ; true            ; Bob       ; Wilson   ; bob.wilson@thinkshop.com
+
+UPDATE Customer ; uid[unique = true]       ; defaultPaymentAddress(&addId) ; defaultShipmentAddress(&addId)
+                ; john.doe@thinkshop.com   ; johnDoeAddr                   ; johnDoeAddr
+                ; jane.smith@thinkshop.com ; janeSmithAddr                 ; janeSmithAddr
+                ; bob.wilson@thinkshop.com ; bobWilsonAddr                 ; bobWilsonAddr
+
+
+# ==========================================================================
+# Orders (3)
+# ==========================================================================
+
+# Sample orders for testing order history and last-order endpoint
+INSERT_UPDATE Order ; code[unique = true] ; user(uid)                ; date[dateformat = dd.MM.yyyy HH:mm] ; currency(isocode) ; net   ; paymentMode(code) ; deliveryMode(code)    ; calculated ; site(uid) ; store(uid) ; status(code)
+                    ; THINK-0001          ; john.doe@thinkshop.com   ; 15.01.2026 10:30                    ; $currency         ; false ; $paymentMode      ; $standardDeliveryMode ; false      ; $store    ; $store     ; COMPLETED
+# Copy the customer's default delivery and payment addresses onto the order
+"#%   impex.getLastImportedItem().setDeliveryAddress(impex.getLastImportedItem().getUser().getDefaultDeliveryAddress());impex.getLastImportedItem().setPaymentAddress(impex.getLastImportedItem().getUser().getDefaultPaymentAddress());";
+                    ; THINK-0002          ; jane.smith@thinkshop.com ; 20.02.2026 14:15                    ; $currency         ; false ; $paymentMode      ; $standardDeliveryMode ; false      ; $store    ; $store     ; CREATED
+"#%   impex.getLastImportedItem().setDeliveryAddress(impex.getLastImportedItem().getUser().getDefaultDeliveryAddress());impex.getLastImportedItem().setPaymentAddress(impex.getLastImportedItem().getUser().getDefaultPaymentAddress());";
+                    ; THINK-0003          ; john.doe@thinkshop.com   ; 25.02.2026 09:45                    ; $currency         ; false ; $paymentMode      ; $standardDeliveryMode ; false      ; $store    ; $store     ; COMPLETED
+"#%   impex.getLastImportedItem().setDeliveryAddress(impex.getLastImportedItem().getUser().getDefaultDeliveryAddress());impex.getLastImportedItem().setPaymentAddress(impex.getLastImportedItem().getUser().getDefaultPaymentAddress());";
+
+
+# ==========================================================================
+# Order Entries
+# ==========================================================================
+
+# Order entries reference Online products (orders use the live catalog)
+INSERT_UPDATE OrderEntry ; order(code)[unique = true] ; entryNumber[unique = true] ; product(code, $onlineVersion) ; quantity ; unit(code)[default = '$unit'] ; basePrice ; totalPrice
+                         ; THINK-0001                 ; 0                          ; LAPTOP_PRO_15                  ; 1        ;                                ; 1299.99   ; 1299.99
+                         ; THINK-0001                 ; 1                          ; WIRELESS_HEADPHONES            ; 2        ;                                ; 199.99    ; 399.98
+                         ; THINK-0002                 ; 0                          ; SMARTPHONE_X                   ; 1        ;                                ; 799.99    ; 799.99
+                         ; THINK-0002                 ; 1                          ; TABLET_AIR                     ; 1        ;                                ; 649.99    ; 649.99
+                         ; THINK-0002                 ; 2                          ; SMART_WATCH_PRO                ; 1        ;                                ; 349.99    ; 349.99
+                         ; THINK-0003                 ; 0                          ; MECHANICAL_KEYBOARD            ; 1        ;                                ; 149.99    ; 149.99
+                         ; THINK-0003                 ; 1                          ; WIRELESS_GAMING_MOUSE          ; 1        ;                                ; 79.99     ; 79.99
+                         ; THINK-0003                 ; 2                          ; MONITOR_4K_27                  ; 1        ;                                ; 499.99    ; 499.99
+
+
+# ==========================================================================
+# Calculate Orders (after entries are in place)
+# ==========================================================================
+
+# Trigger order calculation to compute totals, taxes, and delivery costs
+UPDATE Order ; code[unique = true]
+             ; THINK-0001
+"#%   impex.getLastImportedItem().calculate();";
+             ; THINK-0002
+"#%   impex.getLastImportedItem().calculate();";
+             ; THINK-0003
+"#%   impex.getLastImportedItem().calculate();";
+
+
+# ==========================================================================
+# Free Shipping (handled by promotion engine, not delivery mode tiers)
+# ==========================================================================
+# The free_shipping_1000 promotion rule uses y_change_delivery_mode to switch
+# to thinkshop-free-delivery for orders >= $1,000. No tiered pricing needed.

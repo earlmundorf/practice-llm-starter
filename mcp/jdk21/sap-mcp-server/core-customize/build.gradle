@@ -1,0 +1,208 @@
+plugins {
+    id 'sap.commerce.build' version '5.0.2'
+    id 'sap.commerce.build.ccv2' version '5.0.2'
+}
+
+// Unset hybris environment variables so they don't interfere with this build
+def hybrisEnvVars = ['HYBRIS_ROOT', 'HYBRIS_DATA_DIR', 'HYBRIS_BIN_DIR',
+                     'HYBRIS_PLATFORM', 'HYBRIS_HOME', 'HYBRIS_CONFIG_DIR',
+                     'HYBRIS_LOG_DIR', 'HYBRIS_TEMP_DIR']
+
+tasks.withType(JavaExec).configureEach {
+    hybrisEnvVars.each { envVar -> environment.remove(envVar) }
+}
+
+// Also clear env vars for all ant-based hybris tasks
+tasks.matching { it.name.startsWith('y') }.configureEach {
+    if (it.hasProperty('environment')) {
+        hybrisEnvVars.each { envVar -> it.environment.remove(envVar) }
+    }
+}
+
+repositories {
+    flatDir { dirs 'dependencies' }
+    mavenCentral()
+}
+
+// TODO(jdk21-upgrade): re-enable when a 2211-jdk21.x matched Integration Extension Pack ships.
+// Leaving OFF rather than substituting the legacy 2211.42 pack — wrong-version pack is more
+// dangerous than absence (silent runtime breakage). bootstrapPlatform + Phases A-E run fine
+// without it; only Phase F OCC smoke tests need a version-matched pack.
+// ext {
+//     intExtPackVersion = '2211.42'
+// }
+
+dependencies {
+    hybrisPlatform "de.hybris.platform:hybris-commerce-suite:${hybris.version.get()}@zip"
+    // hybrisPlatform "de.hybris.platform:hybris-commerce-integrations:${intExtPackVersion}@zip"
+    dbDriver 'com.mysql:mysql-connector-j:8.2.0'
+}
+
+// --- Config setup ---
+
+def configDir = file('hybris/config')
+def devConfigDir = file('dev-config')
+
+task setupConfig {
+    description = 'Populate hybris/config: platform defaults + dev-config overlay'
+    group = 'SAP Commerce Bootstrap'
+
+    doLast {
+        // Step 1: Run createDefaultConfig if config is missing/empty
+        if (!configDir.exists() || configDir.list().length == 0) {
+            println "Config directory empty — creating platform defaults..."
+        }
+
+        // Step 2: Always overlay dev-config (our files take precedence)
+        println "Overlaying dev-config into hybris/config..."
+        ant.copy(todir: configDir.absolutePath, overwrite: true) {
+            fileset(dir: devConfigDir.absolutePath)
+        }
+        println "Config setup complete."
+    }
+}
+
+// Ensure createDefaultConfig runs before our overlay if config is missing
+setupConfig.dependsOn {
+    configDir.exists() && configDir.list().length > 0 ? [] : ['createDefaultConfig']
+}
+
+// Wire setupConfig into the build lifecycle
+tasks.named('bootstrapPlatform').configure { finalizedBy 'setupConfig' }
+
+task cleanAll(type: Delete) {
+    description = 'Wipe everything except hybris/bin/custom, dev-config, dependencies, and scripts'
+    group = 'SAP Commerce Bootstrap'
+
+    delete 'hybris/config'
+    delete 'hybris/data'
+    delete 'hybris/log'
+    delete 'hybris/temp'
+    delete 'hybris/roles'
+    delete 'hybris/bin/platform'
+    delete 'hybris/bin/modules'
+    delete fileTree('hybris/bin') {
+        // Delete everything in hybris/bin except custom/
+        exclude 'custom/**'
+    }
+}
+
+// --- Server lifecycle tasks ---
+
+def platformDir = file('hybris/bin/platform')
+def logDir = file('hybris/log')
+
+task startServer(type: Exec) {
+    description = 'Start the SAP Commerce server in the background'
+    group = 'SAP Commerce Server'
+    workingDir platformDir
+    commandLine './hybrisserver.sh', 'start'
+    environment.remove('HYBRIS_ROOT')
+    environment.remove('HYBRIS_DATA_DIR')
+    environment.remove('HYBRIS_BIN_DIR')
+    environment.remove('HYBRIS_PLATFORM')
+    environment.remove('HYBRIS_HOME')
+    environment.remove('HYBRIS_CONFIG_DIR')
+    environment.remove('HYBRIS_LOG_DIR')
+    environment.remove('HYBRIS_TEMP_DIR')
+}
+
+task stopServer(type: Exec) {
+    description = 'Stop the SAP Commerce server'
+    group = 'SAP Commerce Server'
+    workingDir platformDir
+    commandLine './hybrisserver.sh', 'stop'
+    environment.remove('HYBRIS_ROOT')
+    environment.remove('HYBRIS_DATA_DIR')
+    environment.remove('HYBRIS_BIN_DIR')
+    environment.remove('HYBRIS_PLATFORM')
+    environment.remove('HYBRIS_HOME')
+    environment.remove('HYBRIS_CONFIG_DIR')
+    environment.remove('HYBRIS_LOG_DIR')
+    environment.remove('HYBRIS_TEMP_DIR')
+}
+
+task serverLog(type: Exec) {
+    description = 'Tail the SAP Commerce console log'
+    group = 'SAP Commerce Server'
+    // Find the latest console log (date-stamped filename)
+    doFirst {
+        def consoleLog = fileTree("${logDir}/tomcat").matching { include 'console-*.log' }.files.sort().last()
+        commandLine 'tail', '-f', '-n', '200', consoleLog.absolutePath
+    }
+}
+
+task solrLog(type: Exec) {
+    description = 'Tail the Solr log'
+    group = 'SAP Commerce Server'
+    commandLine 'tail', '-f', '-n', '200', "${logDir}/solr/instances/default/solr.log"
+}
+
+task allLogs(type: Exec) {
+    description = 'Tail both SAP Commerce console and Solr logs'
+    group = 'SAP Commerce Server'
+    doFirst {
+        def consoleLog = fileTree("${logDir}/tomcat").matching { include 'console-*.log' }.files.sort().last()
+        commandLine 'tail', '-f', '-n', '100', consoleLog.absolutePath, "${logDir}/solr/instances/default/solr.log"
+    }
+}
+
+task serverStatus(type: Exec) {
+    description = 'Check if the SAP Commerce server is running'
+    group = 'SAP Commerce Server'
+    workingDir platformDir
+    commandLine './hybrisserver.sh', 'status'
+    ignoreExitValue = true
+}
+
+// --- HAC console tasks ---
+// Usage:
+//   ./gradle.sh groovy -Pscript=path/to/script.groovy
+//   ./gradle.sh groovy -Pscript=path/to/script.groovy -Pcommit=true
+//   ./gradle.sh impex -Pscript=path/to/import.impex
+//   ./gradle.sh flexquery -Pscript=path/to/query.sql
+//   ./gradle.sh flexquery -Pscript=path/to/query.sql -PmaxResults=50
+
+def scriptsDir = file("${projectDir}/scripts")
+
+task groovy(type: Exec) {
+    description = 'Run a Groovy script via HAC — use -Pfile=<file> [-Pcommit=true]'
+    group = 'SAP Commerce HAC'
+    doFirst {
+        if (!project.hasProperty('file')) {
+            throw new GradleException('Missing -Pfile=<path>. Usage: ./gradle.sh groovy -Pfile=path/to/script.groovy [-Pcommit=true]')
+        }
+        def args = [project.property('file').toString()]
+        if (project.hasProperty('commit') && project.property('commit').toString() == 'true') {
+            args << '--commit'
+        }
+        commandLine(["${scriptsDir}/hac-groovy.sh"] + args)
+    }
+}
+
+task impex(type: Exec) {
+    description = 'Run an ImpEx import via HAC — use -Pfile=<file>'
+    group = 'SAP Commerce HAC'
+    doFirst {
+        if (!project.hasProperty('file')) {
+            throw new GradleException('Missing -Pfile=<path>. Usage: ./gradle.sh impex -Pfile=path/to/import.impex')
+        }
+        commandLine "${scriptsDir}/hac-impex.sh", project.property('file').toString()
+    }
+}
+
+task flexquery(type: Exec) {
+    description = 'Run a FlexibleSearch query via HAC — use -Pfile=<file|query> [-PmaxResults=200]'
+    group = 'SAP Commerce HAC'
+    doFirst {
+        if (!project.hasProperty('file')) {
+            throw new GradleException('Missing -Pfile=<file|query>. Usage: ./gradle.sh flexquery -Pfile="SELECT {pk} FROM {Product}" [-PmaxResults=50]')
+        }
+        def args = [project.property('file').toString()]
+        if (project.hasProperty('maxResults')) {
+            args << project.property('maxResults').toString()
+        }
+        commandLine(["${scriptsDir}/hac-flexquery.sh"] + args)
+    }
+}
+

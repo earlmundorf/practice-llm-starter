@@ -1,0 +1,146 @@
+# CLAUDE.md
+
+This is the root configuration file for [Claude Code](https://claude.ai/code) in the ThinkShop UI project.
+
+## What This Project Is
+
+A standalone React storefront for SAP Commerce (Hybris) via OCC REST APIs. Designed for static hosting on CloudFront/S3, with a configurable backend URL for any SAP Commerce instance.
+
+- **Backend:** SAP Commerce 22.11 OCC API (configurable via `VITE_API_URL`)
+- **Reference app:** `sample/thinkshop-frontend/` (read-only, do not modify)
+- **Planning docs:** `docs/` — architecture, feature specs, endpoint mapping, setup guide
+
+## Tech Stack
+
+- **Framework:** React 19, TypeScript
+- **Styling:** Tailwind CSS 4
+- **Build Tool:** Vite 7
+- **Router:** React Router 7
+- **Code Quality:** ESLint
+
+## Commands
+
+```bash
+npm install      # Install dependencies
+npm run dev      # Start dev server (proxies to SAP Commerce via VITE_API_URL)
+npm run build    # Production build → dist/ (deployable to S3/CloudFront)
+npm run lint     # Run ESLint
+```
+
+## Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `VITE_API_URL` | `https://localhost:9002` | SAP Commerce backend URL (dev proxy target and production API base) |
+
+Copy `.env.example` to `.env` and configure for your environment.
+
+## Deployment
+
+### Local Development
+Vite proxies `/occ` and `/authorizationserver` requests to the backend URL, stripping the Origin header to avoid SAP Commerce CORS rejections.
+
+### Production (CloudFront/S3)
+Run `npm run build` and deploy the `dist/` directory to S3. Set `VITE_API_URL` to the production Commerce API URL at build time. Configure CloudFront to serve `index.html` for all routes (SPA fallback).
+
+## Project Structure
+
+```
+ThinkShop-UI/
+├── docs/              # Architecture & planning docs
+├── sample/            # Read-only reference app (do not modify)
+├── src/
+│   ├── components/    # Reusable UI components
+│   ├── pages/         # Page-level components
+│   ├── services/      # API calls (OCC endpoints)
+│   ├── contexts/      # React Context providers
+│   ├── types/         # TypeScript type definitions
+│   └── assets/        # Static assets
+├── public/            # Vite public assets
+├── vite.config.ts     # Vite config (proxy, configurable backend URL)
+├── .env.example       # Required env vars reference
+└── .claude/skills/    # Claude Code skills for SAP Commerce
+```
+
+## Documentation Convention
+
+Each feature flow has a dedicated directory in `docs/` with three files:
+
+| File | Purpose |
+|------|---------|
+| `context.md` | What the flow does, when it's used, key decisions |
+| `components.md` | The files that implement it and what each one does |
+| `diagram.md` | Mermaid diagrams with descriptive context |
+
+**Before working on a feature**, read its flow directory. **When adding a new feature**, create the flow directory first — docs before code.
+
+Current flows: `authentication/`, `product-browse/`, `cart-management/`, `checkout-flow/`, `order-history/`
+
+## Code Style Guidelines
+
+### Components
+
+- Use **functional components only** (no class components)
+- Use **arrow functions** for component definitions
+- Keep components **under 150 lines** — split if larger
+- Always handle **loading** and **error** states
+
+```tsx
+// Correct
+export const Button = ({ label, onClick }: ButtonProps) => {
+  return <button onClick={onClick}>{label}</button>;
+};
+```
+
+### TypeScript
+
+- Prefer **interfaces** over types for object shapes
+- Use **named exports** over default exports
+- Define props interfaces above the component
+
+### Tailwind CSS
+
+Organize classes in this order: **layout -> spacing -> sizing -> colors -> effects**
+
+```tsx
+// Organized
+<div className="flex items-center gap-4 p-4 w-full bg-white rounded-lg shadow-md">
+```
+
+### API Calls
+
+- All API logic goes in `src/services/`
+- Use async/await with proper error handling
+- Return typed responses
+- API calls target SAP Commerce OCC endpoints (see `docs/endpoint-mapping.md`)
+
+## File Naming Conventions
+
+| Type | Convention | Example |
+|------|------------|---------|
+| Components | PascalCase | `ProductCard.tsx` |
+| Hooks | camelCase with `use` prefix | `useAuth.ts` |
+| Utilities | camelCase | `formatDate.ts` |
+| Types | PascalCase | `Product.ts` |
+| Services | camelCase | `api.ts` |
+
+## Visual Product Search
+
+- **Location:** Integrated into the Products page search bar (`src/pages/Products.tsx`)
+- **Trigger:** Camera icon button in search bar, or paste an image (Cmd+V) while search bar is focused
+- **API:** `api.visualSearch(base64, mimeType)` in `src/services/api.ts`
+- **Backend:** `POST /{baseSiteId}/agent/visual-search` (same auth as other OCC endpoints)
+- **Response:** Full OCC-shaped products mapped via `mapOccProduct`, with `aiDetail` (reasoning, searchTerms) and match badges
+- **Match types:** `bestMatch` (Best Match), `similar` (Similar), `explore` (You Might Like)
+- **Types:** `VisualSearchResult`, `VisualSearchMatch`, `MappedVisualSearchMatch`, `VisualSearchAiDetail` in `src/types/index.ts`
+- **Display:** Uses same `ProductCard` component as normal search, with match type badge overlay
+- **Mobile:** Uses `capture="environment"` for native camera, 44px+ touch targets
+
+## Don'ts
+
+- Don't modify files in `sample/` — it's a read-only reference
+- Don't use class components
+- Don't use default exports
+- Don't create inline styles (use Tailwind)
+- Don't ignore TypeScript errors with `@ts-ignore`
+- Don't leave console.logs in production code
