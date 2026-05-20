@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Required;
 import javax.annotation.PostConstruct;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,12 @@ public class DefaultAgentService implements AgentService
 	private static final Logger LOG = LoggerFactory.getLogger(DefaultAgentService.class);
 	private static final int MAX_TOOL_ITERATIONS = 10;
 
+	// Above this size, tool result payloads are replaced with a short snippet before being
+	// returned to the client (and thus echoed back on the next turn). Keeps long conversations
+	// from ballooning over time. The agent's own in-progress tool loop still sees full payloads.
+	private static final int TOOL_RESULT_SUMMARY_THRESHOLD = 300;
+	private static final int TOOL_RESULT_SUMMARY_SNIPPET = 200;
+
 	private static final Set<String> BROWSE_TOOLS = Set.of(
 		"product_search", "product_get", "cart_add_product",
 		"customer_get", "customer_lookup", "order_history", "order_get", "promotions_get");
@@ -33,12 +40,13 @@ public class DefaultAgentService implements AgentService
 	private static final Set<String> CART_TOOLS = Set.of(
 		"product_search", "product_get", "cart_add_product",
 		"customer_get", "customer_lookup", "order_history", "order_get",
-		"cart_get", "cart_update_entry", "cart_remove_entry", "promotions_get");
+		"cart_get", "cart_update_entry", "cart_remove_entry",
+		"cart_apply_voucher", "promotions_get");
 
 	private static final String INTENT_PROMPT =
 		"Classify the user's shopping intent as exactly one word: browse, cart, or checkout.\n" +
 		"- browse: searching, viewing products, asking questions, greeting, general chat\n" +
-		"- cart: viewing cart, changing quantities, removing items\n" +
+		"- cart: viewing cart, changing quantities, removing items, applying coupons or vouchers\n" +
 		"- checkout: buying, purchasing, placing order, ready to pay, completing a purchase\n" +
 		"Reply with ONLY that single word.";
 
@@ -189,6 +197,7 @@ public class DefaultAgentService implements AgentService
 		fullMessages.addAll(messages);
 
 		String uiAction = null;
+		final Set<String> seenInvocations = new HashSet<>();
 
 		int iterations = 0;
 		while (iterations < MAX_TOOL_ITERATIONS)
@@ -217,7 +226,7 @@ public class DefaultAgentService implements AgentService
 				// Return the result: the reply plus the full message history (minus system prompt)
 				final Map<String, Object> result = new LinkedHashMap<>();
 				result.put("reply", reply);
-				result.put("messages", fullMessages.subList(1, fullMessages.size()));
+				result.put("messages", summarizeHistoryForClient(fullMessages.subList(1, fullMessages.size())));
 				if (uiAction != null)
 				{
 					result.put("action", uiAction);
@@ -227,6 +236,7 @@ public class DefaultAgentService implements AgentService
 
 			// Process tool calls
 			final List<Map<String, Object>> toolCalls = (List<Map<String, Object>>) assistantMessage.get("tool_calls");
+			boolean allDuplicates = !toolCalls.isEmpty();
 			for (final Map<String, Object> toolCall : toolCalls)
 			{
 				final String toolCallId = (String) toolCall.get("id");
@@ -234,35 +244,47 @@ public class DefaultAgentService implements AgentService
 				final String toolName = (String) function.get("name");
 				final String argsJson = (String) function.get("arguments");
 
-				LOG.info("Agent executing tool: {} with args: {}", toolName, argsJson);
+				final String invocationKey = toolName + "|" + argsJson;
+				final boolean isDuplicate = !seenInvocations.add(invocationKey);
 
 				String toolResultContent;
-				try
+				if (isDuplicate)
 				{
-					final Map<String, Object> toolArgs = objectMapper.readValue(argsJson, Map.class);
-
-					// Capture UI actions
-					if ("ui_action".equals(toolName))
-					{
-						uiAction = (String) toolArgs.get("action");
-					}
-
-					final McpToolHandler handler = toolHandlerMap.get(toolName);
-
-					if (handler == null)
-					{
-						toolResultContent = "Unknown tool: " + toolName;
-					}
-					else
-					{
-						final McpToolResult toolResult = handler.execute(toolArgs);
-						toolResultContent = toolResult.getContent();
-					}
+					LOG.info("Skipping duplicate tool invocation: {} {}", toolName, argsJson);
+					toolResultContent = "This tool was already called with the same arguments in this conversation. "
+						+ "Reuse the previous result instead of calling it again.";
 				}
-				catch (final Exception e)
+				else
 				{
-					LOG.error("Tool execution error for {}: {}", toolName, e.getMessage(), e);
-					toolResultContent = "Tool error: " + e.getMessage();
+					allDuplicates = false;
+					LOG.info("Agent executing tool: {} with args: {}", toolName, argsJson);
+					try
+					{
+						final Map<String, Object> toolArgs = objectMapper.readValue(argsJson, Map.class);
+
+						// Capture UI actions
+						if ("ui_action".equals(toolName))
+						{
+							uiAction = (String) toolArgs.get("action");
+						}
+
+						final McpToolHandler handler = toolHandlerMap.get(toolName);
+
+						if (handler == null)
+						{
+							toolResultContent = "Unknown tool: " + toolName;
+						}
+						else
+						{
+							final McpToolResult toolResult = handler.execute(toolArgs);
+							toolResultContent = toolResult.getContent();
+						}
+					}
+					catch (final Exception e)
+					{
+						LOG.error("Tool execution error for {}: {}", toolName, e.getMessage(), e);
+						toolResultContent = "Tool error: " + e.getMessage();
+					}
 				}
 
 				// Add tool result message
@@ -272,13 +294,43 @@ public class DefaultAgentService implements AgentService
 				toolResultMessage.put("content", toolResultContent);
 				fullMessages.add(toolResultMessage);
 			}
+
+			if (allDuplicates)
+			{
+				LOG.warn("Agent attempted only duplicate tool calls in iteration {}; breaking tool loop", iterations);
+				break;
+			}
 		}
 
-		// Max iterations reached
+		// Max iterations reached, or all tool calls were duplicates
 		final Map<String, Object> result = new LinkedHashMap<>();
 		result.put("reply", "I apologize, but I'm having trouble completing your request. Could you try rephrasing it?");
-		result.put("messages", fullMessages.subList(1, fullMessages.size()));
+		result.put("messages", summarizeHistoryForClient(fullMessages.subList(1, fullMessages.size())));
 		return result;
+	}
+
+	private List<Map<String, Object>> summarizeHistoryForClient(final List<Map<String, Object>> history)
+	{
+		final List<Map<String, Object>> out = new ArrayList<>(history.size());
+		for (final Map<String, Object> message : history)
+		{
+			if (!"tool".equals(message.get("role")))
+			{
+				out.add(message);
+				continue;
+			}
+			final String content = (String) message.getOrDefault("content", "");
+			if (content.length() <= TOOL_RESULT_SUMMARY_THRESHOLD)
+			{
+				out.add(message);
+				continue;
+			}
+			final Map<String, Object> summarized = new LinkedHashMap<>(message);
+			summarized.put("content", "[previous tool result summarized; " + content.length()
+				+ " chars omitted] " + content.substring(0, TOOL_RESULT_SUMMARY_SNIPPET) + "...");
+			out.add(summarized);
+		}
+		return out;
 	}
 
 	private String resolveIntentModel()

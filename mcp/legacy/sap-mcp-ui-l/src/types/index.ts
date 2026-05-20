@@ -30,6 +30,7 @@ export interface CartItem {
   price: number;
   entryNumber?: number;
   product?: Product;
+  discountValue?: number;
 }
 
 // ============================================
@@ -138,6 +139,7 @@ export interface AppliedVoucher {
 export interface AppliedPromotion {
   description: string;
   promotionCode?: string;
+  consumedEntries?: number[];
 }
 
 // ============================================

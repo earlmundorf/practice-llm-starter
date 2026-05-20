@@ -117,13 +117,34 @@ const mapOccProduct = (occ: any): Product => ({
     || undefined,
 });
 
-const mapOccCartEntry = (entry: any): CartItem => ({
-  productId: entry.product?.code || '',
-  productName: entry.product?.name || '',
-  quantity: entry.quantity || 0,
-  price: entry.basePrice?.value ?? 0,
-  entryNumber: entry.entryNumber,
-});
+const mapOccCartEntry = (entry: any): CartItem => {
+  const baseUnit = entry.basePrice?.value ?? 0;
+  const quantity = entry.quantity || 0;
+  const expectedFullTotal = baseUnit * quantity;
+  const entryTotalPrice = entry.totalPrice?.value;
+
+  let discountValue = 0;
+  if (Array.isArray(entry.discountValues) && entry.discountValues.length > 0) {
+    discountValue = entry.discountValues.reduce(
+      (sum: number, d: any) => sum + (d?.value ?? d?.appliedValue ?? 0),
+      0,
+    );
+  }
+  // Fallback: derive from the difference between line total and base * qty.
+  // Some OCC variants don't expose discountValues but do compute totalPrice post-discount.
+  if (discountValue === 0 && entryTotalPrice != null && entryTotalPrice < expectedFullTotal) {
+    discountValue = expectedFullTotal - entryTotalPrice;
+  }
+
+  return {
+    productId: entry.product?.code || '',
+    productName: entry.product?.name || '',
+    quantity,
+    price: baseUnit,
+    entryNumber: entry.entryNumber,
+    discountValue,
+  };
+};
 
 const mapOccOrderEntry = (entry: any): OrderItem => ({
   productId: entry.product?.code || '',
@@ -576,6 +597,11 @@ export const api = {
       (promos || []).map((p: any) => ({
         description: p.description || p.promotion?.description || p.promotion?.name || p.promotion?.code || '',
         promotionCode: p.promotion?.code,
+        consumedEntries: Array.isArray(p.consumedEntries)
+          ? p.consumedEntries
+              .map((c: any) => c?.orderEntryNumber)
+              .filter((n: any) => typeof n === 'number')
+          : undefined,
       }));
     /* eslint-enable @typescript-eslint/no-explicit-any */
 

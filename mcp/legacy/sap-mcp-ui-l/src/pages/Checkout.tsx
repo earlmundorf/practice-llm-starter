@@ -56,7 +56,6 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
   const [potentialPromotions, setPotentialPromotions] = useState<AppliedPromotion[]>([]);
   const [totalDiscounts, setTotalDiscounts] = useState(0);
   const [serverTotal, setServerTotal] = useState<number | null>(null);
-  const [serverSubTotal, setServerSubTotal] = useState<number | null>(null);
   const [serverDeliveryCost, setServerDeliveryCost] = useState<number | null>(null);
 
   useEffect(() => {
@@ -81,7 +80,6 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
       ]);
       setTotalDiscounts(promoData.totalDiscounts);
       setServerTotal(promoData.totalPrice);
-      setServerSubTotal(promoData.subTotal);
       setServerDeliveryCost(promoData.deliveryCost);
     } catch {
       // Non-critical — promotions display is optional
@@ -601,7 +599,15 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
                 <>
                   <div className="space-y-3 mb-6">
                     {cart.map((item, idx) => {
-                      const itemTotal = item.price * item.quantity;
+                      const originalTotal = item.price * item.quantity;
+                      const lineDiscount = item.discountValue ?? 0;
+                      const discountedTotal = Math.max(0, originalTotal - lineDiscount);
+                      const isDiscounted = lineDiscount > 0;
+                      const linePromos = item.entryNumber != null
+                        ? appliedPromotions.filter(
+                            (p) => p.consumedEntries?.includes(item.entryNumber as number),
+                          )
+                        : [];
                       return (
                         <div
                           key={idx}
@@ -616,15 +622,33 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
                                 Product: {item.productId}
                               </p>
                             </div>
-                            <span className="font-bold text-gray-900 dark:text-white">
-                              ${itemTotal.toFixed(2)}
-                            </span>
+                            <div className="text-right">
+                              {isDiscounted && (
+                                <span className="block text-xs text-gray-500 dark:text-gray-400 line-through">
+                                  ${originalTotal.toFixed(2)}
+                                </span>
+                              )}
+                              <span
+                                className={`font-bold ${
+                                  isDiscounted
+                                    ? 'text-green-600 dark:text-green-400'
+                                    : 'text-gray-900 dark:text-white'
+                                }`}
+                              >
+                                ${discountedTotal.toFixed(2)}
+                              </span>
+                            </div>
                           </div>
                           <div className="flex justify-between items-center text-sm">
                             <span className="text-gray-600 dark:text-gray-400">
                               ${item.price.toFixed(2)} x {item.quantity}
                             </span>
                           </div>
+                          {isDiscounted && linePromos.length > 0 && (
+                            <div className="mt-2 text-xs text-green-700 dark:text-green-300">
+                              {linePromos.map((p) => p.description).join(' · ')}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -668,7 +692,7 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
                         Subtotal ({cart.reduce((sum, item) => sum + item.quantity, 0)} items):
                       </span>
                       <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                        ${(serverSubTotal !== null ? serverSubTotal : subtotal).toFixed(2)}
+                        ${subtotal.toFixed(2)}
                       </span>
                     </div>
                     {selectedMode && deliveryModes.length > 0 && (

@@ -53,6 +53,12 @@
         <property name="cartFacade" ref="cartFacade"/>
     </bean>
 
+    <alias name="defaultCartApplyVoucherToolHandler" alias="cartApplyVoucherToolHandler"/>
+    <bean id="defaultCartApplyVoucherToolHandler"
+          class="com.coremcp.tools.impl.CartApplyVoucherToolHandler">
+        <property name="voucherFacade" ref="voucherFacade"/>
+    </bean>
+
     <alias name="defaultOrderGetToolHandler" alias="orderGetToolHandler"/>
     <bean id="defaultOrderGetToolHandler"
           class="com.coremcp.tools.impl.OrderGetToolHandler">
@@ -157,6 +163,7 @@
                 <ref bean="cartAddProductToolHandler"/>
                 <ref bean="cartUpdateEntryToolHandler"/>
                 <ref bean="cartRemoveEntryToolHandler"/>
+                <ref bean="cartApplyVoucherToolHandler"/>
                 <ref bean="orderGetToolHandler"/>
                 <ref bean="orderHistoryToolHandler"/>
                 <ref bean="customerGetToolHandler"/>
@@ -222,6 +229,7 @@
                 <ref bean="cartAddProductToolHandler"/>
                 <ref bean="cartUpdateEntryToolHandler"/>
                 <ref bean="cartRemoveEntryToolHandler"/>
+                <ref bean="cartApplyVoucherToolHandler"/>
                 <ref bean="orderGetToolHandler"/>
                 <ref bean="orderHistoryToolHandler"/>
                 <ref bean="customerGetToolHandler"/>

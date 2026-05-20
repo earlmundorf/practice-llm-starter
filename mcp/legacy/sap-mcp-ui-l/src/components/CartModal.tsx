@@ -167,60 +167,88 @@ export const CartModal = ({ isOpen, onClose }: CartModalProps) => {
             </div>
           ) : (
             <div className="space-y-3">
-              {cart.map((item) => (
-                <div
-                  key={item.productId}
-                  className="bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-4 hover:shadow-md transition-shadow"
-                >
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
-                        {item.productName}
-                      </h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        ${item.price.toFixed(2)} each
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => removeItem(item.productId)}
-                      className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 transition-colors ml-2"
-                      title="Remove item"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-2">
+              {cart.map((item) => {
+                const originalTotal = item.price * item.quantity;
+                const lineDiscount = item.discountValue ?? 0;
+                const discountedTotal = Math.max(0, originalTotal - lineDiscount);
+                const isDiscounted = lineDiscount > 0;
+                const linePromos = item.entryNumber != null
+                  ? appliedPromotions.filter(
+                      (p) => p.consumedEntries?.includes(item.entryNumber as number),
+                    )
+                  : [];
+                return (
+                  <div
+                    key={item.productId}
+                    className="bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-4 hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
+                          {item.productName}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          ${item.price.toFixed(2)} each
+                        </p>
+                      </div>
                       <button
-                        onClick={() =>
-                          updateQuantity(item.productId, item.quantity - 1)
-                        }
-                        className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-md transition-colors font-semibold text-gray-700 dark:text-gray-200"
+                        onClick={() => removeItem(item.productId)}
+                        className="text-gray-400 dark:text-gray-500 hover:text-red-600 dark:hover:text-red-400 transition-colors ml-2"
+                        title="Remove item"
                       >
-                        −
-                      </button>
-                      <span className="w-8 text-center font-semibold text-gray-900 dark:text-white">
-                        {item.quantity}
-                      </span>
-                      <button
-                        onClick={() =>
-                          updateQuantity(item.productId, item.quantity + 1)
-                        }
-                        className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-md transition-colors font-semibold text-gray-700 dark:text-gray-200"
-                      >
-                        +
+                        ✕
                       </button>
                     </div>
 
-                    <div className="text-right">
-                      <p className="font-bold text-lg text-gray-900 dark:text-white">
-                        ${(item.price * item.quantity).toFixed(2)}
-                      </p>
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() =>
+                            updateQuantity(item.productId, item.quantity - 1)
+                          }
+                          className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-md transition-colors font-semibold text-gray-700 dark:text-gray-200"
+                        >
+                          −
+                        </button>
+                        <span className="w-8 text-center font-semibold text-gray-900 dark:text-white">
+                          {item.quantity}
+                        </span>
+                        <button
+                          onClick={() =>
+                            updateQuantity(item.productId, item.quantity + 1)
+                          }
+                          className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-md transition-colors font-semibold text-gray-700 dark:text-gray-200"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <div className="text-right">
+                        {isDiscounted && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 line-through leading-none">
+                            ${originalTotal.toFixed(2)}
+                          </p>
+                        )}
+                        <p
+                          className={`font-bold text-lg ${
+                            isDiscounted
+                              ? 'text-green-600 dark:text-green-400'
+                              : 'text-gray-900 dark:text-white'
+                          }`}
+                        >
+                          ${discountedTotal.toFixed(2)}
+                        </p>
+                      </div>
                     </div>
+
+                    {isDiscounted && linePromos.length > 0 && (
+                      <div className="mt-2 text-xs text-green-700 dark:text-green-300">
+                        {linePromos.map((p) => p.description).join(' · ')}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
