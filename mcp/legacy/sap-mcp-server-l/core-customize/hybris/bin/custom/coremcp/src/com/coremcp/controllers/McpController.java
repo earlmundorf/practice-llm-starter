@@ -5,11 +5,9 @@ import com.coremcp.dto.JsonRpcError;
 import com.coremcp.dto.JsonRpcRequest;
 import com.coremcp.dto.JsonRpcResponse;
 import com.coremcp.dto.McpSession;
+import com.coremcp.services.McpCartSessionService;
 import com.coremcp.services.McpDispatcherService;
 import com.coremcp.services.McpSessionService;
-
-import de.hybris.platform.commercewebservicescommons.strategies.CartLoaderStrategy;
-import de.hybris.platform.order.CartService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,11 +40,8 @@ public class McpController
 	@Resource(name = "mcpSessionService")
 	private McpSessionService mcpSessionService;
 
-	@Resource(name = "cartLoaderStrategy")
-	private CartLoaderStrategy cartLoaderStrategy;
-
-	@Resource(name = "cartService")
-	private CartService cartService;
+	@Resource(name = "mcpCartSessionService")
+	private McpCartSessionService mcpCartSessionService;
 
 	@Secured({ "ROLE_CUSTOMERGROUP", "ROLE_TRUSTED_CLIENT" })
 	@RequestMapping(value = "/mcp", method = RequestMethod.POST, produces = "application/json")
@@ -83,39 +78,13 @@ public class McpController
 					JsonRpcError.INVALID_REQUEST, "Invalid or expired MCP-Session-Id"), response);
 			}
 
-			// Load the session's cart if we have one — don't fall back to "current" which picks up stale carts
-			final String sessionCartCode = session.getCartCode();
-			if (sessionCartCode != null)
-			{
-				try
-				{
-					cartLoaderStrategy.loadCart(sessionCartCode);
-				}
-				catch (final Exception e)
-				{
-					LOG.debug("Could not load cart {}, will create fresh: {}", sessionCartCode, e.getMessage());
-					session.setCartCode(null);
-				}
-			}
+			// Load the session's cart (no fallback to "current" — we want session-specific carts).
+			mcpCartSessionService.loadCart(session.getCartCode());
 
 			final JsonRpcResponse jsonRpcResponse = mcpDispatcherService.dispatch(request, session);
 
-			// Save cart code back to session for next request (or clear it if cart was removed after order)
-			try
-			{
-				if (cartService.hasSessionCart())
-				{
-					session.setCartCode(cartService.getSessionCart().getCode());
-				}
-				else
-				{
-					session.setCartCode(null);
-				}
-			}
-			catch (final Exception e)
-			{
-				LOG.debug("Could not save cart code to session: {}", e.getMessage());
-			}
+			// Sync the session cart code with hybris's current session cart state.
+			session.setCartCode(mcpCartSessionService.getSessionCartCode());
 
 			// Notifications return null — respond with 202 Accepted
 			if (jsonRpcResponse == null)

@@ -10,7 +10,8 @@ import de.hybris.platform.servicelayer.search.FlexibleSearchService;
 import de.hybris.platform.servicelayer.search.SearchResult;
 import de.hybris.platform.servicelayer.user.UserService;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Required;
 
 import java.text.SimpleDateFormat;
@@ -28,7 +29,7 @@ import java.util.Map;
  */
 public class DefaultPromotionQueryService implements PromotionQueryService
 {
-	private static final Logger LOG = Logger.getLogger(DefaultPromotionQueryService.class);
+	private static final Logger LOG = LoggerFactory.getLogger(DefaultPromotionQueryService.class);
 	private static final String DATE_FORMAT = "yyyy-MM-dd'T'HH:mm:ss";
 
 	private FlexibleSearchService flexibleSearchService;
@@ -161,7 +162,7 @@ public class DefaultPromotionQueryService implements PromotionQueryService
 		}
 		catch (final Exception e)
 		{
-			LOG.warn("Failed to query total redemptions: " + e.getMessage());
+			LOG.warn("Failed to query total redemptions: {}", e.getMessage());
 			return Collections.emptyMap();
 		}
 	}
@@ -194,7 +195,7 @@ public class DefaultPromotionQueryService implements PromotionQueryService
 		}
 		catch (final Exception e)
 		{
-			LOG.warn("Failed to query user redemptions: " + e.getMessage());
+			LOG.warn("Failed to query user redemptions: {}", e.getMessage());
 			return Collections.emptyMap();
 		}
 	}

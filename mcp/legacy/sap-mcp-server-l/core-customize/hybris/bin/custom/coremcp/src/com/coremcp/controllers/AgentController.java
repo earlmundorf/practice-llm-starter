@@ -2,9 +2,7 @@ package com.coremcp.controllers;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.coremcp.services.AgentService;
-
-import de.hybris.platform.commercewebservicescommons.strategies.CartLoaderStrategy;
-import de.hybris.platform.order.CartService;
+import com.coremcp.services.McpCartSessionService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,7 +21,8 @@ import java.util.Map;
 
 /**
  * REST controller for the AI shopping agent.
- * Accepts chat messages and returns AI-powered responses using OpenAI with tool calling.
+ * Accepts chat messages and returns AI-powered responses using the configured
+ * LLM provider with tool calling.
  */
 @Controller
 @RequestMapping(value = "/{baseSiteId}")
@@ -35,11 +34,8 @@ public class AgentController
 	@Resource(name = "agentService")
 	private AgentService agentService;
 
-	@Resource(name = "cartLoaderStrategy")
-	private CartLoaderStrategy cartLoaderStrategy;
-
-	@Resource(name = "cartService")
-	private CartService cartService;
+	@Resource(name = "mcpCartSessionService")
+	private McpCartSessionService mcpCartSessionService;
 
 	@Secured({ "ROLE_CUSTOMERGROUP", "ROLE_TRUSTED_CLIENT" })
 	@RequestMapping(value = "/agent/chat", method = RequestMethod.POST, produces = "application/json")
@@ -58,26 +54,17 @@ public class AgentController
 				return objectMapper.writeValueAsString(Map.of("error", "messages array is required"));
 			}
 
-			// Load the user's cart into the session. Prefer the explicit cartCode from the UI;
-			// fall back to "current" (most recently modified cart) so agent tool calls that
-			// modify the cart within a multi-turn conversation work correctly.
-			final String cartCode = (String) request.get("cartCode");
-			try
-			{
-				cartLoaderStrategy.loadCart(
-					cartCode != null && !cartCode.isEmpty() ? cartCode : "current");
-			}
-			catch (final Exception e)
-			{
-				LOG.debug("No existing cart to load: {}", e.getMessage());
-			}
+			// Prefer the explicit cartCode from the UI; fall back to "current" so multi-turn
+			// tool calls within a conversation operate on the same cart.
+			mcpCartSessionService.loadCartOrCurrent((String) request.get("cartCode"));
 
 			final Map<String, Object> result = agentService.chat(messages);
 
-			// Return the session cart code so the UI stays in sync
-			if (cartService.hasSessionCart())
+			// Return the session cart code so the UI stays in sync.
+			final String sessionCartCode = mcpCartSessionService.getSessionCartCode();
+			if (sessionCartCode != null)
 			{
-				result.put("cartCode", cartService.getSessionCart().getCode());
+				result.put("cartCode", sessionCartCode);
 			}
 
 			return objectMapper.writeValueAsString(result);
