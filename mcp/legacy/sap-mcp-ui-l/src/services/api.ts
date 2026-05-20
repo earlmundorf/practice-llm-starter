@@ -525,14 +525,35 @@ export const api = {
       addressId = saved.id;
     }
 
-    const res = await authFetch(
-      `${OCC_BASE}/users/current/carts/${cartCode}/addresses/delivery?addressId=${addressId}`,
-      { method: 'PUT' }
-    );
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.errors?.[0]?.message || 'Failed to set delivery address');
-    }
+    // If the cart already has this address attached (matched by content), skip the PUT.
+    // Avoids an unnecessary round-trip on every checkout mount AND sidesteps
+    // JaloObjectNoLongerValidError when a stale PK reference can't be re-resolved by
+    // the PUT-by-id path on long-running Hybris sessions.
+    try {
+      const cartRes = await authFetch(`${OCC_BASE}/users/current/carts/${cartCode}?fields=DEFAULT`);
+      if (cartRes.ok) {
+        const cart = await cartRes.json();
+        const current = cart?.deliveryAddress;
+        const sameAddress = current
+          && current.line1 === address.line1
+          && (current.line2 ?? '') === (address.line2 ?? '')
+          && current.town === address.town
+          && current.postalCode === address.postalCode
+          && current.country?.isocode === address.country.isocode;
+        if (sameAddress) return;
+      }
+    } catch { /* fall through to PUT */ }
+
+    const putUrl = `${OCC_BASE}/users/current/carts/${cartCode}/addresses/delivery?addressId=${addressId}`;
+    const res = await authFetch(putUrl, { method: 'PUT' });
+    if (res.ok) return;
+
+    const body = await res.text().catch(() => '');
+    let errMsg = 'Failed to set delivery address';
+    try {
+      errMsg = JSON.parse(body)?.errors?.[0]?.message || errMsg;
+    } catch { /* not json */ }
+    throw new Error(errMsg);
   },
 
   setCartDeliveryMode: async (modeCode: string): Promise<void> => {
@@ -597,18 +618,46 @@ export const api = {
       (promos || []).map((p: any) => ({
         description: p.description || p.promotion?.description || p.promotion?.name || p.promotion?.code || '',
         promotionCode: p.promotion?.code,
+        promotionType: p.promotion?.promotionType,
         consumedEntries: Array.isArray(p.consumedEntries)
           ? p.consumedEntries
               .map((c: any) => c?.orderEntryNumber)
               .filter((n: any) => typeof n === 'number')
           : undefined,
       }));
+
+    // Rule-engine promos all share promotionType="Rule Based Promotion", so the only reliable
+    // type signal is the discount math itself: product-level promos drop the consumed entry's
+    // adjustedUnitPrice below the entry's basePrice; order- and shipping-level promos leave it
+    // unchanged. Build an entryNumber → basePrice lookup and classify on that.
+    const entryBasePrice = new Map<number, number>();
+    (data.entries || []).forEach((e: any) => {
+      if (typeof e.entryNumber === 'number') {
+        entryBasePrice.set(e.entryNumber, e.basePrice?.value ?? 0);
+      }
+    });
+
+    const isProductLevelPromo = (p: any): boolean => {
+      if (!Array.isArray(p?.consumedEntries) || p.consumedEntries.length === 0) return false;
+      return p.consumedEntries.some((c: any) => {
+        const base = entryBasePrice.get(c?.orderEntryNumber);
+        const adjusted = c?.adjustedUnitPrice;
+        return typeof base === 'number'
+          && typeof adjusted === 'number'
+          && adjusted < base - 0.001;
+      });
+    };
+
+    const rawAll: any[] = [
+      ...(data.appliedOrderPromotions || []),
+      ...(data.appliedProductPromotions || []),
+    ];
     /* eslint-enable @typescript-eslint/no-explicit-any */
 
     return {
       appliedVouchers,
-      appliedOrderPromotions: mapPromotions(data.appliedOrderPromotions),
-      appliedProductPromotions: mapPromotions(data.appliedProductPromotions),
+      appliedOrderPromotions: mapPromotions(rawAll.filter((p) => !isProductLevelPromo(p))),
+      appliedProductPromotions: mapPromotions(rawAll.filter(isProductLevelPromo)),
       potentialOrderPromotions: mapPromotions(data.potentialOrderPromotions),
       potentialProductPromotions: mapPromotions(data.potentialProductPromotions),
       totalDiscounts: data.totalDiscounts?.value ?? 0,

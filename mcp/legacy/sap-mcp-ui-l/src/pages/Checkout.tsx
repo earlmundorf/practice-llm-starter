@@ -52,7 +52,8 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
   const [couponError, setCouponError] = useState('');
   const [couponLoading, setCouponLoading] = useState(false);
   const [appliedVouchers, setAppliedVouchers] = useState<AppliedVoucher[]>([]);
-  const [appliedPromotions, setAppliedPromotions] = useState<AppliedPromotion[]>([]);
+  const [appliedOrderPromotions, setAppliedOrderPromotions] = useState<AppliedPromotion[]>([]);
+  const [appliedProductPromotions, setAppliedProductPromotions] = useState<AppliedPromotion[]>([]);
   const [potentialPromotions, setPotentialPromotions] = useState<AppliedPromotion[]>([]);
   const [totalDiscounts, setTotalDiscounts] = useState(0);
   const [serverTotal, setServerTotal] = useState<number | null>(null);
@@ -70,10 +71,8 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
     try {
       const promoData = await api.getCartPromotions();
       setAppliedVouchers(promoData.appliedVouchers);
-      setAppliedPromotions([
-        ...promoData.appliedOrderPromotions,
-        ...promoData.appliedProductPromotions,
-      ]);
+      setAppliedOrderPromotions(promoData.appliedOrderPromotions);
+      setAppliedProductPromotions(promoData.appliedProductPromotions);
       setPotentialPromotions([
         ...promoData.potentialOrderPromotions,
         ...promoData.potentialProductPromotions,
@@ -604,7 +603,7 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
                       const discountedTotal = Math.max(0, originalTotal - lineDiscount);
                       const isDiscounted = lineDiscount > 0;
                       const linePromos = item.entryNumber != null
-                        ? appliedPromotions.filter(
+                        ? appliedProductPromotions.filter(
                             (p) => p.consumedEntries?.includes(item.entryNumber as number),
                           )
                         : [];
@@ -653,10 +652,10 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
                       );
                     })}
                   </div>
-                  {/* Applied Promotions */}
-                  {appliedPromotions.length > 0 && (
+                  {/* Applied Order-Level Promotions (product-level promos appear inline on each line) */}
+                  {appliedOrderPromotions.length > 0 && (
                     <div className="mb-4 space-y-1">
-                      {appliedPromotions.map((promo, idx) => (
+                      {appliedOrderPromotions.map((promo, idx) => (
                         <div
                           key={idx}
                           className="flex items-start gap-2 text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/40 rounded-lg px-3 py-2"

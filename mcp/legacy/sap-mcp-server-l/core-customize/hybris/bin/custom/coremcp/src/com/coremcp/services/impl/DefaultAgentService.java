@@ -6,6 +6,11 @@ import com.coremcp.services.LlmClient;
 import com.coremcp.tools.McpToolHandler;
 import com.coremcp.tools.McpToolResult;
 
+import de.hybris.platform.commercefacades.order.CartFacade;
+import de.hybris.platform.commercefacades.order.data.CartData;
+import de.hybris.platform.commercefacades.order.data.OrderEntryData;
+import de.hybris.platform.commercefacades.customer.CustomerFacade;
+import de.hybris.platform.commercefacades.user.data.CustomerData;
 import de.hybris.platform.util.Config;
 
 import org.slf4j.Logger;
@@ -41,7 +46,7 @@ public class DefaultAgentService implements AgentService
 		"product_search", "product_get", "cart_add_product",
 		"customer_get", "customer_lookup", "order_history", "order_get",
 		"cart_get", "cart_update_entry", "cart_remove_entry",
-		"cart_apply_voucher", "promotions_get");
+		"cart_apply_voucher", "cart_remove_voucher", "promotions_get");
 
 	private static final String INTENT_PROMPT =
 		"Classify the user's shopping intent as exactly one word: browse, cart, or checkout.\n" +
@@ -75,6 +80,8 @@ public class DefaultAgentService implements AgentService
 
 	private List<McpToolHandler> toolHandlers;
 	private LlmClient llmClient;
+	private CartFacade cartFacade;
+	private CustomerFacade customerFacade;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	private Map<String, McpToolHandler> toolHandlerMap;
@@ -191,9 +198,13 @@ public class DefaultAgentService implements AgentService
 		final List<Map<String, Object>> tools = toolsForIntent(intent);
 		LOG.info("Classified intent: {} — sending {} tool definitions", intent, tools.size());
 
-		// Build the full conversation with system prompt
+		// Build the full conversation: persona prompt, fresh state snapshot, then conversation history.
+		// The persona prompt is stable (good for OpenAI's prefix cache); the state block changes per
+		// turn but gives the model cart/customer context without burning round-trips on cart_get /
+		// customer_get.
 		final List<Map<String, Object>> fullMessages = new ArrayList<>();
 		fullMessages.add(Map.of("role", "system", "content", SYSTEM_PROMPT));
+		fullMessages.add(Map.of("role", "system", "content", buildStateSnapshotMessage(intent)));
 		fullMessages.addAll(messages);
 
 		String uiAction = null;
@@ -226,7 +237,7 @@ public class DefaultAgentService implements AgentService
 				// Return the result: the reply plus the full message history (minus system prompt)
 				final Map<String, Object> result = new LinkedHashMap<>();
 				result.put("reply", reply);
-				result.put("messages", summarizeHistoryForClient(fullMessages.subList(1, fullMessages.size())));
+				result.put("messages", summarizeHistoryForClient(fullMessages.subList(2, fullMessages.size())));
 				if (uiAction != null)
 				{
 					result.put("action", uiAction);
@@ -305,8 +316,99 @@ public class DefaultAgentService implements AgentService
 		// Max iterations reached, or all tool calls were duplicates
 		final Map<String, Object> result = new LinkedHashMap<>();
 		result.put("reply", "I apologize, but I'm having trouble completing your request. Could you try rephrasing it?");
-		result.put("messages", summarizeHistoryForClient(fullMessages.subList(1, fullMessages.size())));
+		result.put("messages", summarizeHistoryForClient(fullMessages.subList(2, fullMessages.size())));
 		return result;
+	}
+
+	private String buildStateSnapshotMessage(final String intent)
+	{
+		final Map<String, Object> state = new LinkedHashMap<>();
+		state.put("intent", intent);
+
+		try
+		{
+			final CustomerData customer = customerFacade.getCurrentCustomer();
+			if (customer != null)
+			{
+				final Map<String, Object> customerData = new LinkedHashMap<>();
+				customerData.put("uid", customer.getUid());
+				customerData.put("name", customer.getName());
+				state.put("customer", customerData);
+			}
+		}
+		catch (final Exception e)
+		{
+			LOG.debug("Could not build customer snapshot: {}", e.getMessage());
+		}
+
+		try
+		{
+			if (cartFacade.hasSessionCart())
+			{
+				final CartData cart = cartFacade.getSessionCart();
+				final Map<String, Object> cartSnap = new LinkedHashMap<>();
+				cartSnap.put("code", cart.getCode());
+				cartSnap.put("totalItems", cart.getTotalItems());
+				if (cart.getSubTotal() != null)
+				{
+					cartSnap.put("subtotal", cart.getSubTotal().getValue());
+				}
+				if (cart.getTotalDiscounts() != null)
+				{
+					cartSnap.put("discounts", cart.getTotalDiscounts().getValue());
+				}
+				if (cart.getTotalPrice() != null)
+				{
+					cartSnap.put("total", cart.getTotalPrice().getValue());
+				}
+
+				final List<Map<String, Object>> entries = new ArrayList<>();
+				if (cart.getEntries() != null)
+				{
+					for (final OrderEntryData entry : cart.getEntries())
+					{
+						final Map<String, Object> e = new LinkedHashMap<>();
+						if (entry.getProduct() != null)
+						{
+							e.put("productCode", entry.getProduct().getCode());
+							e.put("name", entry.getProduct().getName());
+						}
+						e.put("qty", entry.getQuantity());
+						if (entry.getTotalPrice() != null)
+						{
+							e.put("lineTotal", entry.getTotalPrice().getValue());
+						}
+						entries.add(e);
+					}
+				}
+				cartSnap.put("entries", entries);
+
+				if (cart.getAppliedVouchers() != null && !cart.getAppliedVouchers().isEmpty())
+				{
+					cartSnap.put("appliedVouchers", cart.getAppliedVouchers());
+				}
+
+				state.put("cart", cartSnap);
+			}
+		}
+		catch (final Exception e)
+		{
+			LOG.debug("Could not build cart snapshot: {}", e.getMessage());
+		}
+
+		String stateJson;
+		try
+		{
+			stateJson = objectMapper.writeValueAsString(state);
+		}
+		catch (final Exception e)
+		{
+			LOG.warn("Could not serialize state snapshot, falling back to empty: {}", e.getMessage());
+			stateJson = "{}";
+		}
+
+		return "CURRENT STATE (refreshed each turn — use these values directly; do not call cart_get or "
+			+ "customer_get just to look up basics already provided here):\n" + stateJson;
 	}
 
 	private List<Map<String, Object>> summarizeHistoryForClient(final List<Map<String, Object>> history)
@@ -356,5 +458,17 @@ public class DefaultAgentService implements AgentService
 	public void setLlmClient(final LlmClient llmClient)
 	{
 		this.llmClient = llmClient;
+	}
+
+	@Required
+	public void setCartFacade(final CartFacade cartFacade)
+	{
+		this.cartFacade = cartFacade;
+	}
+
+	@Required
+	public void setCustomerFacade(final CustomerFacade customerFacade)
+	{
+		this.customerFacade = customerFacade;
 	}
 }

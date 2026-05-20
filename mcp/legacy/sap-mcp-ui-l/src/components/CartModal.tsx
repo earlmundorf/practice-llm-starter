@@ -12,7 +12,8 @@ export const CartModal = ({ isOpen, onClose }: CartModalProps) => {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [appliedVouchers, setAppliedVouchers] = useState<AppliedVoucher[]>([]);
-  const [appliedPromotions, setAppliedPromotions] = useState<AppliedPromotion[]>([]);
+  const [appliedOrderPromotions, setAppliedOrderPromotions] = useState<AppliedPromotion[]>([]);
+  const [appliedProductPromotions, setAppliedProductPromotions] = useState<AppliedPromotion[]>([]);
   const [potentialPromotions, setPotentialPromotions] = useState<AppliedPromotion[]>([]);
   const [totalDiscounts, setTotalDiscounts] = useState(0);
   const [serverTotal, setServerTotal] = useState<number | null>(null);
@@ -45,10 +46,8 @@ export const CartModal = ({ isOpen, onClose }: CartModalProps) => {
         try {
           const promoData = await api.getCartPromotions();
           setAppliedVouchers(promoData.appliedVouchers);
-          setAppliedPromotions([
-            ...promoData.appliedOrderPromotions,
-            ...promoData.appliedProductPromotions,
-          ]);
+          setAppliedOrderPromotions(promoData.appliedOrderPromotions);
+          setAppliedProductPromotions(promoData.appliedProductPromotions);
           setPotentialPromotions([
             ...promoData.potentialOrderPromotions,
             ...promoData.potentialProductPromotions,
@@ -60,7 +59,8 @@ export const CartModal = ({ isOpen, onClose }: CartModalProps) => {
         }
       } else {
         setAppliedVouchers([]);
-        setAppliedPromotions([]);
+        setAppliedOrderPromotions([]);
+        setAppliedProductPromotions([]);
         setPotentialPromotions([]);
         setTotalDiscounts(0);
         setServerTotal(null);
@@ -173,7 +173,7 @@ export const CartModal = ({ isOpen, onClose }: CartModalProps) => {
                 const discountedTotal = Math.max(0, originalTotal - lineDiscount);
                 const isDiscounted = lineDiscount > 0;
                 const linePromos = item.entryNumber != null
-                  ? appliedPromotions.filter(
+                  ? appliedProductPromotions.filter(
                       (p) => p.consumedEntries?.includes(item.entryNumber as number),
                     )
                   : [];
@@ -256,10 +256,10 @@ export const CartModal = ({ isOpen, onClose }: CartModalProps) => {
         {/* Footer */}
         {cart.length > 0 && (
           <div className="border-t border-gray-200 dark:border-gray-700 p-6 space-y-4 bg-gray-50 dark:bg-gray-900">
-            {/* Applied Promotions */}
-            {appliedPromotions.length > 0 && (
+            {/* Applied Order-Level Promotions (product-level promos appear inline on each line) */}
+            {appliedOrderPromotions.length > 0 && (
               <div className="space-y-1">
-                {appliedPromotions.map((promo, idx) => (
+                {appliedOrderPromotions.map((promo, idx) => (
                   <div
                     key={idx}
                     className="flex items-start gap-2 text-xs text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/40 rounded px-2 py-1.5"

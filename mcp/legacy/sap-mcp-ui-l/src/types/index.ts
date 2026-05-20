@@ -139,6 +139,7 @@ export interface AppliedVoucher {
 export interface AppliedPromotion {
   description: string;
   promotionCode?: string;
+  promotionType?: string;
   consumedEntries?: number[];
 }
 
