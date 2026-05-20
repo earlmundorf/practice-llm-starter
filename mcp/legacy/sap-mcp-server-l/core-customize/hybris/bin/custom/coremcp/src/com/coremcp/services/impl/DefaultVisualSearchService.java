@@ -1,6 +1,6 @@
 package com.coremcp.services.impl;
 
-import com.coremcp.services.OpenAiClient;
+import com.coremcp.services.LlmClient;
 import com.coremcp.services.VisualSearchService;
 
 import de.hybris.platform.commercefacades.product.data.ImageData;
@@ -24,7 +24,7 @@ import java.util.Map;
 
 /**
  * Default implementation of {@link VisualSearchService}.
- * Uses the existing {@link OpenAiClient} to call GPT-4o Vision,
+ * Uses the configured {@link LlmClient} to call a vision-capable model,
  * then searches the catalog via {@link ProductSearchFacade}.
  *
  * Returns full OCC-shaped product data (same format as /products/search)
@@ -66,7 +66,7 @@ public class DefaultVisualSearchService implements VisualSearchService
 		designed to work well with a Solr full-text search index.
 		""";
 
-	private OpenAiClient openAiClient;
+	private LlmClient llmClient;
 	private ProductSearchFacade<ProductData> productSearchFacade;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -149,7 +149,7 @@ public class DefaultVisualSearchService implements VisualSearchService
 	}
 
 	/**
-	 * Sends the image to GPT-4o Vision using the existing OpenAiClient.
+	 * Sends the image to the configured vision-capable LLM provider.
 	 */
 	@SuppressWarnings("unchecked")
 	private Map<String, Object> analyzeImage(final String base64Image, final String mimeType)
@@ -169,7 +169,7 @@ public class DefaultVisualSearchService implements VisualSearchService
 				))
 			);
 
-			final Map<String, Object> response = openAiClient.chatCompletion(messages, null, VISION_MODEL);
+			final Map<String, Object> response = llmClient.chatCompletion(messages, null, VISION_MODEL);
 
 			final List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
 			if (choices == null || choices.isEmpty())
@@ -318,9 +318,9 @@ public class DefaultVisualSearchService implements VisualSearchService
 		return match;
 	}
 
-	public void setOpenAiClient(final OpenAiClient openAiClient)
+	public void setOpenAiClient(final LlmClient llmClient)
 	{
-		this.openAiClient = openAiClient;
+		this.llmClient = llmClient;
 	}
 
 	public void setProductSearchFacade(final ProductSearchFacade<ProductData> productSearchFacade)

@@ -2,7 +2,7 @@ package com.coremcp.services.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.coremcp.services.AgentService;
-import com.coremcp.services.OpenAiClient;
+import com.coremcp.services.LlmClient;
 import com.coremcp.tools.McpToolHandler;
 import com.coremcp.tools.McpToolResult;
 
@@ -66,7 +66,7 @@ public class DefaultAgentService implements AgentService
 		"For everything else (browsing products, viewing orders, viewing cart) — use the appropriate tools and show results inline.";
 
 	private List<McpToolHandler> toolHandlers;
-	private OpenAiClient openAiClient;
+	private LlmClient llmClient;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	private Map<String, McpToolHandler> toolHandlerMap;
@@ -134,16 +134,14 @@ public class DefaultAgentService implements AgentService
 				return "browse";
 			}
 
-			final String intentModel = Config.getParameter("coremcp.openai.intent.model") != null
-				? Config.getParameter("coremcp.openai.intent.model")
-				: "gpt-4o-mini";
+			final String intentModel = resolveIntentModel();
 
 			final List<Map<String, Object>> intentMessages = List.of(
 				Map.of("role", "system", "content", INTENT_PROMPT),
 				Map.of("role", "user", "content", lastUserMessage)
 			);
 
-			final Map<String, Object> response = openAiClient.chatCompletion(intentMessages, null, intentModel);
+			final Map<String, Object> response = llmClient.chatCompletion(intentMessages, null, intentModel);
 			final List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
 			if (choices != null && !choices.isEmpty())
 			{
@@ -196,7 +194,7 @@ public class DefaultAgentService implements AgentService
 		while (iterations < MAX_TOOL_ITERATIONS)
 		{
 			iterations++;
-			final Map<String, Object> response = openAiClient.chatCompletion(fullMessages, tools);
+			final Map<String, Object> response = llmClient.chatCompletion(fullMessages, tools);
 
 			final List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
 			if (choices == null || choices.isEmpty())
@@ -283,6 +281,62 @@ public class DefaultAgentService implements AgentService
 		return result;
 	}
 
+	private String resolveIntentModel()
+	{
+		final String provider = resolveProvider();
+		if ("anthropic".equals(provider))
+		{
+			final String model = resolveConfigOrEnvValue(Config.getParameter("coremcp.anthropic.intent.model"));
+			return model != null && !model.isBlank() ? model : "claude-3-5-haiku-latest";
+		}
+		if ("kong-openai".equals(provider))
+		{
+			final String model = resolveConfigOrEnvValue(Config.getParameter("coremcp.kong.intent.model"));
+			return model != null && !model.isBlank() ? model : "gpt-4o-mini";
+		}
+		final String model = resolveConfigOrEnvValue(Config.getParameter("coremcp.openai.intent.model"));
+		return model != null && !model.isBlank() ? model : "gpt-4o-mini";
+	}
+
+	private String resolveProvider()
+	{
+		final String configuredProvider = resolveConfigOrEnvValue(Config.getParameter("coremcp.llm.provider"));
+		if (configuredProvider != null && !configuredProvider.isBlank())
+		{
+			return configuredProvider.trim().toLowerCase();
+		}
+		final String envProvider = System.getenv("COREMCP_LLM_PROVIDER");
+		if (envProvider != null && !envProvider.isBlank())
+		{
+			return envProvider.trim().toLowerCase();
+		}
+		return "openai";
+	}
+
+	private String resolveConfigOrEnvValue(final String configuredValue)
+	{
+		if (configuredValue == null || configuredValue.isBlank())
+		{
+			return configuredValue;
+		}
+
+		final String trimmedValue = configuredValue.trim();
+		if (trimmedValue.startsWith("${") && trimmedValue.endsWith("}"))
+		{
+			final String envVarName = trimmedValue.substring(2, trimmedValue.length() - 1).trim();
+			if (!envVarName.isEmpty())
+			{
+				final String envValue = System.getenv(envVarName);
+				if (envValue != null && !envValue.isBlank())
+				{
+					return envValue;
+				}
+			}
+		}
+
+		return trimmedValue;
+	}
+
 	@Required
 	public void setToolHandlers(final List<McpToolHandler> toolHandlers)
 	{
@@ -290,8 +344,8 @@ public class DefaultAgentService implements AgentService
 	}
 
 	@Required
-	public void setOpenAiClient(final OpenAiClient openAiClient)
+	public void setOpenAiClient(final LlmClient llmClient)
 	{
-		this.openAiClient = openAiClient;
+		this.llmClient = llmClient;
 	}
 }

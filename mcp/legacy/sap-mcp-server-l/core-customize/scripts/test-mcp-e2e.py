@@ -251,7 +251,7 @@ def test_tools_list(base_url, auth_header, session_id):
         "order_get", "order_history",
         "customer_get", "customer_lookup",
         "checkout_set_delivery_address", "checkout_set_delivery_mode",
-        "checkout_set_payment", "order_place",
+        "checkout_set_payment", "order_place","promotions_get"
     ]
 
     check(f"tools/list returns {len(expected_tools)} tools",

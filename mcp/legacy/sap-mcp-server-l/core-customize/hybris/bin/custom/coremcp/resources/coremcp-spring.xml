@@ -182,12 +182,30 @@
     </bean>
 
     <!-- ===================================================================
-         OpenAI Client
+         LLM Client and Providers
          =================================================================== -->
 
-    <alias name="defaultOpenAiClient" alias="openAiClient"/>
-    <bean id="defaultOpenAiClient"
-          class="com.coremcp.services.impl.DefaultOpenAiClient"/>
+    <bean id="openAiLlmProvider"
+          class="com.coremcp.services.impl.OpenAiLlmProvider"/>
+
+    <bean id="anthropicLlmProvider"
+          class="com.coremcp.services.impl.AnthropicLlmProvider"/>
+
+    <bean id="kongOpenAiLlmProvider"
+          class="com.coremcp.services.impl.KongOpenAiLlmProvider"/>
+
+    <alias name="defaultLlmClient" alias="llmClient"/>
+    <alias name="defaultLlmClient" alias="openAiClient"/>
+    <bean id="defaultLlmClient"
+          class="com.coremcp.services.impl.DefaultLlmClient">
+        <property name="providers">
+            <list>
+                <ref bean="openAiLlmProvider"/>
+                <ref bean="anthropicLlmProvider"/>
+                <ref bean="kongOpenAiLlmProvider"/>
+            </list>
+        </property>
+    </bean>
 
     <!-- ===================================================================
          Agent Service

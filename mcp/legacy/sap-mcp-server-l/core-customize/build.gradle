@@ -86,7 +86,20 @@ task cleanAll(type: Delete) {
 // --- Server lifecycle tasks ---
 
 def platformDir = file('hybris/bin/platform')
+def customExtensionsDir = file('hybris/bin/custom')
 def logDir = file('hybris/log')
+
+ext.customExtensionNames = {
+    if (!customExtensionsDir.exists()) {
+        return []
+    }
+
+    fileTree(customExtensionsDir) {
+        include '**/extensioninfo.xml'
+    }.files.collect { extensionInfo ->
+        extensionInfo.parentFile.name
+    }.unique().sort()
+}
 
 task startServer(type: Exec) {
     description = 'Start the SAP Commerce server in the background'
@@ -151,6 +164,58 @@ task serverStatus(type: Exec) {
     ignoreExitValue = true
 }
 
+task buildCustomExtensions {
+    description = 'Build all custom SAP Commerce extensions found under hybris/bin/custom'
+    group = 'SAP Commerce Build'
+
+    doLast {
+        def extensionNames = customExtensionNames()
+        if (extensionNames.isEmpty()) {
+            throw new Exception("No custom extensions found under ${customExtensionsDir}")
+        }
+
+        println "Building custom extensions: ${extensionNames.join(', ')}"
+        exec {
+            workingDir platformDir
+            commandLine '/bin/sh', '-c', ". ./setantenv.sh && ant all -Dbuild.only.extensions=${extensionNames.join(',')}"
+            environment.remove('HYBRIS_ROOT')
+            environment.remove('HYBRIS_DATA_DIR')
+            environment.remove('HYBRIS_BIN_DIR')
+            environment.remove('HYBRIS_PLATFORM')
+            environment.remove('HYBRIS_HOME')
+            environment.remove('HYBRIS_CONFIG_DIR')
+            environment.remove('HYBRIS_LOG_DIR')
+            environment.remove('HYBRIS_TEMP_DIR')
+        }
+    }
+}
+
+task testCustomExtensions {
+    description = 'Run unit tests for all custom SAP Commerce extensions found under hybris/bin/custom'
+    group = 'SAP Commerce Build'
+
+    doLast {
+        def extensionNames = customExtensionNames()
+        if (extensionNames.isEmpty()) {
+            throw new Exception("No custom extensions found under ${customExtensionsDir}")
+        }
+
+        println "Running unit tests for custom extensions: ${extensionNames.join(', ')}"
+        exec {
+            workingDir platformDir
+            commandLine '/bin/sh', '-c', ". ./setantenv.sh && ant unittests -Dtestclasses.extensions=${extensionNames.join(',')}"
+            environment.remove('HYBRIS_ROOT')
+            environment.remove('HYBRIS_DATA_DIR')
+            environment.remove('HYBRIS_BIN_DIR')
+            environment.remove('HYBRIS_PLATFORM')
+            environment.remove('HYBRIS_HOME')
+            environment.remove('HYBRIS_CONFIG_DIR')
+            environment.remove('HYBRIS_LOG_DIR')
+            environment.remove('HYBRIS_TEMP_DIR')
+        }
+    }
+}
+
 // --- HAC console tasks ---
 // Usage:
 //   ./gradle.sh groovy -Pscript=path/to/script.groovy
@@ -166,7 +231,7 @@ task groovy(type: Exec) {
     group = 'SAP Commerce HAC'
     doFirst {
         if (!project.hasProperty('file')) {
-            throw new GradleException('Missing -Pfile=<path>. Usage: ./gradle.sh groovy -Pfile=path/to/script.groovy [-Pcommit=true]')
+            throw new Exception('Missing -Pfile=<path>. Usage: ./gradle.sh groovy -Pfile=path/to/script.groovy [-Pcommit=true]')
         }
         def args = [project.property('file').toString()]
         if (project.hasProperty('commit') && project.property('commit').toString() == 'true') {
@@ -181,7 +246,7 @@ task impex(type: Exec) {
     group = 'SAP Commerce HAC'
     doFirst {
         if (!project.hasProperty('file')) {
-            throw new GradleException('Missing -Pfile=<path>. Usage: ./gradle.sh impex -Pfile=path/to/import.impex')
+            throw new Exception('Missing -Pfile=<path>. Usage: ./gradle.sh impex -Pfile=path/to/import.impex')
         }
         commandLine "${scriptsDir}/hac-impex.sh", project.property('file').toString()
     }
@@ -192,7 +257,7 @@ task flexquery(type: Exec) {
     group = 'SAP Commerce HAC'
     doFirst {
         if (!project.hasProperty('file')) {
-            throw new GradleException('Missing -Pfile=<file|query>. Usage: ./gradle.sh flexquery -Pfile="SELECT {pk} FROM {Product}" [-PmaxResults=50]')
+            throw new Exception('Missing -Pfile=<file|query>. Usage: ./gradle.sh flexquery -Pfile="SELECT {pk} FROM {Product}" [-PmaxResults=50]')
         }
         def args = [project.property('file').toString()]
         if (project.hasProperty('maxResults')) {
