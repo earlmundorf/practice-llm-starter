@@ -56,12 +56,23 @@ public class DefaultAgentService implements AgentService
 		"Reply with ONLY that single word.";
 
 	private static final String SYSTEM_PROMPT =
-		"You are a shopping assistant for ThinkShop, an electronics store powered by SAP Commerce. " +
-		"You help customers browse products, manage their cart, and complete purchases. " +
-		"Use the available tools to look up products, check stock, manage the cart, and process orders. " +
-		"Be concise and helpful. When showing products, include the product code, name, and price. " +
-		"When a customer wants to buy something, guide them through: add to cart → set delivery address → " +
-		"set delivery mode → set payment → place order.\n\n" +
+		"You are a knowledgeable friend who happens to know the ThinkShop electronics catalog (powered by " +
+		"SAP Commerce). Talk like a person who genuinely enjoys this stuff — share observations, opinions, " +
+		"useful context, the kind of thing a friend would say. When something we sell is actually relevant " +
+		"to what the user is talking about, mention it lightly and link it back; when it isn't, just chat. " +
+		"Never reflexively pivot every reply to a product pitch.\n\n" +
+		"You can also help with the practical shopping flow: browsing, managing the cart, applying coupons, " +
+		"and completing purchases. When a customer wants to buy something, guide them through: " +
+		"add to cart → set delivery address → set delivery mode → set payment → place order. " +
+		"When showing products, include the product code, name, and price.\n\n" +
+		"IMAGES: When the user attaches an image, look at it the way a friend would. Describe what you see " +
+		"naturally — what it looks like, what it's probably for, a thought or observation about it. If a " +
+		"product in the image (or something close to it) seems like something the user might want to find " +
+		"in the catalog, call product_search lightly to see what we have and mention it as a suggestion, " +
+		"not a sales pitch. If we don't sell anything similar, that's fine — keep chatting about the " +
+		"image itself. If the image is a receipt, order confirmation, or any document with an order code, " +
+		"read the order code and call order_get to help them with that order. If you cannot tell what the " +
+		"image is for, ask a brief friendly clarifying question.\n\n" +
 		"PROMOTIONS & COUPONS: Use the promotions_get tool to check active promotions and coupons. " +
 		"The tool returns per-customer redemption data including 'currentUserRedemptions' which tells you " +
 		"how many times THIS customer has used a coupon. Compare it against 'maxRedemptionsPerCustomer' to " +
@@ -133,19 +144,20 @@ public class DefaultAgentService implements AgentService
 	{
 		try
 		{
-			// Find the last user message
+			// Find the last user message (extract text portion if content is a multimodal array)
 			String lastUserMessage = "";
 			for (int i = messages.size() - 1; i >= 0; i--)
 			{
 				if ("user".equals(messages.get(i).get("role")))
 				{
-					lastUserMessage = (String) messages.get(i).get("content");
+					lastUserMessage = extractTextContent(messages.get(i).get("content"));
 					break;
 				}
 			}
 
 			if (lastUserMessage.isBlank())
 			{
+				// Image-only turn — let the tool loop handle it under the browse tool set.
 				return "browse";
 			}
 
@@ -198,6 +210,13 @@ public class DefaultAgentService implements AgentService
 		final List<Map<String, Object>> tools = toolsForIntent(intent);
 		LOG.info("Classified intent: {} — sending {} tool definitions", intent, tools.size());
 
+		// If the provider doesn't support vision, strip any image content blocks defensively so the
+		// LLM doesn't choke on multimodal arrays. The UI is supposed to gate this via the capabilities
+		// endpoint, but stale clients can still send images.
+		final List<Map<String, Object>> incoming = llmClient.supportsVision()
+			? messages
+			: pruneImageContent(messages);
+
 		// Build the full conversation: persona prompt, fresh state snapshot, then conversation history.
 		// The persona prompt is stable (good for OpenAI's prefix cache); the state block changes per
 		// turn but gives the model cart/customer context without burning round-trips on cart_get /
@@ -205,7 +224,7 @@ public class DefaultAgentService implements AgentService
 		final List<Map<String, Object>> fullMessages = new ArrayList<>();
 		fullMessages.add(Map.of("role", "system", "content", SYSTEM_PROMPT));
 		fullMessages.add(Map.of("role", "system", "content", buildStateSnapshotMessage(intent)));
-		fullMessages.addAll(messages);
+		fullMessages.addAll(incoming);
 
 		String uiAction = null;
 		final Set<String> seenInvocations = new HashSet<>();
@@ -237,7 +256,7 @@ public class DefaultAgentService implements AgentService
 				// Return the result: the reply plus the full message history (minus system prompt)
 				final Map<String, Object> result = new LinkedHashMap<>();
 				result.put("reply", reply);
-				result.put("messages", summarizeHistoryForClient(fullMessages.subList(2, fullMessages.size())));
+				result.put("messages", summarizeHistoryForClient(pruneImageContent(fullMessages.subList(2, fullMessages.size()))));
 				if (uiAction != null)
 				{
 					result.put("action", uiAction);
@@ -316,7 +335,7 @@ public class DefaultAgentService implements AgentService
 		// Max iterations reached, or all tool calls were duplicates
 		final Map<String, Object> result = new LinkedHashMap<>();
 		result.put("reply", "I apologize, but I'm having trouble completing your request. Could you try rephrasing it?");
-		result.put("messages", summarizeHistoryForClient(fullMessages.subList(2, fullMessages.size())));
+		result.put("messages", summarizeHistoryForClient(pruneImageContent(fullMessages.subList(2, fullMessages.size()))));
 		return result;
 	}
 
@@ -409,6 +428,72 @@ public class DefaultAgentService implements AgentService
 
 		return "CURRENT STATE (refreshed each turn — use these values directly; do not call cart_get or "
 			+ "customer_get just to look up basics already provided here):\n" + stateJson;
+	}
+
+	@SuppressWarnings("unchecked")
+	private String extractTextContent(final Object content)
+	{
+		if (content == null) return "";
+		if (content instanceof String) return (String) content;
+		if (!(content instanceof List)) return "";
+
+		final StringBuilder sb = new StringBuilder();
+		for (final Object block : (List<Object>) content)
+		{
+			if (!(block instanceof Map)) continue;
+			final Map<String, Object> m = (Map<String, Object>) block;
+			if ("text".equals(m.get("type")) && m.get("text") instanceof String)
+			{
+				if (sb.length() > 0) sb.append(' ');
+				sb.append((String) m.get("text"));
+			}
+		}
+		return sb.toString();
+	}
+
+	/**
+	 * Drop image_url content blocks from any multimodal user messages. Used both defensively
+	 * before sending to a non-vision provider and on the return path so images don't persist in
+	 * the conversation history echoed back to the client. Per-turn image use only — no storage.
+	 */
+	@SuppressWarnings("unchecked")
+	private List<Map<String, Object>> pruneImageContent(final List<Map<String, Object>> messages)
+	{
+		final List<Map<String, Object>> out = new ArrayList<>(messages.size());
+		for (final Map<String, Object> message : messages)
+		{
+			final Object content = message.get("content");
+			if (!(content instanceof List))
+			{
+				out.add(message);
+				continue;
+			}
+			final List<Object> filtered = new ArrayList<>();
+			for (final Object block : (List<Object>) content)
+			{
+				if (block instanceof Map && "image_url".equals(((Map<String, Object>) block).get("type")))
+				{
+					continue;
+				}
+				filtered.add(block);
+			}
+			final Map<String, Object> copy = new LinkedHashMap<>(message);
+			if (filtered.isEmpty())
+			{
+				copy.put("content", "[image]");
+			}
+			else if (filtered.size() == 1 && filtered.get(0) instanceof Map
+				&& "text".equals(((Map<String, Object>) filtered.get(0)).get("type")))
+			{
+				copy.put("content", ((Map<String, Object>) filtered.get(0)).get("text"));
+			}
+			else
+			{
+				copy.put("content", filtered);
+			}
+			out.add(copy);
+		}
+		return out;
 	}
 
 	private List<Map<String, Object>> summarizeHistoryForClient(final List<Map<String, Object>> history)

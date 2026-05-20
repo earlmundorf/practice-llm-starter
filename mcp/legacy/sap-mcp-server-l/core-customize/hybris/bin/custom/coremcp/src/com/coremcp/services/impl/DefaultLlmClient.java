@@ -54,4 +54,14 @@ public class DefaultLlmClient implements LlmClient
 		}
 		return provider;
 	}
+
+	@Override
+	public boolean supportsVision()
+	{
+		final String providerId = Config.getString("coremcp.llm.provider", "openai").trim().toLowerCase();
+		// openai-compatible defaults to false because the configured model is often a self-hosted
+		// text-only build. openai/anthropic default to true since their flagship models support vision.
+		final boolean defaultEnabled = !"openai-compatible".equals(providerId);
+		return Config.getBoolean("coremcp." + providerId + ".vision.enabled", defaultEnabled);
+	}
 }

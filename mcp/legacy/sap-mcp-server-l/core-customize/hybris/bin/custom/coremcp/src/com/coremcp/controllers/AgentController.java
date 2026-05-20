@@ -2,6 +2,7 @@ package com.coremcp.controllers;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.coremcp.services.AgentService;
+import com.coremcp.services.LlmClient;
 import com.coremcp.services.McpCartSessionService;
 
 import org.slf4j.Logger;
@@ -36,6 +37,17 @@ public class AgentController
 
 	@Resource(name = "mcpCartSessionService")
 	private McpCartSessionService mcpCartSessionService;
+
+	@Resource(name = "llmClient")
+	private LlmClient llmClient;
+
+	@Secured({ "ROLE_CUSTOMERGROUP", "ROLE_TRUSTED_CLIENT" })
+	@RequestMapping(value = "/agent/capabilities", method = RequestMethod.GET, produces = "application/json")
+	@ResponseBody
+	public String handleCapabilities() throws Exception
+	{
+		return objectMapper.writeValueAsString(Map.of("vision", llmClient.supportsVision()));
+	}
 
 	@Secured({ "ROLE_CUSTOMERGROUP", "ROLE_TRUSTED_CLIENT" })
 	@RequestMapping(value = "/agent/chat", method = RequestMethod.POST, produces = "application/json")

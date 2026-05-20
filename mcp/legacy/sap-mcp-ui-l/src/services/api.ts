@@ -759,6 +759,17 @@ export const api = {
     };
   },
 
+  getAgentCapabilities: async (): Promise<{ vision: boolean }> => {
+    try {
+      const res = await authFetch(`${OCC_BASE}/agent/capabilities`);
+      if (!res.ok) return { vision: false };
+      const data = await res.json();
+      return { vision: Boolean(data?.vision) };
+    } catch {
+      return { vision: false };
+    }
+  },
+
   cancelOrder: async (orderId: string): Promise<void> => {
     // Get order details to find entries for cancellation
     const order = await api.getOrder(orderId);

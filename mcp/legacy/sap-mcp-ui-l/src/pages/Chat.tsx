@@ -1,7 +1,35 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { auth, getStoredCartCode, storeCartCode, clearStoredCartCode } from '../services/api';
+import { api, auth, getStoredCartCode, storeCartCode, clearStoredCartCode } from '../services/api';
 import { Checkout } from './Checkout';
+
+const MAX_IMAGES_PER_TURN = 4;
+
+/** Downscale + JPEG-compress an image File to a base64 data URL (max ~1024px on long edge). */
+const compressImageToDataUrl = async (file: File): Promise<string> => {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = url;
+    });
+    const MAX = 1024;
+    const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Canvas not supported');
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL('image/jpeg', 0.85);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -59,8 +87,17 @@ export const Chat = () => {
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>(loadPersistedSuggestions);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [visionEnabled, setVisionEnabled] = useState(false);
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Probe the backend once on mount to see whether the configured LLM provider supports images.
+  useEffect(() => {
+    if (!auth.isLoggedIn()) return;
+    api.getAgentCapabilities().then((caps) => setVisionEnabled(caps.vision));
+  }, []);
 
   // Persist messages and suggestions per-user in localStorage
   useEffect(() => {
@@ -148,17 +185,42 @@ export const Chat = () => {
 
   const sendMessage = async (text?: string) => {
     const content = (text || input).trim();
-    if (!content || loading) return;
+    const images = pendingImages;
+    if ((!content && images.length === 0) || loading) return;
 
-    const userMsg: ChatMessage = { role: 'user', content };
+    // Local display text — note image attachment(s) so the user sees them in the transcript.
+    const imageNote = images.length > 1
+      ? `[${images.length} images attached]`
+      : images.length === 1 ? '[image attached]' : '';
+    const displayContent = imageNote
+      ? (content ? `${content}\n${imageNote}` : imageNote)
+      : content;
+    const userMsg: ChatMessage = { role: 'user', content: displayContent };
     const updatedMessages = [...messages, userMsg];
     setMessages(updatedMessages);
     setInput('');
+    setPendingImages([]);
     setLoading(true);
 
     try {
       const token = auth.getToken();
       if (!token) throw new Error('Not authenticated');
+
+      // Build the wire payload. Multimodal content array only on the LATEST user message
+      // when images are attached; prior turns stay text-only (server already strips images
+      // from echoed history, so they never come back from the server).
+      const wireMessages = updatedMessages.map((m, idx) => {
+        const isLast = idx === updatedMessages.length - 1;
+        if (isLast && images.length > 0 && m.role === 'user') {
+          const parts: Array<Record<string, unknown>> = [];
+          if (content) parts.push({ type: 'text', text: content });
+          for (const dataUrl of images) {
+            parts.push({ type: 'image_url', image_url: { url: dataUrl } });
+          }
+          return { role: m.role, content: parts };
+        }
+        return { role: m.role, content: m.content };
+      });
 
       const OCC_BASE = import.meta.env.VITE_API_URL || '/occ/v2/electronics';
       const res = await fetch(`${OCC_BASE}/agent/chat`, {
@@ -168,7 +230,7 @@ export const Chat = () => {
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
-          messages: updatedMessages.map(m => ({ role: m.role, content: m.content })),
+          messages: wireMessages,
           cartCode: getStoredCartCode() || undefined,
         }),
       });
@@ -359,7 +421,66 @@ export const Chat = () => {
           </div>
 
           <div className="flex-shrink-0 p-4 border-t border-gray-200 dark:border-gray-700">
+            {pendingImages.length > 0 && (
+              <div className="mb-2 flex items-center gap-2 flex-wrap">
+                {pendingImages.map((dataUrl, idx) => (
+                  <div key={idx} className="relative">
+                    <img
+                      src={dataUrl}
+                      alt={`Attached ${idx + 1}`}
+                      className="h-16 w-16 object-cover rounded border border-gray-300 dark:border-gray-600"
+                    />
+                    <button
+                      onClick={() => setPendingImages((p) => p.filter((_, i) => i !== idx))}
+                      title="Remove"
+                      className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-gray-800 text-white text-xs flex items-center justify-center hover:bg-red-600"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {pendingImages.length < MAX_IMAGES_PER_TURN && (
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {MAX_IMAGES_PER_TURN - pendingImages.length} more allowed
+                  </span>
+                )}
+              </div>
+            )}
             <div className="flex gap-2">
+              {visionEnabled && (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    // On mobile this opens the camera directly; desktop opens a multi-select picker.
+                    capture="environment"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const files = Array.from(e.target.files || []);
+                      e.target.value = '';
+                      if (files.length === 0) return;
+                      try {
+                        const available = MAX_IMAGES_PER_TURN - pendingImages.length;
+                        const accepted = files.slice(0, Math.max(0, available));
+                        const dataUrls = await Promise.all(accepted.map(compressImageToDataUrl));
+                        setPendingImages((prev) => [...prev, ...dataUrls]);
+                      } catch (err) {
+                        console.error('Image compression failed', err);
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={loading || pendingImages.length >= MAX_IMAGES_PER_TURN}
+                    title="Attach a photo"
+                    className="px-3 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50"
+                  >
+                    📷
+                  </button>
+                </>
+              )}
               <input
                 ref={inputRef}
                 type="text"
@@ -367,12 +488,31 @@ export const Chat = () => {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+                onPaste={(e) => {
+                  if (!visionEnabled) return;
+                  const items = e.clipboardData?.items;
+                  if (!items) return;
+                  const files: File[] = [];
+                  for (const item of items) {
+                    if (item.type.startsWith('image/')) {
+                      const f = item.getAsFile();
+                      if (f) files.push(f);
+                    }
+                  }
+                  if (files.length === 0) return;
+                  e.preventDefault();
+                  const available = MAX_IMAGES_PER_TURN - pendingImages.length;
+                  const accepted = files.slice(0, Math.max(0, available));
+                  Promise.all(accepted.map(compressImageToDataUrl))
+                    .then((urls) => setPendingImages((prev) => [...prev, ...urls]))
+                    .catch(console.error);
+                }}
                 disabled={loading}
                 className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 transition-colors duration-300"
               />
               <button
                 onClick={() => sendMessage()}
-                disabled={loading || !input.trim()}
+                disabled={loading || (!input.trim() && pendingImages.length === 0)}
                 className="bg-blue-600 dark:bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Send
