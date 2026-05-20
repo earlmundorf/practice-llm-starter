@@ -24,13 +24,8 @@ repositories {
     mavenCentral()
 }
 
-ext {
-    intExtPackVersion = '2211.42'
-}
-
 dependencies {
     hybrisPlatform "de.hybris.platform:hybris-commerce-suite:${hybris.version.get()}@zip"
-    hybrisPlatform "de.hybris.platform:hybris-commerce-integrations:${intExtPackVersion}@zip"
     dbDriver 'com.mysql:mysql-connector-j:8.2.0'
 }
 

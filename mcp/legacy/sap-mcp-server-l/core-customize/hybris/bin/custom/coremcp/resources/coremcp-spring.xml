@@ -177,7 +177,7 @@
     <alias name="defaultVisualSearchService" alias="visualSearchService"/>
     <bean id="defaultVisualSearchService"
           class="com.coremcp.services.impl.DefaultVisualSearchService">
-        <property name="openAiClient" ref="openAiClient"/>
+        <property name="llmClient" ref="llmClient"/>
         <property name="productSearchFacade" ref="productSearchFacade"/>
     </bean>
 
@@ -191,18 +191,17 @@
     <bean id="anthropicLlmProvider"
           class="com.coremcp.services.impl.AnthropicLlmProvider"/>
 
-    <bean id="kongOpenAiLlmProvider"
-          class="com.coremcp.services.impl.KongOpenAiLlmProvider"/>
+    <bean id="openAiCompatibleLlmProvider"
+          class="com.coremcp.services.impl.OpenAiCompatibleLlmProvider"/>
 
     <alias name="defaultLlmClient" alias="llmClient"/>
-    <alias name="defaultLlmClient" alias="openAiClient"/>
     <bean id="defaultLlmClient"
           class="com.coremcp.services.impl.DefaultLlmClient">
         <property name="providers">
             <list>
                 <ref bean="openAiLlmProvider"/>
                 <ref bean="anthropicLlmProvider"/>
-                <ref bean="kongOpenAiLlmProvider"/>
+                <ref bean="openAiCompatibleLlmProvider"/>
             </list>
         </property>
     </bean>
@@ -214,7 +213,7 @@
     <alias name="defaultAgentService" alias="agentService"/>
     <bean id="defaultAgentService"
           class="com.coremcp.services.impl.DefaultAgentService">
-        <property name="openAiClient" ref="openAiClient"/>
+        <property name="llmClient" ref="llmClient"/>
         <property name="toolHandlers">
             <list>
                 <ref bean="productSearchToolHandler"/>

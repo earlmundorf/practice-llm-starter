@@ -12,7 +12,7 @@ Users upload, paste, or photograph a product image. The system sends it to GPT-4
 
 ## Key Decisions
 
-1. **Reuses existing OpenAiClient** — GPT-4o Vision uses the same `/chat/completions` endpoint. The vision message format uses a `List` for the `content` field instead of a `String`, which Jackson serializes correctly. No changes to `DefaultOpenAiClient` needed.
+1. **Reuses the shared `LlmClient`** — GPT-4o Vision uses the same `/chat/completions` endpoint. The vision message format uses a `List` for the `content` field instead of a `String`, which Jackson serializes correctly. Visual search runs through the same `DefaultLlmClient` → provider pipeline used by agent chat (see `coremcp/docs/llm/README.md`).
 
 2. **3-tier search strategy** — maximizes recall while ranking by confidence:
    - **Tier 1 (Best Match):** brand + product name from vision → Solr free-text (up to 3 results, confidence 0.95; falls back to searchTerms at 0.9)
@@ -22,7 +22,7 @@ Users upload, paste, or photograph a product image. The system sends it to GPT-4
 
 3. **Standard OCC pattern** — same auth, same `/{baseSiteId}` prefix, same `@Secured` roles as existing agent endpoints
 
-4. **No new dependencies** — uses existing `OpenAiClient` bean and platform `ProductSearchFacade`
+4. **No new dependencies** — uses existing `LlmClient` bean and platform `ProductSearchFacade`
 
 5. **Validation at the boundary** — image size (10MB), MIME type whitelist, auth check — all in the controller
 

@@ -12,7 +12,7 @@
 
 | File | Change |
 |------|--------|
-| `resources/coremcp-spring.xml` | Add `defaultVisualSearchService` bean + `visualSearchService` alias, wired to existing `openAiClient` and `productSearchFacade` |
+| `resources/coremcp-spring.xml` | Add `defaultVisualSearchService` bean + `visualSearchService` alias, wired to existing `llmClient` and `productSearchFacade` |
 | `docs/endpoints.md` | Document the new visual-search endpoint |
 | `docs/tools.md` | (Optional) Add visual-search as an MCP tool if we expose it through MCP later |
 
@@ -20,7 +20,7 @@
 
 | File | Role |
 |------|------|
-| `DefaultOpenAiClient.java` | Sends vision request to GPT-4o — same `chatCompletion()` method, vision format serializes correctly |
+| `DefaultLlmClient.java` | Sends vision request through the active provider — same `chatCompletion()` method, vision format serializes correctly |
 | `coremcp-web-spring.xml` | Already component-scans `com.coremcp.controllers` — picks up `VisualSearchController` automatically |
 | `ProductSearchFacade` (platform) | Solr text search — called by `DefaultVisualSearchService` for catalog queries |
 
@@ -29,7 +29,7 @@
 ```
 VisualSearchController
   └─ @Resource visualSearchService
-       ├─ openAiClient (existing DefaultOpenAiClient)
+       ├─ llmClient (existing DefaultLlmClient → selected LlmProvider)
        │    └─ GPT-4o Vision via /chat/completions
        └─ productSearchFacade (platform bean)
             └─ Solr index (thinkshopIndex)

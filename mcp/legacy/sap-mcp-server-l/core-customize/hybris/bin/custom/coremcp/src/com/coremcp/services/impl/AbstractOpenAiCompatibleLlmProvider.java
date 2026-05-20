@@ -19,22 +19,19 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Shared base class for providers that speak an OpenAI-compatible chat completions API.
+ * Shared HTTP/JSON plumbing for providers that speak the OpenAI chat-completions protocol.
+ * Subclasses supply config via the abstract getters below — typically by reading hybris
+ * properties via {@link Config} (plain text values) and the API key via {@link System#getenv}.
  */
 public abstract class AbstractOpenAiCompatibleLlmProvider implements LlmProvider
 {
 	private static final Logger LOG = LoggerFactory.getLogger(AbstractOpenAiCompatibleLlmProvider.class);
 
-	private final HttpClient httpClient;
-	private final ObjectMapper objectMapper;
+	private final HttpClient httpClient = HttpClient.newBuilder()
+		.connectTimeout(Duration.ofSeconds(10))
+		.build();
 
-	protected AbstractOpenAiCompatibleLlmProvider()
-	{
-		this.httpClient = HttpClient.newBuilder()
-			.connectTimeout(Duration.ofSeconds(10))
-			.build();
-		this.objectMapper = new ObjectMapper();
-	}
+	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Override
 	public Map<String, Object> chatCompletion(final List<Map<String, Object>> messages,
@@ -43,10 +40,8 @@ public abstract class AbstractOpenAiCompatibleLlmProvider implements LlmProvider
 	{
 		try
 		{
-			final String apiKey = requireApiKey();
-			final String model = resolveModel(modelOverride);
 			final Map<String, Object> requestBody = new LinkedHashMap<>();
-			requestBody.put("model", model);
+			requestBody.put("model", resolveModel(modelOverride));
 			requestBody.put("messages", messages);
 			if (tools != null && !tools.isEmpty())
 			{
@@ -56,8 +51,8 @@ public abstract class AbstractOpenAiCompatibleLlmProvider implements LlmProvider
 			final HttpRequest request = HttpRequest.newBuilder()
 				.uri(URI.create(resolveApiUrl()))
 				.header("Content-Type", "application/json")
-				.header("Authorization", "Bearer " + apiKey)
-				.timeout(Duration.ofSeconds(resolveTimeoutSeconds()))
+				.header("Authorization", "Bearer " + requireApiKey())
+				.timeout(Duration.ofSeconds(Config.getInt("coremcp.llm.timeout.seconds", 60)))
 				.POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody)))
 				.build();
 
@@ -86,83 +81,41 @@ public abstract class AbstractOpenAiCompatibleLlmProvider implements LlmProvider
 		}
 	}
 
-	protected int resolveTimeoutSeconds()
-	{
-		final String configured = resolveConfigOrEnvValue(Config.getParameter("coremcp.llm.timeout.seconds"), null);
-		return configured != null && !configured.isBlank() ? Integer.parseInt(configured) : 60;
-	}
-
 	protected String resolveModel(final String modelOverride)
 	{
-		if (modelOverride != null && !modelOverride.isBlank())
-		{
-			return modelOverride;
-		}
-
-		final String configModel = resolveConfigOrEnvValue(Config.getParameter(getDefaultModelProperty()), null);
-		if (configModel != null && !configModel.isBlank())
-		{
-			return configModel;
-		}
-
-		return getDefaultModel();
+		return (modelOverride != null && !modelOverride.isBlank()) ? modelOverride : getDefaultModel();
 	}
 
 	protected String requireApiKey()
 	{
-		final String configuredApiKey = Config.getParameter(getApiKeyProperty());
-		String apiKey = resolveConfigOrEnvValue(configuredApiKey, getApiKeyEnvVar());
+		final String apiKey = getApiKey();
 		if (apiKey == null || apiKey.isBlank())
 		{
-			throw new IllegalStateException(getProviderId() + " API key not found. Set " + getApiKeyEnvVar()
-				+ " env var or " + getApiKeyProperty() + " in local.properties");
+			throw new IllegalStateException(getProviderId() + " API key missing. Set the relevant env var.");
 		}
 		return apiKey;
 	}
 
 	protected String resolveApiUrl()
 	{
-		final String configured = resolveConfigOrEnvValue(Config.getParameter(getBaseUrlProperty()), null);
-		if (configured != null && !configured.isBlank())
+		final String baseUrl = getBaseUrl();
+		if (baseUrl != null && !baseUrl.isBlank())
 		{
-			return trimTrailingSlash(configured) + resolveCompletionsPath();
+			return trimTrailingSlash(baseUrl) + resolveCompletionsPath();
 		}
 		return getDefaultApiUrl();
 	}
 
 	protected String resolveCompletionsPath()
 	{
-		final String configured = resolveConfigOrEnvValue(getConfiguredCompletionsPath(), null);
-		return configured != null && !configured.isBlank() ? configured : getCompletionsPath();
+		final String configured = getConfiguredCompletionsPath();
+		return (configured != null && !configured.isBlank()) ? configured : getCompletionsPath();
 	}
 
+	/** Override to supply a per-instance completions path (e.g. for proxies that rewrite the path). */
 	protected String getConfiguredCompletionsPath()
 	{
 		return null;
-	}
-
-	protected static String resolveConfigOrEnvValue(final String configuredValue, final String fallbackEnvVar)
-	{
-		if (configuredValue == null || configuredValue.isBlank())
-		{
-			return fallbackEnvVar != null ? System.getenv(fallbackEnvVar) : configuredValue;
-		}
-
-		final String trimmedValue = configuredValue.trim();
-		if (trimmedValue.startsWith("${") && trimmedValue.endsWith("}"))
-		{
-			final String envVarName = trimmedValue.substring(2, trimmedValue.length() - 1).trim();
-			if (!envVarName.isEmpty())
-			{
-				final String envValue = System.getenv(envVarName);
-				if (envValue != null && !envValue.isBlank())
-				{
-					return envValue;
-				}
-			}
-		}
-
-		return trimmedValue;
 	}
 
 	protected String trimTrailingSlash(final String url)
@@ -170,17 +123,15 @@ public abstract class AbstractOpenAiCompatibleLlmProvider implements LlmProvider
 		return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
 	}
 
-	protected abstract String getApiKeyProperty();
+	/** Returned from {@link System#getenv(String)} for the provider's secret. May be null. */
+	protected abstract String getApiKey();
 
-	protected abstract String getApiKeyEnvVar();
-
-	protected abstract String getDefaultModelProperty();
+	protected abstract String getBaseUrl();
 
 	protected abstract String getDefaultModel();
 
-	protected abstract String getBaseUrlProperty();
-
 	protected abstract String getCompletionsPath();
 
+	/** Returned only when {@link #getBaseUrl()} is blank — usually the vendor's canonical URL. */
 	protected abstract String getDefaultApiUrl();
 }

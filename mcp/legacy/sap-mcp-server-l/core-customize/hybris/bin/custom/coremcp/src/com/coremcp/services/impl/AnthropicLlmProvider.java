@@ -20,26 +20,26 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Direct Anthropic provider with response normalization to the existing OpenAI-style shape.
+ * Direct Anthropic provider. Adapts Anthropic's content-block request/response format
+ * to the OpenAI-style {@code choices[].message} shape that the rest of the agent expects.
+ *
+ * Secret (env):     ANTHROPIC_API_KEY  (required)
+ * Hybris properties (local.properties):
+ *   coremcp.anthropic.model    — main chat model (default: claude-3-5-sonnet-latest)
+ *   coremcp.anthropic.version  — Anthropic API version header (default: 2023-06-01)
+ *   coremcp.anthropic.baseurl  — override the canonical Anthropic host (default: blank)
  */
 public class AnthropicLlmProvider implements LlmProvider
 {
 	private static final Logger LOG = LoggerFactory.getLogger(AnthropicLlmProvider.class);
 	private static final String DEFAULT_API_URL = "https://api.anthropic.com/v1/messages";
-	private static final String DEFAULT_MODEL = "claude-3-5-sonnet-latest";
-	private static final String DEFAULT_VERSION = "2023-06-01";
 	private static final int DEFAULT_MAX_TOKENS = 1024;
 
-	private final HttpClient httpClient;
-	private final ObjectMapper objectMapper;
+	private final HttpClient httpClient = HttpClient.newBuilder()
+		.connectTimeout(Duration.ofSeconds(10))
+		.build();
 
-	public AnthropicLlmProvider()
-	{
-		this.httpClient = HttpClient.newBuilder()
-			.connectTimeout(Duration.ofSeconds(10))
-			.build();
-		this.objectMapper = new ObjectMapper();
-	}
+	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Override
 	public String getProviderId()
@@ -54,15 +54,14 @@ public class AnthropicLlmProvider implements LlmProvider
 	{
 		try
 		{
-			final String apiKey = requireApiKey();
-			final Map<String, Object> requestBody = buildRequestBody(messages, tools, modelOverride);
 			final HttpRequest request = HttpRequest.newBuilder()
 				.uri(URI.create(resolveApiUrl()))
 				.header("Content-Type", "application/json")
-				.header("x-api-key", apiKey)
-				.header("anthropic-version", resolveVersion())
-				.timeout(Duration.ofSeconds(resolveTimeoutSeconds()))
-				.POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody)))
+				.header("x-api-key", requireApiKey())
+				.header("anthropic-version", Config.getString("coremcp.anthropic.version", "2023-06-01"))
+				.timeout(Duration.ofSeconds(Config.getInt("coremcp.llm.timeout.seconds", 60)))
+				.POST(HttpRequest.BodyPublishers.ofString(
+					objectMapper.writeValueAsString(buildRequestBody(messages, tools, modelOverride))))
 				.build();
 
 			final HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -73,7 +72,8 @@ public class AnthropicLlmProvider implements LlmProvider
 					+ response.body());
 			}
 
-			final Map<String, Object> raw = objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
+			final Map<String, Object> raw = objectMapper.readValue(response.body(),
+				new TypeReference<Map<String, Object>>() {});
 			return normalizeResponse(raw);
 		}
 		catch (final InterruptedException e)
@@ -91,7 +91,7 @@ public class AnthropicLlmProvider implements LlmProvider
 		}
 	}
 
-	protected Map<String, Object> buildRequestBody(final List<Map<String, Object>> messages,
+	private Map<String, Object> buildRequestBody(final List<Map<String, Object>> messages,
 		final List<Map<String, Object>> tools,
 		final String modelOverride)
 	{
@@ -141,7 +141,8 @@ public class AnthropicLlmProvider implements LlmProvider
 		return requestBody;
 	}
 
-	protected Map<String, Object> normalizeResponse(final Map<String, Object> raw)
+	// Package-private — exercised directly by AnthropicLlmProviderTest.
+	Map<String, Object> normalizeResponse(final Map<String, Object> raw)
 	{
 		final List<Map<String, Object>> content = castList(raw.get("content"));
 		final StringBuilder text = new StringBuilder();
@@ -186,23 +187,8 @@ public class AnthropicLlmProvider implements LlmProvider
 		return Map.of("choices", List.of(choice));
 	}
 
-	protected List<Map<String, Object>> normalizeTools(final List<Map<String, Object>> tools)
-	{
-		final List<Map<String, Object>> normalized = new ArrayList<>();
-		for (final Map<String, Object> tool : tools)
-		{
-			@SuppressWarnings("unchecked")
-			final Map<String, Object> function = (Map<String, Object>) tool.get("function");
-			final Map<String, Object> normalizedTool = new LinkedHashMap<>();
-			normalizedTool.put("name", asString(function.get("name")));
-			normalizedTool.put("description", asString(function.get("description")));
-			normalizedTool.put("input_schema", function.get("parameters"));
-			normalized.add(normalizedTool);
-		}
-		return normalized;
-	}
-
-	protected Object normalizeContent(final Object content)
+	// Package-private — exercised directly by AnthropicLlmProviderTest.
+	Object normalizeContent(final Object content)
 	{
 		if (content instanceof String)
 		{
@@ -243,7 +229,23 @@ public class AnthropicLlmProvider implements LlmProvider
 		return List.of(Map.of("type", "text", "text", asString(content)));
 	}
 
-	protected Map<String, Object> buildImageSource(final String dataUrl)
+	private List<Map<String, Object>> normalizeTools(final List<Map<String, Object>> tools)
+	{
+		final List<Map<String, Object>> normalized = new ArrayList<>();
+		for (final Map<String, Object> tool : tools)
+		{
+			@SuppressWarnings("unchecked")
+			final Map<String, Object> function = (Map<String, Object>) tool.get("function");
+			final Map<String, Object> normalizedTool = new LinkedHashMap<>();
+			normalizedTool.put("name", asString(function.get("name")));
+			normalizedTool.put("description", asString(function.get("description")));
+			normalizedTool.put("input_schema", function.get("parameters"));
+			normalized.add(normalizedTool);
+		}
+		return normalized;
+	}
+
+	private Map<String, Object> buildImageSource(final String dataUrl)
 	{
 		final int comma = dataUrl.indexOf(',');
 		final String metadata = comma >= 0 ? dataUrl.substring(0, comma) : "data:image/jpeg;base64";
@@ -256,48 +258,27 @@ public class AnthropicLlmProvider implements LlmProvider
 		return source;
 	}
 
-	protected String resolveApiUrl()
+	private String resolveApiUrl()
 	{
-		final String configured = resolveConfigOrEnvValue(Config.getParameter("coremcp.anthropic.baseurl"), null);
-		return configured != null && !configured.isBlank() ? configured : DEFAULT_API_URL;
+		final String baseUrl = Config.getString("coremcp.anthropic.baseurl", "");
+		return baseUrl.isBlank() ? DEFAULT_API_URL : baseUrl;
 	}
 
-	protected int resolveTimeoutSeconds()
+	private String resolveModel(final String modelOverride)
 	{
-		final String configured = resolveConfigOrEnvValue(Config.getParameter("coremcp.llm.timeout.seconds"), null);
-		return configured != null && !configured.isBlank() ? Integer.parseInt(configured) : 60;
+		return (modelOverride != null && !modelOverride.isBlank())
+			? modelOverride
+			: Config.getString("coremcp.anthropic.model", "claude-3-5-sonnet-latest");
 	}
 
-	protected String resolveVersion()
+	private String requireApiKey()
 	{
-		final String configured = resolveConfigOrEnvValue(Config.getParameter("coremcp.anthropic.version"), null);
-		return configured != null && !configured.isBlank() ? configured : DEFAULT_VERSION;
-	}
-
-	protected String resolveModel(final String modelOverride)
-	{
-		if (modelOverride != null && !modelOverride.isBlank())
-		{
-			return modelOverride;
-		}
-		final String configured = resolveConfigOrEnvValue(Config.getParameter("coremcp.anthropic.model"), null);
-		return configured != null && !configured.isBlank() ? configured : DEFAULT_MODEL;
-	}
-
-	protected String requireApiKey()
-	{
-		final String apiKey = resolveConfigOrEnvValue(Config.getParameter("coremcp.anthropic.apikey"), "ANTHROPIC_API_KEY");
+		final String apiKey = System.getenv("ANTHROPIC_API_KEY");
 		if (apiKey == null || apiKey.isBlank())
 		{
-			throw new IllegalStateException(
-				"Anthropic API key not found. Set ANTHROPIC_API_KEY env var or coremcp.anthropic.apikey in local.properties");
+			throw new IllegalStateException("Anthropic API key missing. Set ANTHROPIC_API_KEY env var.");
 		}
 		return apiKey;
-	}
-
-	protected String resolveConfigOrEnvValue(final String configuredValue, final String fallbackEnvVar)
-	{
-		return AbstractOpenAiCompatibleLlmProvider.resolveConfigOrEnvValue(configuredValue, fallbackEnvVar);
 	}
 
 	private String normalizeRole(final String role)

@@ -6,13 +6,13 @@ import com.coremcp.services.LlmClient;
 import com.coremcp.tools.McpToolHandler;
 import com.coremcp.tools.McpToolResult;
 
+import de.hybris.platform.util.Config;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Required;
 
 import javax.annotation.PostConstruct;
-
-import de.hybris.platform.util.Config;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -283,58 +283,15 @@ public class DefaultAgentService implements AgentService
 
 	private String resolveIntentModel()
 	{
-		final String provider = resolveProvider();
-		if ("anthropic".equals(provider))
+		switch (Config.getString("coremcp.llm.provider", "openai").trim().toLowerCase())
 		{
-			final String model = resolveConfigOrEnvValue(Config.getParameter("coremcp.anthropic.intent.model"));
-			return model != null && !model.isBlank() ? model : "claude-3-5-haiku-latest";
+			case "anthropic":
+				return Config.getString("coremcp.anthropic.intent.model", "claude-3-5-haiku-latest");
+			case "openai-compatible":
+				return Config.getString("coremcp.openai-compatible.intent.model", "gpt-4o-mini");
+			default:
+				return Config.getString("coremcp.openai.intent.model", "gpt-4o-mini");
 		}
-		if ("kong-openai".equals(provider))
-		{
-			final String model = resolveConfigOrEnvValue(Config.getParameter("coremcp.kong.intent.model"));
-			return model != null && !model.isBlank() ? model : "gpt-4o-mini";
-		}
-		final String model = resolveConfigOrEnvValue(Config.getParameter("coremcp.openai.intent.model"));
-		return model != null && !model.isBlank() ? model : "gpt-4o-mini";
-	}
-
-	private String resolveProvider()
-	{
-		final String configuredProvider = resolveConfigOrEnvValue(Config.getParameter("coremcp.llm.provider"));
-		if (configuredProvider != null && !configuredProvider.isBlank())
-		{
-			return configuredProvider.trim().toLowerCase();
-		}
-		final String envProvider = System.getenv("COREMCP_LLM_PROVIDER");
-		if (envProvider != null && !envProvider.isBlank())
-		{
-			return envProvider.trim().toLowerCase();
-		}
-		return "openai";
-	}
-
-	private String resolveConfigOrEnvValue(final String configuredValue)
-	{
-		if (configuredValue == null || configuredValue.isBlank())
-		{
-			return configuredValue;
-		}
-
-		final String trimmedValue = configuredValue.trim();
-		if (trimmedValue.startsWith("${") && trimmedValue.endsWith("}"))
-		{
-			final String envVarName = trimmedValue.substring(2, trimmedValue.length() - 1).trim();
-			if (!envVarName.isEmpty())
-			{
-				final String envValue = System.getenv(envVarName);
-				if (envValue != null && !envValue.isBlank())
-				{
-					return envValue;
-				}
-			}
-		}
-
-		return trimmedValue;
 	}
 
 	@Required
@@ -344,7 +301,7 @@ public class DefaultAgentService implements AgentService
 	}
 
 	@Required
-	public void setOpenAiClient(final LlmClient llmClient)
+	public void setLlmClient(final LlmClient llmClient)
 	{
 		this.llmClient = llmClient;
 	}

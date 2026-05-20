@@ -318,7 +318,7 @@ public class DefaultVisualSearchService implements VisualSearchService
 		return match;
 	}
 
-	public void setOpenAiClient(final LlmClient llmClient)
+	public void setLlmClient(final LlmClient llmClient)
 	{
 		this.llmClient = llmClient;
 	}

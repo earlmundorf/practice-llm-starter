@@ -2,7 +2,6 @@ package com.coremcp.services.impl;
 
 import com.coremcp.services.LlmClient;
 import com.coremcp.services.LlmProvider;
-import com.coremcp.services.OpenAiClient;
 
 import de.hybris.platform.util.Config;
 
@@ -11,13 +10,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Routes chat completion requests to the configured provider.
+ * Routes chat completion requests to the provider selected by {@code coremcp.llm.provider}
+ * in local.properties (default: {@code openai}). The id must match one of the registered
+ * providers' {@link LlmProvider#getProviderId()} values.
  */
-public class DefaultLlmClient implements LlmClient, OpenAiClient
+public class DefaultLlmClient implements LlmClient
 {
-	private static final String DEFAULT_PROVIDER = "openai";
-	private static final String PROVIDER_PROPERTY = "coremcp.llm.provider";
-
 	private Map<String, LlmProvider> providers = Map.of();
 
 	@Override
@@ -37,45 +35,23 @@ public class DefaultLlmClient implements LlmClient, OpenAiClient
 
 	public void setProviders(final List<LlmProvider> providerList)
 	{
-		final Map<String, LlmProvider> mappedProviders = new LinkedHashMap<>();
+		final Map<String, LlmProvider> mapped = new LinkedHashMap<>();
 		for (final LlmProvider provider : providerList)
 		{
-			mappedProviders.put(provider.getProviderId(), provider);
+			mapped.put(provider.getProviderId(), provider);
 		}
-		this.providers = mappedProviders;
+		this.providers = mapped;
 	}
 
 	protected LlmProvider getProvider()
 	{
-		final String configuredProvider = normalizeProvider(resolveConfigOrEnvValue(Config.getParameter(PROVIDER_PROPERTY)));
-		final String providerId = configuredProvider != null ? configuredProvider : defaultProviderFromEnv();
+		final String providerId = Config.getString("coremcp.llm.provider", "openai").trim().toLowerCase();
 		final LlmProvider provider = providers.get(providerId);
 		if (provider == null)
 		{
-			throw new IllegalStateException("Unsupported LLM provider: " + providerId + ". Available providers: "
-				+ providers.keySet());
+			throw new IllegalStateException("Unsupported LLM provider: " + providerId
+				+ ". Available providers: " + providers.keySet());
 		}
 		return provider;
-	}
-
-	private String defaultProviderFromEnv()
-	{
-		final String envProvider = normalizeProvider(System.getenv("COREMCP_LLM_PROVIDER"));
-		return envProvider != null ? envProvider : DEFAULT_PROVIDER;
-	}
-
-	private String normalizeProvider(final String provider)
-	{
-		if (provider == null)
-		{
-			return null;
-		}
-		final String normalized = provider.trim().toLowerCase();
-		return normalized.isEmpty() ? null : normalized;
-	}
-
-	private String resolveConfigOrEnvValue(final String configuredValue)
-	{
-		return AbstractOpenAiCompatibleLlmProvider.resolveConfigOrEnvValue(configuredValue, null);
 	}
 }

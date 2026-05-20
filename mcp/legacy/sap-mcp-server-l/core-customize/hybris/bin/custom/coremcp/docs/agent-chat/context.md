@@ -31,9 +31,9 @@ Roles: ROLE_CUSTOMERGROUP, ROLE_TRUSTED_CLIENT
 
 5. **UI action support** — The agent has a `ui_action` tool that does not call any commerce facade. When invoked, `DefaultAgentService` captures the `action` parameter (e.g., `"checkout"`) and includes it in the response as `"action"`. The UI uses this to trigger client-side navigation (e.g., redirect to checkout page).
 
-6. **OpenAI API key resolution** — `DefaultOpenAiClient` first checks `coremcp.openai.apikey` in Hybris config (`local.properties`). If missing, blank, or an unresolved placeholder (`${...}`), it falls back to the `OPENAI_API_KEY` environment variable. Fails with `IllegalStateException` if neither is set.
+6. **LLM provider routing** — `DefaultLlmClient` dispatches to one of three providers (`openai`, `anthropic`, `openai-compatible`) selected at runtime by the `COREMCP_LLM_PROVIDER` env var (default: `openai`). All provider config (api keys, models, base URLs) is read from process environment variables via Spring's `Environment` bean — see `coremcp/docs/llm/README.md` for the full env var reference.
 
-7. **Model configuration** — The main chat model defaults to `gpt-4o` (overridable via `coremcp.openai.model` in `local.properties`). The intent classification model defaults to `gpt-4o-mini` (overridable via `coremcp.openai.intent.model`). The intent call uses the 3-argument `chatCompletion(messages, tools, modelOverride)` method to specify the lighter model.
+7. **Model selection** — For the default `openai` provider the main chat model is `OPENAI_MODEL` (default: `gpt-4o`) and the intent classification model is `OPENAI_INTENT_MODEL` (default: `gpt-4o-mini`). The intent call uses the 3-argument `chatCompletion(messages, tools, modelOverride)` method to specify the lighter model. `anthropic` and `openai-compatible` providers expose equivalent env vars.
 
 8. **Conversation history management** — The client sends the full message history. The agent prepends the system prompt, runs the tool loop, then returns the updated history (minus the system prompt) along with the final `reply` text. This keeps the system prompt server-side while letting the client manage conversation state.
 

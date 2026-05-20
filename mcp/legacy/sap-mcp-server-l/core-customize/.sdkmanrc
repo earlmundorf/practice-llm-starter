@@ -1,0 +1,3 @@
+# Enable auto-env via 'sdk config' (sdkman_auto_env=true) and SDKMAN will
+# switch to this Java version automatically when you cd into this directory.
+java=17.0.19-sapmchn
