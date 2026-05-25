@@ -305,9 +305,6 @@ export const Chat = () => {
     setShowCheckout(false);
     clearStoredCartCode();
 
-    // Store recent order ID so Orders page can verify it's in the list
-    sessionStorage.setItem('thinkshop_recent_order', orderId);
-
     // Create a fresh empty cart so the header count resets to 0
     try {
       const token = auth.getToken();

@@ -1,0 +1,8 @@
+# Links the electronics catalog to the platform's promotions rule-engine
+# context. SAP's OOTB sample (electronicsstore catalog.impex) ships this row
+# but gates it to the electronicsstore extension which we do not have, so we
+# ship our own. Without it the engine never evaluates promotions on carts
+# whose entries belong to electronicsProductCatalog.
+INSERT_UPDATE CatalogVersionToRuleEngineContextMapping;context(name)[unique=true];catalogVersion(catalog(id),version)[unique=true]
+;promotions-context;electronicsProductCatalog:Online
+;promotions-context;electronicsProductCatalog:Staged

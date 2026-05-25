@@ -23,11 +23,16 @@ import java.util.Map;
  * Direct Anthropic provider. Adapts Anthropic's content-block request/response format
  * to the OpenAI-style {@code choices[].message} shape that the rest of the agent expects.
  *
- * Secret (env):     ANTHROPIC_API_KEY  (required)
+ * Secrets (env):
+ *   ANTHROPIC_API_KEY   (required)
+ *   ANTHROPIC_BASE_URL  (optional) — base URL to a gateway, e.g.
+ *                        https://anthropic.generative.engine.capgemini.com.
+ *                        /v1/messages is appended automatically when missing.
+ *                        If unset, falls back to coremcp.anthropic.baseurl, then api.anthropic.com.
  * Hybris properties (local.properties):
  *   coremcp.anthropic.model    — main chat model (default: claude-3-5-sonnet-latest)
  *   coremcp.anthropic.version  — Anthropic API version header (default: 2023-06-01)
- *   coremcp.anthropic.baseurl  — override the canonical Anthropic host (default: blank)
+ *   coremcp.anthropic.baseurl  — full messages endpoint override (only used if ANTHROPIC_BASE_URL is unset)
  */
 public class AnthropicLlmProvider implements LlmProvider
 {
@@ -121,6 +126,14 @@ public class AnthropicLlmProvider implements LlmProvider
 				));
 				continue;
 			}
+			if ("assistant".equals(role))
+			{
+				anthropicMessages.add(Map.of(
+					"role", "assistant",
+					"content", buildAssistantContent(message)
+				));
+				continue;
+			}
 			anthropicMessages.add(Map.of(
 				"role", normalizeRole(role),
 				"content", normalizeContent(message.get("content"))
@@ -185,6 +198,64 @@ public class AnthropicLlmProvider implements LlmProvider
 		choice.put("finish_reason", toolCalls.isEmpty() ? "stop" : "tool_calls");
 
 		return Map.of("choices", List.of(choice));
+	}
+
+	// Package-private — exercised directly by AnthropicLlmProviderTest.
+	@SuppressWarnings("unchecked")
+	List<Map<String, Object>> buildAssistantContent(final Map<String, Object> message)
+	{
+		final List<Map<String, Object>> blocks = new ArrayList<>();
+		final String text = asString(message.get("content"));
+		if (!text.isBlank())
+		{
+			blocks.add(Map.of("type", "text", "text", text));
+		}
+		final List<Map<String, Object>> toolCalls = castList(message.get("tool_calls"));
+		if (toolCalls != null)
+		{
+			for (final Map<String, Object> toolCall : toolCalls)
+			{
+				final Map<String, Object> function = (Map<String, Object>) toolCall.get("function");
+				if (function == null)
+				{
+					continue;
+				}
+				final Map<String, Object> block = new LinkedHashMap<>();
+				block.put("type", "tool_use");
+				block.put("id", asString(toolCall.get("id")));
+				block.put("name", asString(function.get("name")));
+				block.put("input", parseToolInput(function.get("arguments")));
+				blocks.add(block);
+			}
+		}
+		// Anthropic rejects assistant messages with empty content arrays.
+		if (blocks.isEmpty())
+		{
+			blocks.add(Map.of("type", "text", "text", ""));
+		}
+		return blocks;
+	}
+
+	private Object parseToolInput(final Object arguments)
+	{
+		if (arguments instanceof Map)
+		{
+			return arguments;
+		}
+		final String json = asString(arguments);
+		if (json.isBlank())
+		{
+			return Map.of();
+		}
+		try
+		{
+			return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+		}
+		catch (final Exception e)
+		{
+			LOG.warn("Failed to parse tool_call.arguments as JSON, sending empty input: {}", json);
+			return Map.of();
+		}
 	}
 
 	// Package-private — exercised directly by AnthropicLlmProviderTest.
@@ -260,6 +331,12 @@ public class AnthropicLlmProvider implements LlmProvider
 
 	private String resolveApiUrl()
 	{
+		final String envBase = System.getenv("ANTHROPIC_BASE_URL");
+		if (envBase != null && !envBase.isBlank())
+		{
+			final String trimmed = envBase.replaceAll("/+$", "");
+			return trimmed.contains("/v1/messages") ? trimmed : trimmed + "/v1/messages";
+		}
 		final String baseUrl = Config.getString("coremcp.anthropic.baseurl", "");
 		return baseUrl.isBlank() ? DEFAULT_API_URL : baseUrl;
 	}

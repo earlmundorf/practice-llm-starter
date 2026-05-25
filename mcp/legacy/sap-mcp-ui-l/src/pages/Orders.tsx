@@ -29,24 +29,6 @@ export const Orders = () => {
       setCurrentUser(user);
 
       const ordersData = await api.getUserOrders();
-
-      // If navigated here from order confirmation, merge the recent order
-      // in case the OCC list endpoint hasn't indexed it yet
-      const recentOrder = location.state?.recentOrder;
-      if (recentOrder && !ordersData.some((o: Order) => o.id === recentOrder.id)) {
-        ordersData.unshift(recentOrder);
-      }
-
-      // Also check sessionStorage for recently placed order (e.g., from embedded checkout)
-      const recentOrderId = sessionStorage.getItem('thinkshop_recent_order');
-      if (recentOrderId && !ordersData.some((o: Order) => o.id === recentOrderId)) {
-        try {
-          const recentOrderData = await api.getOrder(recentOrderId);
-          ordersData.unshift(recentOrderData);
-        } catch { /* order may not be accessible yet */ }
-      }
-      if (recentOrderId) sessionStorage.removeItem('thinkshop_recent_order');
-
       setOrders(ordersData);
       setError(null);
     } catch (err) {

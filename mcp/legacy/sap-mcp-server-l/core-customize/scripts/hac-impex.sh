@@ -18,7 +18,7 @@
 # Requires: curl, python3
 # =============================================================================
 
-HAC="${HAC_URL:-https://localhost:9002/hac}"
+HAC="${HAC_URL:-https://localhost:9002}"
 AUTH_USER="${HAC_USER:-admin}"
 AUTH_PASS="${HAC_PASS:-nimda}"
 INPUT="$1"
