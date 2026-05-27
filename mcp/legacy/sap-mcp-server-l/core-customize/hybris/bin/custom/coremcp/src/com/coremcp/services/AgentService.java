@@ -2,6 +2,7 @@ package com.coremcp.services;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * Service interface for the AI shopping agent. Takes a conversation history
@@ -17,4 +18,11 @@ public interface AgentService
 	 * @return Updated message list including the assistant's response
 	 */
 	Map<String, Object> chat(List<Map<String, Object>> messages);
+
+	/**
+	 * Streaming variant. Tool-calling rounds run non-streamed; the terminating
+	 * round emits text deltas through {@code textDeltaConsumer} as they arrive.
+	 * Returns the same shape as {@link #chat} when finished.
+	 */
+	Map<String, Object> chatStream(List<Map<String, Object>> messages, Consumer<String> textDeltaConsumer);
 }

@@ -46,6 +46,8 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   entityRefs?: EntityRef[];
+  /** Set on assistant bubbles that are still receiving streamed text deltas. */
+  streaming?: boolean;
 }
 
 type OpenModal =
@@ -106,6 +108,117 @@ const parseSuggestions = (text: string): { clean: string; suggestions: string[] 
   } catch {
     return { clean: text, suggestions: [] };
   }
+};
+
+/** Shape returned by /agent/chat (and the done event of the streaming endpoint). */
+interface AgentResponse {
+  reply: string;
+  entityRefs?: EntityRef[];
+  action?: string;
+  cartCode?: string;
+  messages?: unknown[];
+  intent?: string;
+}
+
+/**
+ * Send the chat request, preferring the streaming endpoint and gracefully falling back when:
+ *  - the server returns plain JSON (feature flag disabled, or gateway stripped SSE),
+ *  - the response Content-Type isn't `text/event-stream`, or
+ *  - the stream errors mid-flight.
+ *
+ * Text deltas are pushed through `onDelta` as they arrive (during SSE only — the JSON-fallback
+ * path skips deltas because the full reply is already in hand).
+ */
+const fetchAgentResponse = async (
+  occBase: string,
+  headers: Record<string, string>,
+  payload: string,
+  onDelta: (chunk: string) => void,
+): Promise<AgentResponse> => {
+  const fallback = async (): Promise<AgentResponse> => {
+    const res = await fetch(`${occBase}/agent/chat`, { method: 'POST', headers, body: payload });
+    if (res.status === 401) { auth.logout(); throw new Error('Session expired. Please log in again.'); }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { error?: string }).error || 'Request failed');
+    }
+    return (await res.json()) as AgentResponse;
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(`${occBase}/agent/chat/stream`, { method: 'POST', headers, body: payload });
+  } catch {
+    // Network-level error reaching the streaming endpoint — try the legacy path.
+    return fallback();
+  }
+
+  if (res.status === 401) { auth.logout(); throw new Error('Session expired. Please log in again.'); }
+
+  // 404/405 typically means the streaming route isn't deployed in this env — fall back.
+  if (res.status === 404 || res.status === 405) {
+    return fallback();
+  }
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Request failed');
+  }
+
+  const contentType = (res.headers.get('content-type') || '').toLowerCase();
+  if (!contentType.includes('text/event-stream') || !res.body) {
+    // Server elected to return plain JSON (feature flag off, or gateway didn't pass SSE through).
+    return (await res.json()) as AgentResponse;
+  }
+
+  // Consume the SSE stream.
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let done: AgentResponse | null = null;
+  let streamError: string | null = null;
+
+  try {
+    while (true) {
+      const { value, done: isDone } = await reader.read();
+      if (isDone) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const rawEvent = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        let eventName = 'message';
+        const dataLines: string[] = [];
+        for (const line of rawEvent.split('\n')) {
+          if (line.startsWith('event:')) eventName = line.slice(6).trim();
+          else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+        }
+        const dataStr = dataLines.join('\n');
+        if (eventName === 'text') {
+          try { onDelta(JSON.parse(dataStr) as string); } catch { /* skip malformed delta */ }
+        } else if (eventName === 'done') {
+          try { done = JSON.parse(dataStr) as AgentResponse; } catch { streamError = 'malformed done event'; }
+        } else if (eventName === 'error') {
+          try {
+            const errPayload = JSON.parse(dataStr) as { error?: string };
+            streamError = errPayload.error || 'stream error';
+          } catch { streamError = 'stream error'; }
+        }
+      }
+    }
+  } catch (e) {
+    streamError = e instanceof Error ? e.message : 'stream interrupted';
+  }
+
+  if (streamError && !done) {
+    // Mid-stream failure with no terminal event — retry once against the non-streaming endpoint.
+    return fallback();
+  }
+  if (!done) {
+    // Stream closed without a done event — also fall back.
+    return fallback();
+  }
+  return done;
 };
 
 export const Chat = () => {
@@ -260,34 +373,48 @@ export const Chat = () => {
       });
 
       const OCC_BASE = import.meta.env.VITE_API_URL || '/occ/v2/electronics';
-      const res = await fetch(`${OCC_BASE}/agent/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          messages: wireMessages,
-          cartCode: getStoredCartCode() || undefined,
-        }),
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      };
+      const payload = JSON.stringify({
+        messages: wireMessages,
+        cartCode: getStoredCartCode() || undefined,
       });
 
-      if (res.status === 401) {
-        auth.logout();
-        throw new Error('Session expired. Please log in again.');
-      }
+      // Try the streaming endpoint first. On any failure (server flag off, gateway strips
+      // SSE, network hiccup mid-stream) we transparently fall back to /agent/chat.
+      const data = await fetchAgentResponse(
+        OCC_BASE,
+        headers,
+        payload,
+        (delta) => {
+          // Append this delta to the in-progress assistant bubble. We seed the bubble on
+          // first delta so we don't render an empty bubble before any text arrives.
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === 'assistant' && (last as { streaming?: boolean }).streaming) {
+              const updated: ChatMessage = { ...last, content: last.content + delta };
+              return [...prev.slice(0, -1), updated];
+            }
+            return [...prev, { role: 'assistant', content: delta, streaming: true } as ChatMessage];
+          });
+        },
+      );
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Request failed');
-      }
-
-      const data = await res.json();
       const { clean, suggestions: parsed } = parseSuggestions(data.reply);
 
       const entityRefs = Array.isArray(data.entityRefs) ? (data.entityRefs as EntityRef[]) : undefined;
-      const assistantMsg: ChatMessage = { role: 'assistant', content: clean, entityRefs };
-      setMessages([...updatedMessages, assistantMsg]);
+      // Replace any in-progress streaming bubble with the final cleaned reply (strips the
+      // SUGGESTIONS:[...] tail). If we never streamed (fallback path), append normally.
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        const finalMsg: ChatMessage = { role: 'assistant', content: clean, entityRefs };
+        if (last && last.role === 'assistant' && (last as { streaming?: boolean }).streaming) {
+          return [...prev.slice(0, -1), finalMsg];
+        }
+        return [...prev, finalMsg];
+      });
 
       // Update suggestions — use agent suggestions or contextual defaults
       if (parsed.length > 0) {

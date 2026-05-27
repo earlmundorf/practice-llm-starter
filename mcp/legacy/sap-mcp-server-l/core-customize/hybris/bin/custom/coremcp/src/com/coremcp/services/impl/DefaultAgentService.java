@@ -24,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class DefaultAgentService implements AgentService
@@ -116,9 +117,23 @@ public class DefaultAgentService implements AgentService
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")
 	public Map<String, Object> chat(final List<Map<String, Object>> messages)
 	{
+		return runChat(messages, null);
+	}
+
+	@Override
+	public Map<String, Object> chatStream(final List<Map<String, Object>> messages,
+		final Consumer<String> textDeltaConsumer)
+	{
+		return runChat(messages, textDeltaConsumer);
+	}
+
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> runChat(final List<Map<String, Object>> messages,
+		final Consumer<String> textDeltaConsumer)
+	{
+		final boolean streaming = textDeltaConsumer != null;
 		final long turnStartNs = System.nanoTime();
 		// Send the full tool set every turn. We previously ran a Haiku classifier to filter
 		// tools per intent (browse/cart/checkout) but it added 1.3–2.3 s of latency AND caused
@@ -152,8 +167,11 @@ public class DefaultAgentService implements AgentService
 		{
 			iterations++;
 			final long llmStartNs = System.nanoTime();
-			final Map<String, Object> response = llmClient.chatCompletion(fullMessages, tools);
-			LOG.info("[perf] llmRound iter={} durationMs={}", iterations, elapsedMs(llmStartNs));
+			final Map<String, Object> response = streaming
+				? llmClient.chatCompletionStream(fullMessages, tools, textDeltaConsumer)
+				: llmClient.chatCompletion(fullMessages, tools);
+			LOG.info("[perf] llmRound iter={} streaming={} durationMs={}",
+				iterations, streaming, elapsedMs(llmStartNs));
 
 			final List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
 			if (choices == null || choices.isEmpty())
