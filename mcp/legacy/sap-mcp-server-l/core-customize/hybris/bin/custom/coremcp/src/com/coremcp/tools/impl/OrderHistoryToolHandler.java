@@ -50,7 +50,7 @@ public class OrderHistoryToolHandler implements McpToolHandler
 				"items", Map.of("type", "string", "enum", List.of("CREATED", "CHECKED_VALID", "PAYMENT_AUTHORIZED", "PAYMENT_CAPTURED", "READY", "COMPLETED", "CANCELLED")),
 				"description", "Filter by order statuses. Returns all statuses if omitted."),
 			"currentPage", Map.of("type", "integer", "description", "Page number (0-based)", "default", 0),
-			"pageSize", Map.of("type", "integer", "description", "Number of orders per page", "default", 20),
+			"pageSize", Map.of("type", "integer", "description", "Number of orders per page. Default is small to keep the conversation light; ask for more only when the user wants the full history.", "default", 5),
 			"sort", Map.of("type", "string", "description", "Sort field (e.g., 'byDate', 'byOrderNumber')")
 		));
 		schema.put("required", Collections.emptyList());
@@ -64,7 +64,7 @@ public class OrderHistoryToolHandler implements McpToolHandler
 		try
 		{
 			final int currentPage = args.containsKey("currentPage") ? ((Number) args.get("currentPage")).intValue() : 0;
-			final int pageSize = args.containsKey("pageSize") ? ((Number) args.get("pageSize")).intValue() : 20;
+			final int pageSize = args.containsKey("pageSize") ? ((Number) args.get("pageSize")).intValue() : 5;
 			final String sort = (String) args.getOrDefault("sort", "byDate");
 
 			final PageableData pageableData = new PageableData();

@@ -47,8 +47,8 @@ public class ProductGetToolHandler implements McpToolHandler
 			"code", Map.of("type", "string", "description", "Product code (e.g., 'LAPTOP_PRO_15')"),
 			"options", Map.of("type", "array",
 				"items", Map.of("type", "string", "enum", List.of("BASIC", "PRICE", "STOCK", "DESCRIPTION", "GALLERY", "CATEGORIES", "REVIEW", "CLASSIFICATION", "REFERENCES", "PROMOTIONS")),
-				"description", "Data options to include. Defaults to all if omitted.",
-				"default", List.of("BASIC", "PRICE", "STOCK", "DESCRIPTION", "CATEGORIES"))
+				"description", "Data options to include. Default is the lean set (BASIC + PRICE + STOCK). Add DESCRIPTION when the user actually wants details, CATEGORIES when relevant, etc. — bigger payloads slow the conversation down.",
+				"default", List.of("BASIC", "PRICE", "STOCK"))
 		));
 		schema.put("required", List.of("code"));
 		return schema;
@@ -71,8 +71,7 @@ public class ProductGetToolHandler implements McpToolHandler
 			}
 			else
 			{
-				options = Arrays.asList(ProductOption.BASIC, ProductOption.PRICE, ProductOption.STOCK,
-					ProductOption.DESCRIPTION, ProductOption.CATEGORIES);
+				options = Arrays.asList(ProductOption.BASIC, ProductOption.PRICE, ProductOption.STOCK);
 			}
 
 			final Object result = productFacade.getProductForCodeAndOptions(code, options);

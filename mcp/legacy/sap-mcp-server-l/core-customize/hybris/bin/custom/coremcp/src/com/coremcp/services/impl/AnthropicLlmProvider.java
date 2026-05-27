@@ -79,6 +79,7 @@ public class AnthropicLlmProvider implements LlmProvider
 
 			final Map<String, Object> raw = objectMapper.readValue(response.body(),
 				new TypeReference<Map<String, Object>>() {});
+			logUsage(raw);
 			return normalizeResponse(raw);
 		}
 		catch (final InterruptedException e)
@@ -104,14 +105,15 @@ public class AnthropicLlmProvider implements LlmProvider
 		requestBody.put("model", resolveModel(modelOverride));
 		requestBody.put("max_tokens", DEFAULT_MAX_TOKENS);
 
-		String system = null;
+		final List<String> systemTexts = new ArrayList<>();
 		final List<Map<String, Object>> anthropicMessages = new ArrayList<>();
 		for (final Map<String, Object> message : messages)
 		{
 			final String role = asString(message.get("role"));
 			if ("system".equals(role))
 			{
-				system = asString(message.get("content"));
+				final String text = asString(message.get("content"));
+				if (!text.isBlank()) systemTexts.add(text);
 				continue;
 			}
 			if ("tool".equals(role))
@@ -140,18 +142,55 @@ public class AnthropicLlmProvider implements LlmProvider
 			));
 		}
 
-		if (system != null && !system.isBlank())
+		// Send system as an array of content blocks. The FIRST block (caller convention:
+		// the stable persona prompt) gets a cache_control breakpoint so Anthropic's
+		// ephemeral prompt cache can reuse it across turns within ~5 minutes. Subsequent
+		// system blocks (per-turn state snapshot) stay uncached.
+		if (!systemTexts.isEmpty())
 		{
-			requestBody.put("system", system);
+			final List<Map<String, Object>> systemBlocks = new ArrayList<>();
+			for (int i = 0; i < systemTexts.size(); i++)
+			{
+				final Map<String, Object> block = new LinkedHashMap<>();
+				block.put("type", "text");
+				block.put("text", systemTexts.get(i));
+				if (i == 0)
+				{
+					block.put("cache_control", Map.of("type", "ephemeral"));
+				}
+				systemBlocks.add(block);
+			}
+			requestBody.put("system", systemBlocks);
 		}
 		requestBody.put("messages", anthropicMessages);
 
 		if (tools != null && !tools.isEmpty())
 		{
-			requestBody.put("tools", normalizeTools(tools));
+			// Tag the last tool with a cache breakpoint so the entire tools section is cacheable.
+			final List<Map<String, Object>> normalizedTools = normalizeTools(tools);
+			if (!normalizedTools.isEmpty())
+			{
+				final Map<String, Object> last = new LinkedHashMap<>(normalizedTools.get(normalizedTools.size() - 1));
+				last.put("cache_control", Map.of("type", "ephemeral"));
+				normalizedTools.set(normalizedTools.size() - 1, last);
+			}
+			requestBody.put("tools", normalizedTools);
 		}
 
 		return requestBody;
+	}
+
+	@SuppressWarnings("unchecked")
+	private void logUsage(final Map<String, Object> raw)
+	{
+		final Object usageObj = raw == null ? null : raw.get("usage");
+		if (!(usageObj instanceof Map)) return;
+		final Map<String, Object> usage = (Map<String, Object>) usageObj;
+		LOG.info("[perf] anthropic.usage input={} output={} cacheCreate={} cacheRead={}",
+			usage.get("input_tokens"),
+			usage.get("output_tokens"),
+			usage.getOrDefault("cache_creation_input_tokens", 0),
+			usage.getOrDefault("cache_read_input_tokens", 0));
 	}
 
 	// Package-private — exercised directly by AnthropicLlmProviderTest.

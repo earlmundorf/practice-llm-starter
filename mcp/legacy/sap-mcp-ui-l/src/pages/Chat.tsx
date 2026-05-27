@@ -304,7 +304,6 @@ export const Chat = () => {
       window.dispatchEvent(new Event('cartItemAdded'));
 
       // Act on agent-driven UI actions
-      let navigated = false;
       if (data.action) {
         const mapped = ACTION_MAP[data.action];
         if (mapped) {
@@ -312,16 +311,7 @@ export const Chat = () => {
             sessionStorage.setItem('thinkshop_from_chat', 'true');
           }
           navigate(mapped);
-          navigated = true;
         }
-      }
-      // Fallback: backend's intent classifier said checkout but the agent didn't emit
-      // ui_action. Trust the classifier and route to /checkout anyway. The client-side
-      // regex caught the obvious phrasings before the request was sent; this catches
-      // the looser ones ("ready to wrap up", "I'm done shopping").
-      if (!navigated && data.intent === 'checkout') {
-        sessionStorage.setItem('thinkshop_from_chat', 'true');
-        navigate('/checkout');
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Something went wrong';
