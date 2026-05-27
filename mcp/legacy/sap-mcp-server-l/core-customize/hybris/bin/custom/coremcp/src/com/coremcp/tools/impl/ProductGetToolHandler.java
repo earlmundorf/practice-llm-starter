@@ -1,6 +1,8 @@
 package com.coremcp.tools.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.coremcp.services.DeepLinkBuilder;
 import com.coremcp.tools.McpToolHandler;
 import com.coremcp.tools.McpToolResult;
 import de.hybris.platform.commercefacades.product.ProductFacade;
@@ -18,6 +20,7 @@ import java.util.stream.Collectors;
 public class ProductGetToolHandler implements McpToolHandler
 {
 	private ProductFacade productFacade;
+	private DeepLinkBuilder deepLinkBuilder;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Override
@@ -73,7 +76,10 @@ public class ProductGetToolHandler implements McpToolHandler
 			}
 
 			final Object result = productFacade.getProductForCodeAndOptions(code, options);
-			return McpToolResult.success(objectMapper.writeValueAsString(result));
+			final ObjectNode tree = objectMapper.valueToTree(result);
+			final String url = deepLinkBuilder.productUrl(code);
+			if (url != null) tree.put("url", url);
+			return McpToolResult.success(objectMapper.writeValueAsString(tree));
 		}
 		catch (final Exception e)
 		{
@@ -85,5 +91,11 @@ public class ProductGetToolHandler implements McpToolHandler
 	public void setProductFacade(final ProductFacade productFacade)
 	{
 		this.productFacade = productFacade;
+	}
+
+	@Required
+	public void setDeepLinkBuilder(final DeepLinkBuilder deepLinkBuilder)
+	{
+		this.deepLinkBuilder = deepLinkBuilder;
 	}
 }

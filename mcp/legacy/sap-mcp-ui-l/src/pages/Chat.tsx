@@ -1,7 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeExternalLinks from 'rehype-external-links';
 import { api, auth, getStoredCartCode, storeCartCode, clearStoredCartCode } from '../services/api';
 import { Checkout } from './Checkout';
+import { OrderModal } from '../components/OrderModal';
+import { ProductModal } from '../components/ProductModal';
+import { OrderHistoryModal } from '../components/OrderHistoryModal';
 
 const MAX_IMAGES_PER_TURN = 4;
 
@@ -31,10 +37,22 @@ const compressImageToDataUrl = async (file: File): Promise<string> => {
   }
 };
 
+interface EntityRef {
+  type: 'product' | 'order' | 'orderHistory';
+  code?: string;
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  entityRefs?: EntityRef[];
 }
+
+type OpenModal =
+  | { kind: 'order'; orderId: string }
+  | { kind: 'product'; code: string }
+  | { kind: 'orderHistory' }
+  | null;
 
 const DEFAULT_SUGGESTIONS = [
   'What products do you have?',
@@ -68,6 +86,16 @@ const ACTION_MAP: Record<string, string> = {
   // cart: 'cart',        // TODO: opens cart modal (future)
 };
 
+/**
+ * Phrases that should always navigate the user to /checkout, regardless of
+ * what the agent decides. The agent is unreliable about emitting ui_action,
+ * and this intent is unambiguous and high-cost-when-missed.
+ */
+const CHECKOUT_INTENT_REGEX =
+  /\b(proceed (to )?check\s*out|go to check\s*out|take me to check\s*out|let'?s check\s*out|i (want|need|'?d like) to check\s*out|ready to check\s*out|check\s*out now|^check\s*out$)\b/i;
+
+const isCheckoutIntent = (text: string): boolean => CHECKOUT_INTENT_REGEX.test(text.trim());
+
 /** Parse SUGGESTIONS:[...] from the last line of agent response */
 const parseSuggestions = (text: string): { clean: string; suggestions: string[] } => {
   const match = text.match(/\n?SUGGESTIONS:\s*(\[.*\])\s*$/);
@@ -87,6 +115,7 @@ export const Chat = () => {
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>(loadPersistedSuggestions);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [openModal, setOpenModal] = useState<OpenModal>(null);
   const [visionEnabled, setVisionEnabled] = useState(false);
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -188,6 +217,14 @@ export const Chat = () => {
     const images = pendingImages;
     if ((!content && images.length === 0) || loading) return;
 
+    // Hard-route checkout intent: don't depend on the LLM emitting ui_action.
+    if (images.length === 0 && isCheckoutIntent(content)) {
+      setInput('');
+      sessionStorage.setItem('thinkshop_from_chat', 'true');
+      navigate('/checkout');
+      return;
+    }
+
     // Local display text — note image attachment(s) so the user sees them in the transcript.
     const imageNote = images.length > 1
       ? `[${images.length} images attached]`
@@ -248,7 +285,8 @@ export const Chat = () => {
       const data = await res.json();
       const { clean, suggestions: parsed } = parseSuggestions(data.reply);
 
-      const assistantMsg: ChatMessage = { role: 'assistant', content: clean };
+      const entityRefs = Array.isArray(data.entityRefs) ? (data.entityRefs as EntityRef[]) : undefined;
+      const assistantMsg: ChatMessage = { role: 'assistant', content: clean, entityRefs };
       setMessages([...updatedMessages, assistantMsg]);
 
       // Update suggestions — use agent suggestions or contextual defaults
@@ -266,6 +304,7 @@ export const Chat = () => {
       window.dispatchEvent(new Event('cartItemAdded'));
 
       // Act on agent-driven UI actions
+      let navigated = false;
       if (data.action) {
         const mapped = ACTION_MAP[data.action];
         if (mapped) {
@@ -273,7 +312,16 @@ export const Chat = () => {
             sessionStorage.setItem('thinkshop_from_chat', 'true');
           }
           navigate(mapped);
+          navigated = true;
         }
+      }
+      // Fallback: backend's intent classifier said checkout but the agent didn't emit
+      // ui_action. Trust the classifier and route to /checkout anyway. The client-side
+      // regex caught the obvious phrasings before the request was sent; this catches
+      // the looser ones ("ready to wrap up", "I'm done shopping").
+      if (!navigated && data.intent === 'checkout') {
+        sessionStorage.setItem('thinkshop_from_chat', 'true');
+        navigate('/checkout');
       }
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : 'Something went wrong';
@@ -391,17 +439,74 @@ export const Chat = () => {
             {messages.map((msg, idx) => (
               <div
                 key={idx}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
               >
                 <div
-                  className={`max-w-[80%] px-4 py-3 rounded-lg whitespace-pre-wrap ${
+                  className={`max-w-[80%] px-4 py-3 rounded-lg ${
                     msg.role === 'user'
-                      ? 'bg-blue-600 dark:bg-blue-500 text-white'
+                      ? 'bg-blue-600 dark:bg-blue-500 text-white whitespace-pre-wrap'
                       : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
                   }`}
                 >
-                  {msg.content}
+                  {msg.role === 'user' ? (
+                    msg.content
+                  ) : (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[[rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }]]}
+                      components={{
+                        a: ({ node, ...props }) => (
+                          <a
+                            {...props}
+                            className="text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-700 dark:hover:text-blue-300"
+                          />
+                        ),
+                        p: ({ node, ...props }) => <p {...props} className="mb-2 last:mb-0" />,
+                        ul: ({ node, ...props }) => <ul {...props} className="list-disc pl-5 mb-2 last:mb-0" />,
+                        ol: ({ node, ...props }) => <ol {...props} className="list-decimal pl-5 mb-2 last:mb-0" />,
+                        table: ({ node, ...props }) => (
+                          <table {...props} className="border-collapse my-2 text-sm" />
+                        ),
+                        th: ({ node, ...props }) => (
+                          <th {...props} className="border border-gray-300 dark:border-gray-600 px-2 py-1 text-left font-semibold" />
+                        ),
+                        td: ({ node, ...props }) => (
+                          <td {...props} className="border border-gray-300 dark:border-gray-600 px-2 py-1" />
+                        ),
+                        code: ({ node, ...props }) => (
+                          <code {...props} className="bg-gray-200 dark:bg-gray-800 rounded px-1 py-0.5 text-sm" />
+                        ),
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  )}
                 </div>
+                {msg.role === 'assistant' && msg.entityRefs && msg.entityRefs.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2 max-w-[80%]">
+                    {msg.entityRefs.map((ref, i) => {
+                      const onClick = () => {
+                        if (ref.type === 'order' && ref.code) setOpenModal({ kind: 'order', orderId: ref.code });
+                        else if (ref.type === 'product' && ref.code) setOpenModal({ kind: 'product', code: ref.code });
+                        else if (ref.type === 'orderHistory') setOpenModal({ kind: 'orderHistory' });
+                      };
+                      const label =
+                        ref.type === 'order' ? `🧾 Order #${ref.code}` :
+                        ref.type === 'product' ? `📦 ${ref.code}` :
+                        '📋 All orders';
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={onClick}
+                          className="text-sm px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-pointer"
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ))}
 
@@ -518,6 +623,19 @@ export const Chat = () => {
           </div>
         </div>
       </div>
+
+      {openModal?.kind === 'order' && (
+        <OrderModal orderId={openModal.orderId} onClose={() => setOpenModal(null)} />
+      )}
+      {openModal?.kind === 'product' && (
+        <ProductModal code={openModal.code} onClose={() => setOpenModal(null)} />
+      )}
+      {openModal?.kind === 'orderHistory' && (
+        <OrderHistoryModal
+          onClose={() => setOpenModal(null)}
+          onOpenOrder={(orderId) => setOpenModal({ kind: 'order', orderId })}
+        />
+      )}
     </div>
   );
 };

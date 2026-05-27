@@ -1,6 +1,9 @@
 package com.coremcp.tools.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.coremcp.services.DeepLinkBuilder;
 import com.coremcp.tools.McpToolHandler;
 import com.coremcp.tools.McpToolResult;
 import de.hybris.platform.commercefacades.order.OrderFacade;
@@ -19,6 +22,7 @@ import java.util.stream.Collectors;
 public class OrderHistoryToolHandler implements McpToolHandler
 {
 	private OrderFacade orderFacade;
+	private DeepLinkBuilder deepLinkBuilder;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Override
@@ -82,7 +86,19 @@ public class OrderHistoryToolHandler implements McpToolHandler
 				: null;
 
 			final Object result = orderFacade.getPagedOrderHistoryForStatuses(pageableData, statusArray);
-			return McpToolResult.success(objectMapper.writeValueAsString(result));
+			final ObjectNode tree = objectMapper.valueToTree(result);
+			tree.put("url", deepLinkBuilder.orderHistoryUrl());
+			if (tree.get("results") instanceof ArrayNode results)
+			{
+				for (int i = 0; i < results.size(); i++)
+				{
+					if (results.get(i) instanceof ObjectNode order && order.has("code"))
+					{
+						order.put("url", deepLinkBuilder.orderUrl(order.get("code").asText()));
+					}
+				}
+			}
+			return McpToolResult.success(objectMapper.writeValueAsString(tree));
 		}
 		catch (final Exception e)
 		{
@@ -94,5 +110,11 @@ public class OrderHistoryToolHandler implements McpToolHandler
 	public void setOrderFacade(final OrderFacade orderFacade)
 	{
 		this.orderFacade = orderFacade;
+	}
+
+	@Required
+	public void setDeepLinkBuilder(final DeepLinkBuilder deepLinkBuilder)
+	{
+		this.deepLinkBuilder = deepLinkBuilder;
 	}
 }

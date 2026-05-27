@@ -65,6 +65,11 @@ public class DefaultAgentService implements AgentService
 		"and completing purchases. When a customer wants to buy something, guide them through: " +
 		"add to cart → set delivery address → set delivery mode → set payment → place order. " +
 		"When showing products, include the product code, name, and price.\n\n" +
+		"LINKS: Don't try to render URLs in your replies. The chat UI automatically attaches " +
+		"clickable chips below your message for any products, orders, or order-history pages your " +
+		"tool calls touched — the user can open them from there. Just describe the entity in " +
+		"normal text (e.g., \"your most recent order is #THINK-0001\") and let the UI handle " +
+		"navigation.\n\n" +
 		"IMAGES: When the user attaches an image, look at it the way a friend would. Describe what you see " +
 		"naturally — what it looks like, what it's probably for, a thought or observation about it. If a " +
 		"product in the image (or something close to it) seems like something the user might want to find " +
@@ -228,6 +233,8 @@ public class DefaultAgentService implements AgentService
 
 		String uiAction = null;
 		final Set<String> seenInvocations = new HashSet<>();
+		final List<Map<String, String>> entityRefs = new ArrayList<>();
+		final Set<String> entityRefKeys = new HashSet<>();
 
 		int iterations = 0;
 		while (iterations < MAX_TOOL_ITERATIONS)
@@ -256,10 +263,15 @@ public class DefaultAgentService implements AgentService
 				// Return the result: the reply plus the full message history (minus system prompt)
 				final Map<String, Object> result = new LinkedHashMap<>();
 				result.put("reply", reply);
+				result.put("intent", intent);
 				result.put("messages", summarizeHistoryForClient(pruneImageContent(fullMessages.subList(2, fullMessages.size()))));
 				if (uiAction != null)
 				{
 					result.put("action", uiAction);
+				}
+				if (!entityRefs.isEmpty())
+				{
+					result.put("entityRefs", entityRefs);
 				}
 				return result;
 			}
@@ -308,6 +320,7 @@ public class DefaultAgentService implements AgentService
 						{
 							final McpToolResult toolResult = handler.execute(toolArgs);
 							toolResultContent = toolResult.getContent();
+							collectEntityRefs(toolName, toolArgs, toolResultContent, entityRefs, entityRefKeys);
 						}
 					}
 					catch (final Exception e)
@@ -335,7 +348,12 @@ public class DefaultAgentService implements AgentService
 		// Max iterations reached, or all tool calls were duplicates
 		final Map<String, Object> result = new LinkedHashMap<>();
 		result.put("reply", "I apologize, but I'm having trouble completing your request. Could you try rephrasing it?");
+		result.put("intent", intent);
 		result.put("messages", summarizeHistoryForClient(pruneImageContent(fullMessages.subList(2, fullMessages.size()))));
+		if (!entityRefs.isEmpty())
+		{
+			result.put("entityRefs", entityRefs);
+		}
 		return result;
 	}
 
@@ -496,6 +514,97 @@ public class DefaultAgentService implements AgentService
 		return out;
 	}
 
+	private static final java.util.regex.Pattern URL_FIELD_PATTERN =
+		java.util.regex.Pattern.compile("\"url\"\\s*:\\s*\"([^\"]+)\"");
+
+	// Cap chips per turn so a wide search doesn't explode the chat with 50 chips.
+	private static final int MAX_PRODUCT_REFS_PER_CALL = 5;
+	private static final int MAX_ORDER_REFS_PER_CALL = 5;
+
+	/**
+	 * Inspect a tool call's args + result and append entity references the UI can render as
+	 * clickable chips. Each ref is a map with `type` (product, order, orderHistory) and an
+	 * optional `code`. Dedupes via {@code entityRefKeys} so repeated tools don't emit dupes.
+	 */
+	private void collectEntityRefs(
+		final String toolName,
+		final Map<String, Object> toolArgs,
+		final String toolResultJson,
+		final List<Map<String, String>> entityRefs,
+		final Set<String> entityRefKeys)
+	{
+		try
+		{
+			switch (toolName)
+			{
+				case "product_get":
+				{
+					final Object code = toolArgs.get("code");
+					if (code instanceof String s) addRef(entityRefs, entityRefKeys, "product", s);
+					break;
+				}
+				case "order_get":
+				{
+					final Object code = toolArgs.get("code");
+					if (code instanceof String s) addRef(entityRefs, entityRefKeys, "order", s);
+					break;
+				}
+				case "order_history":
+				{
+					addRef(entityRefs, entityRefKeys, "orderHistory", null);
+					final com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(toolResultJson);
+					final com.fasterxml.jackson.databind.JsonNode results = root.get("orders") != null
+						? root.get("orders") : root.get("results");
+					if (results != null && results.isArray())
+					{
+						int n = 0;
+						for (com.fasterxml.jackson.databind.JsonNode order : results)
+						{
+							if (n++ >= MAX_ORDER_REFS_PER_CALL) break;
+							if (order.has("code")) addRef(entityRefs, entityRefKeys, "order", order.get("code").asText());
+						}
+					}
+					break;
+				}
+				case "product_search":
+				{
+					final com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(toolResultJson);
+					final com.fasterxml.jackson.databind.JsonNode results = root.get("results");
+					if (results != null && results.isArray())
+					{
+						int n = 0;
+						for (com.fasterxml.jackson.databind.JsonNode product : results)
+						{
+							if (n++ >= MAX_PRODUCT_REFS_PER_CALL) break;
+							if (product.has("code")) addRef(entityRefs, entityRefKeys, "product", product.get("code").asText());
+						}
+					}
+					break;
+				}
+				default:
+					// Other tools (cart, checkout, customer, ui_action) don't produce chips.
+			}
+		}
+		catch (final Exception e)
+		{
+			LOG.debug("collectEntityRefs failed for {}: {}", toolName, e.getMessage());
+		}
+	}
+
+	private void addRef(
+		final List<Map<String, String>> refs,
+		final Set<String> keys,
+		final String type,
+		final String code)
+	{
+		final String key = type + "|" + (code == null ? "" : code);
+		if (!keys.add(key)) return;
+		final Map<String, String> ref = new LinkedHashMap<>();
+		ref.put("type", type);
+		if (code != null) ref.put("code", code);
+		refs.add(ref);
+	}
+
 	private List<Map<String, Object>> summarizeHistoryForClient(final List<Map<String, Object>> history)
 	{
 		final List<Map<String, Object>> out = new ArrayList<>(history.size());
@@ -514,10 +623,29 @@ public class DefaultAgentService implements AgentService
 			}
 			final Map<String, Object> summarized = new LinkedHashMap<>(message);
 			summarized.put("content", "[previous tool result summarized; " + content.length()
-				+ " chars omitted] " + content.substring(0, TOOL_RESULT_SUMMARY_SNIPPET) + "...");
+				+ " chars omitted] " + content.substring(0, TOOL_RESULT_SUMMARY_SNIPPET) + "..."
+				+ extractDeepLinks(content));
 			out.add(summarized);
 		}
 		return out;
+	}
+
+	/**
+	 * Pull every "url":"..." value out of the original tool-result JSON and append it to the
+	 * summary, so deep links survive truncation and are still available to the agent on
+	 * subsequent turns.
+	 */
+	private String extractDeepLinks(final String json)
+	{
+		final java.util.regex.Matcher m = URL_FIELD_PATTERN.matcher(json);
+		final List<String> urls = new ArrayList<>();
+		while (m.find())
+		{
+			final String url = m.group(1);
+			if (!urls.contains(url)) urls.add(url);
+		}
+		if (urls.isEmpty()) return "";
+		return " [preserved deep links: " + String.join(", ", urls) + "]";
 	}
 
 	private String resolveIntentModel()
