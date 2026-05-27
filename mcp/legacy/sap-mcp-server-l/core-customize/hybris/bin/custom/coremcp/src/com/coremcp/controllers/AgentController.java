@@ -92,7 +92,17 @@ public class AgentController
 			response.flushBuffer();
 
 			final PrintWriter writer = response.getWriter();
-			final Map<String, Object> result = agentService.chatStream(messages, chunk -> writeSseEvent(writer, "text", chunk));
+			final Map<String, Object> result = agentService.chatStream(
+				messages,
+				chunk -> writeSseEvent(writer, "text", chunk),
+				toolName -> {
+					try
+					{
+						writeSseEvent(writer, "tool",
+							objectMapper.writeValueAsString(Map.of("name", toolName)));
+					}
+					catch (final Exception ignored) { }
+				});
 			attachCartCode(result);
 			writeSseEvent(writer, "done", objectMapper.writeValueAsString(result));
 			writer.flush();
@@ -124,6 +134,7 @@ public class AgentController
 	private void attachCartCode(final Map<String, Object> result)
 	{
 		final String sessionCartCode = mcpCartSessionService.getSessionCartCode();
+		LOG.info("[perf] attachCartCode sessionCartCode={}", sessionCartCode);
 		if (sessionCartCode != null)
 		{
 			result.put("cartCode", sessionCartCode);

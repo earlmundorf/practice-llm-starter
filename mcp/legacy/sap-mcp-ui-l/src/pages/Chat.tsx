@@ -48,7 +48,30 @@ interface ChatMessage {
   entityRefs?: EntityRef[];
   /** Set on assistant bubbles that are still receiving streamed text deltas. */
   streaming?: boolean;
+  /** Transient "Looking up your orders…" line shown while a tool round is running. */
+  toolStatus?: string;
 }
+
+/** Human-readable status labels for in-progress tool calls (R1: tool SSE events). */
+const TOOL_STATUS_LABEL: Record<string, string> = {
+  product_search: 'Searching products…',
+  product_get: 'Loading product details…',
+  order_history: 'Looking up your orders…',
+  order_get: 'Loading order details…',
+  cart_get: 'Checking your cart…',
+  cart_add_product: 'Adding to cart…',
+  cart_update_entry: 'Updating your cart…',
+  cart_remove_entry: 'Removing item from cart…',
+  cart_apply_voucher: 'Applying coupon…',
+  cart_remove_voucher: 'Removing coupon…',
+  customer_get: 'Looking you up…',
+  customer_lookup: 'Finding customer…',
+  promotions_get: 'Checking promotions…',
+  checkout_set_delivery_address: 'Saving delivery address…',
+  checkout_set_delivery_mode: 'Setting delivery option…',
+  checkout_set_payment: 'Saving payment details…',
+  order_place: 'Placing your order…',
+};
 
 type OpenModal =
   | { kind: 'order'; orderId: string }
@@ -134,6 +157,7 @@ const fetchAgentResponse = async (
   headers: Record<string, string>,
   payload: string,
   onDelta: (chunk: string) => void,
+  onTool: (toolName: string) => void,
 ): Promise<AgentResponse> => {
   const fallback = async (): Promise<AgentResponse> => {
     const res = await fetch(`${occBase}/agent/chat`, { method: 'POST', headers, body: payload });
@@ -196,6 +220,11 @@ const fetchAgentResponse = async (
         const dataStr = dataLines.join('\n');
         if (eventName === 'text') {
           try { onDelta(JSON.parse(dataStr) as string); } catch { /* skip malformed delta */ }
+        } else if (eventName === 'tool') {
+          try {
+            const evt = JSON.parse(dataStr) as { name?: string };
+            if (evt.name) onTool(evt.name);
+          } catch { /* skip malformed tool event */ }
         } else if (eventName === 'done') {
           try { done = JSON.parse(dataStr) as AgentResponse; } catch { streamError = 'malformed done event'; }
         } else if (eventName === 'error') {
@@ -390,14 +419,31 @@ export const Chat = () => {
         payload,
         (delta) => {
           // Append this delta to the in-progress assistant bubble. We seed the bubble on
-          // first delta so we don't render an empty bubble before any text arrives.
+          // first delta so we don't render an empty bubble before any text arrives. Once
+          // text starts arriving we drop any tool-status line — it served its purpose.
           setMessages((prev) => {
             const last = prev[prev.length - 1];
-            if (last && last.role === 'assistant' && (last as { streaming?: boolean }).streaming) {
-              const updated: ChatMessage = { ...last, content: last.content + delta };
+            if (last && last.role === 'assistant' && last.streaming) {
+              const updated: ChatMessage = {
+                ...last,
+                content: last.content + delta,
+                toolStatus: undefined,
+              };
               return [...prev.slice(0, -1), updated];
             }
-            return [...prev, { role: 'assistant', content: delta, streaming: true } as ChatMessage];
+            return [...prev, { role: 'assistant', content: delta, streaming: true }];
+          });
+        },
+        (toolName) => {
+          // Render a transient status line on the in-progress bubble (or seed one if there
+          // isn't a streaming bubble yet). Cleared when text starts streaming.
+          const status = TOOL_STATUS_LABEL[toolName] ?? 'Working on it…';
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === 'assistant' && last.streaming) {
+              return [...prev.slice(0, -1), { ...last, toolStatus: status }];
+            }
+            return [...prev, { role: 'assistant', content: '', streaming: true, toolStatus: status }];
           });
         },
       );
@@ -568,6 +614,8 @@ export const Chat = () => {
                   {msg.role === 'user' ? (
                     msg.content
                   ) : (
+                    <>
+                    {msg.content && (
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       rehypePlugins={[[rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }]]}
@@ -597,6 +645,14 @@ export const Chat = () => {
                     >
                       {msg.content}
                     </ReactMarkdown>
+                    )}
+                    {msg.streaming && msg.toolStatus && (
+                      <div className={`flex items-center gap-2 text-sm italic text-gray-500 dark:text-gray-400 ${msg.content ? 'mt-2' : ''}`}>
+                        <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                        {msg.toolStatus}
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
                 {msg.role === 'assistant' && msg.entityRefs && msg.entityRefs.length > 0 && (

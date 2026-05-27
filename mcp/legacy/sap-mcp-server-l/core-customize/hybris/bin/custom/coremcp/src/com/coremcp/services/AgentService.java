@@ -20,9 +20,12 @@ public interface AgentService
 	Map<String, Object> chat(List<Map<String, Object>> messages);
 
 	/**
-	 * Streaming variant. Tool-calling rounds run non-streamed; the terminating
-	 * round emits text deltas through {@code textDeltaConsumer} as they arrive.
-	 * Returns the same shape as {@link #chat} when finished.
+	 * Streaming variant. Emits text deltas through {@code textDeltaConsumer} as they arrive
+	 * from the LLM, and notifies {@code toolEventConsumer} with the tool name each time the
+	 * agent starts executing a tool call (so the UI can render a "Looking up..." status
+	 * while waiting). Returns the same shape as {@link #chat} when finished.
 	 */
-	Map<String, Object> chatStream(List<Map<String, Object>> messages, Consumer<String> textDeltaConsumer);
+	Map<String, Object> chatStream(List<Map<String, Object>> messages,
+		Consumer<String> textDeltaConsumer,
+		Consumer<String> toolEventConsumer);
 }

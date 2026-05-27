@@ -119,19 +119,21 @@ public class DefaultAgentService implements AgentService
 	@Override
 	public Map<String, Object> chat(final List<Map<String, Object>> messages)
 	{
-		return runChat(messages, null);
+		return runChat(messages, null, null);
 	}
 
 	@Override
 	public Map<String, Object> chatStream(final List<Map<String, Object>> messages,
-		final Consumer<String> textDeltaConsumer)
+		final Consumer<String> textDeltaConsumer,
+		final Consumer<String> toolEventConsumer)
 	{
-		return runChat(messages, textDeltaConsumer);
+		return runChat(messages, textDeltaConsumer, toolEventConsumer);
 	}
 
 	@SuppressWarnings("unchecked")
 	private Map<String, Object> runChat(final List<Map<String, Object>> messages,
-		final Consumer<String> textDeltaConsumer)
+		final Consumer<String> textDeltaConsumer,
+		final Consumer<String> toolEventConsumer)
 	{
 		final boolean streaming = textDeltaConsumer != null;
 		final long turnStartNs = System.nanoTime();
@@ -203,8 +205,8 @@ public class DefaultAgentService implements AgentService
 				{
 					result.put("entityRefs", entityRefs);
 				}
-				LOG.info("[perf] turn=complete iterations={} durationMs={}",
-					iterations, elapsedMs(turnStartNs));
+				LOG.info("[perf] turn=complete iterations={} entityRefs={} durationMs={}",
+					iterations, entityRefs.size(), elapsedMs(turnStartNs));
 				return result;
 			}
 
@@ -232,6 +234,13 @@ public class DefaultAgentService implements AgentService
 				{
 					allDuplicates = false;
 					LOG.info("Agent executing tool: {} with args: {}", toolName, argsJson);
+					// Notify the streaming caller that a tool is starting so the UI can render
+					// a transient "Looking up..." status while we wait for the round-trip. We
+					// suppress ui_action since it isn't user-visible work.
+					if (toolEventConsumer != null && !"ui_action".equals(toolName))
+					{
+						try { toolEventConsumer.accept(toolName); } catch (final Exception ignored) {}
+					}
 					try
 					{
 						final Map<String, Object> toolArgs = objectMapper.readValue(argsJson, Map.class);
