@@ -45,7 +45,7 @@ export const EntityModal = ({ title, onClose, children }: Props) => {
           <button
             type="button"
             onClick={onClose}
-            className="bg-blue-600 dark:bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-700 dark:hover:bg-blue-600 transition-colors font-semibold"
+            className="border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 px-4 py-2 rounded-lg transition-colors font-medium"
           >
             Back to chat
           </button>

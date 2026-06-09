@@ -1,13 +1,85 @@
 <?xml version="1.0" encoding="ISO-8859-1"?>
 <!--
- coremcp — No custom types in Phase 1.
- Session management uses in-memory storage; items.xml types may be added
- in a future phase for clustered session persistence.
+ coremcp item types.
+
+ KnowledgeEntry — shopper-facing knowledge base entries surfaced via the
+ info_get / info_search OCC endpoints and MCP tools. Covers policies,
+ marketing/events, brand content, how-tos and buying guides.
 -->
 
 <items xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:noNamespaceSchemaLocation="items.xsd">
 
+    <enumtypes>
+        <enumtype code="KnowledgeCategory" autocreate="true" generate="true">
+            <value code="policy"/>
+            <value code="event"/>
+            <value code="promo"/>
+            <value code="guide"/>
+            <value code="brand"/>
+            <value code="howto"/>
+            <value code="contact"/>
+        </enumtype>
+
+        <enumtype code="KnowledgeStatus" autocreate="true" generate="true">
+            <value code="draft"/>
+            <value code="published"/>
+        </enumtype>
+    </enumtypes>
+
     <itemtypes>
+        <itemtype code="KnowledgeEntry"
+                  autocreate="true"
+                  generate="true">
+            <deployment table="KnowledgeEntries" typecode="14001"/>
+            <attributes>
+                <attribute qualifier="uid" type="java.lang.String">
+                    <persistence type="property"/>
+                    <modifiers unique="true" optional="false"/>
+                </attribute>
+                <attribute qualifier="category" type="KnowledgeCategory">
+                    <persistence type="property"/>
+                    <modifiers optional="false"/>
+                </attribute>
+                <attribute qualifier="title" type="localized:java.lang.String">
+                    <persistence type="property"/>
+                    <modifiers optional="false"/>
+                </attribute>
+                <attribute qualifier="summary" type="localized:java.lang.String">
+                    <persistence type="property">
+                        <columntype><value>HYBRIS.LONG_STRING</value></columntype>
+                    </persistence>
+                </attribute>
+                <attribute qualifier="body" type="localized:java.lang.String">
+                    <persistence type="property">
+                        <columntype><value>HYBRIS.LONG_STRING</value></columntype>
+                    </persistence>
+                </attribute>
+                <attribute qualifier="tags" type="java.lang.String">
+                    <description>Comma-separated tag list.</description>
+                    <persistence type="property"/>
+                </attribute>
+                <attribute qualifier="validFrom" type="java.util.Date">
+                    <persistence type="property"/>
+                </attribute>
+                <attribute qualifier="validTo" type="java.util.Date">
+                    <persistence type="property"/>
+                </attribute>
+                <attribute qualifier="priority" type="java.lang.Integer">
+                    <persistence type="property"/>
+                    <defaultvalue>Integer.valueOf(0)</defaultvalue>
+                </attribute>
+                <attribute qualifier="imageUrl" type="java.lang.String">
+                    <persistence type="property">
+                        <columntype><value>HYBRIS.LONG_STRING</value></columntype>
+                    </persistence>
+                </attribute>
+                <attribute qualifier="status" type="KnowledgeStatus">
+                    <persistence type="property"/>
+                    <defaultvalue>em().getEnumerationValue("KnowledgeStatus", "draft")</defaultvalue>
+                    <modifiers optional="false"/>
+                </attribute>
+            </attributes>
+        </itemtype>
     </itemtypes>
 </items>

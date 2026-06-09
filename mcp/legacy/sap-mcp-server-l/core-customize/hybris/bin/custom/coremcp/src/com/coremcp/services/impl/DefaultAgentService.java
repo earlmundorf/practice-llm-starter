@@ -66,6 +66,14 @@ public class DefaultAgentService implements AgentService
 		"how many times THIS customer has used a coupon. Compare it against 'maxRedemptionsPerCustomer' to " +
 		"determine eligibility. ALWAYS call promotions_get when the customer asks about coupon eligibility, " +
 		"whether they've used a coupon, or if a deal applies to them — never guess from order history.\n\n" +
+		"KNOWLEDGE BASE (policies, events, how-tos, brand): Use the info_search tool whenever the user " +
+		"asks anything that isn't about a specific product, order, or cart action — returns/refunds, " +
+		"shipping, warranty, privacy, payment methods, contact info, loyalty program, upcoming events, " +
+		"current sales/promos, sustainability, about ThinkShop, or step-by-step help like 'how do I track " +
+		"an order' or 'how do I start a return'. Pass the user's question (or key phrase) as the query — " +
+		"don't invent uids. If info_search returns a relevant entry, answer from its summary/body and cite " +
+		"the title naturally; only fall back to a generic answer if it returns nothing. NEVER tell the user " +
+		"the policy 'isn't available' without first calling info_search.\n\n" +
 		"IMPORTANT: After EVERY response, include exactly one line at the very end with 2-4 suggested " +
 		"follow-up actions the user might want to take next. Format this line as:\n" +
 		"SUGGESTIONS:[\"suggestion 1\",\"suggestion 2\",\"suggestion 3\"]\n" +

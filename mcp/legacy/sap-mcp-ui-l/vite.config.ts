@@ -20,6 +20,9 @@ export default defineConfig({
     proxy: {
       '/occ': sapProxy,
       '/authorizationserver': sapProxy,
+      // Product/CMS image URLs come back from OCC as /medias/?context=...
+      // proxy them to the backend so <img src> works in dev.
+      '/medias': sapProxy,
     }
   }
 })

@@ -182,8 +182,18 @@ export const CartModal = ({ isOpen, onClose }: CartModalProps) => {
                     key={item.productId}
                     className="bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 p-4 hover:shadow-md transition-shadow"
                   >
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex-1">
+                    <div className="flex justify-between items-start mb-3 gap-3">
+                      {item.product?.imageUrl ? (
+                        <img
+                          src={item.product.imageUrl}
+                          alt={item.productName}
+                          loading="lazy"
+                          className="w-16 h-16 object-cover rounded-md flex-shrink-0"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 bg-gray-100 dark:bg-gray-600 rounded-md flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
                         <h3 className="font-semibold text-gray-900 dark:text-white mb-1">
                           {item.productName}
                         </h3>

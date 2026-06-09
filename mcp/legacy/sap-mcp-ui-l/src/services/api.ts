@@ -117,6 +117,42 @@ const mapOccProduct = (occ: any): Product => ({
     || undefined,
 });
 
+// OCC's /products/search, /carts, and /orders converters don't populate
+// `images` — that lives only on /products/{code}. Fetch image URLs for a
+// set of product codes in parallel, deduped, so repeats only hit OCC once.
+const fetchImageUrls = async (codes: string[]): Promise<Map<string, string | undefined>> => {
+  const unique = [...new Set(codes.filter(Boolean))];
+  const entries = await Promise.all(unique.map(async (code) => {
+    try {
+      const r = await fetch(`${OCC_BASE}/products/${code}?fields=code,images(FULL)`);
+      if (!r.ok) return [code, undefined] as const;
+      const j = await r.json();
+      const url = j.images?.find((i: { format?: string; url?: string }) => i.format === 'product')?.url
+        || j.images?.[0]?.url;
+      return [code, url] as const;
+    } catch { return [code, undefined] as const; }
+  }));
+  return new Map(entries);
+};
+
+const enrichWithImages = async (products: Product[]): Promise<Product[]> => {
+  const missing = products.filter(p => !p.imageUrl).map(p => p.id);
+  if (missing.length === 0) return products;
+  const urlByCode = await fetchImageUrls(missing);
+  return products.map(p => p.imageUrl ? p : { ...p, imageUrl: urlByCode.get(p.id) });
+};
+
+// In-place fill of OrderItem.imageUrl across one or more orders. Shares
+// a single dedup pass so repeated product codes across orders fetch once.
+const enrichOrderItemImages = async (orders: Order[]): Promise<void> => {
+  const missing = orders.flatMap(o => o.items).filter(i => !i.imageUrl).map(i => i.productId);
+  if (missing.length === 0) return;
+  const urlByCode = await fetchImageUrls(missing);
+  orders.forEach(o => o.items.forEach(i => {
+    if (!i.imageUrl) i.imageUrl = urlByCode.get(i.productId);
+  }));
+};
+
 const mapOccCartEntry = (entry: any): CartItem => {
   const baseUnit = entry.basePrice?.value ?? 0;
   const quantity = entry.quantity || 0;
@@ -143,6 +179,17 @@ const mapOccCartEntry = (entry: any): CartItem => {
     price: baseUnit,
     entryNumber: entry.entryNumber,
     discountValue,
+    // Minimal Product shell so CartModal/Checkout can read item.product.imageUrl
+    // once enrichWithImages fills it in. OCC's cart converter doesn't include
+    // images on entry.product, so imageUrl starts undefined and gets enriched.
+    product: entry.product?.code ? {
+      id: entry.product.code,
+      name: entry.product.name || entry.product.code,
+      description: '',
+      price: baseUnit,
+      stockQuantity: 0,
+      imageUrl: undefined,
+    } : undefined,
   };
 };
 
@@ -285,8 +332,14 @@ export const api = {
       }));
     /* eslint-enable @typescript-eslint/no-explicit-any */
 
+    // OCC's /products/search converter doesn't populate images even with
+    // fields=FULL — that lives only on /products/{code}. Enrich each search
+    // hit in parallel with a tiny image-only fetch so listing cards render.
+    const baseProducts: Product[] = (data.products || []).map(mapOccProduct);
+    const enriched = await enrichWithImages(baseProducts);
+
     return {
-      products: (data.products || []).map(mapOccProduct),
+      products: enriched,
       pagination: {
         currentPage: data.pagination?.currentPage ?? 0,
         pageSize: data.pagination?.pageSize ?? pageSize,
@@ -362,11 +415,19 @@ export const api = {
     );
     if (!res.ok) throw new Error('Failed to fetch cart');
     const data = await res.json();
-    return {
-      items: (data.entries || []).map(mapOccCartEntry),
-      total: data.totalPrice?.value ?? 0,
-      cartCode,
-    };
+    const items = (data.entries || []).map(mapOccCartEntry) as CartItem[];
+    // Enrich embedded products with images — cart OCC response omits them.
+    const productsForEnrich = items
+      .map(i => i.product)
+      .filter((p): p is Product => Boolean(p));
+    if (productsForEnrich.length > 0) {
+      const enriched = await enrichWithImages(productsForEnrich);
+      const byId = new Map(enriched.map(p => [p.id, p]));
+      items.forEach(i => {
+        if (i.product) i.product = byId.get(i.product.id) ?? i.product;
+      });
+    }
+    return { items, total: data.totalPrice?.value ?? 0, cartCode };
   },
 
   addToCart: async (productId: string, quantity: number): Promise<void> => {
@@ -425,7 +486,9 @@ export const api = {
     );
     if (!res.ok) throw new Error('Failed to load orders');
     const data = await res.json();
-    return (data.orders || []).map(mapOccOrder);
+    const orders: Order[] = (data.orders || []).map(mapOccOrder);
+    await enrichOrderItemImages(orders);
+    return orders;
   },
 
   getOrder: async (orderId: string): Promise<Order> => {
@@ -434,7 +497,9 @@ export const api = {
     );
     if (!res.ok) throw new Error('Order not found');
     const data = await res.json();
-    return mapOccOrder(data);
+    const order = mapOccOrder(data);
+    await enrichOrderItemImages([order]);
+    return order;
   },
 
   // --- Addresses ---

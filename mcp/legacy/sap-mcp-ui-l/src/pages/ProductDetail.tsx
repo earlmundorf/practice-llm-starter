@@ -116,12 +116,12 @@ export const ProductDetail = () => {
         <div className="mt-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="md:flex">
             {/* Product Image */}
-            <div className="md:w-1/2 bg-gray-100 dark:bg-gray-700 flex items-center justify-center p-8">
+            <div className="md:w-1/2 flex items-center justify-center">
               {product.imageUrl ? (
                 <img
                   src={product.imageUrl}
                   alt={product.name}
-                  className="max-w-full max-h-80 object-contain"
+                  className="w-full h-full object-cover"
                 />
               ) : (
                 <div className="text-8xl">📦</div>

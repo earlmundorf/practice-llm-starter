@@ -130,11 +130,12 @@ graph TB
     SAP["<b>SAP Commerce</b><br/>E-commerce backend: catalog,<br/>cart, checkout, orders<br/><i>Java, Spring, OCC REST API</i>"]
     Agent["<b>AI Agent</b><br/>Streaming chat with tool use,<br/>prompt caching, entity refs<br/><i>Custom OCC extension</i>"]
     MCP["<b>MCP Server</b><br/>Exposes commerce tools<br/>to external AI clients<br/><i>JSON-RPC 2.0</i>"]
+    Tools["<b>MCP Tool Handlers</b><br/>product_search, info_search,<br/>cart_*, checkout_*, order_*,<br/>promotions_get, info_get<br/><i>Shared between Agent + MCP</i>"]
   end
 
   Solr["<b>Apache Solr</b><br/>Product search index<br/>and faceted navigation"]
   DB["<b>MySQL</b><br/>Product catalog, users,<br/>orders, carts"]
-  LLM["<b>Anthropic Messages API</b><br/>Claude Sonnet 4.6 with<br/>prompt caching + SSE streaming"]
+  LLM["<b>Configurable Language Model</b><br/>OpenAI, Anthropic, or any<br/>OpenAI-compatible provider<br/><i>Selected via coremcp.llm.provider</i>"]
   ExtClient(["<b>External AI Client</b><br/>Claude Code, Cursor, etc."])
 
   Customer -- "HTTPS" --> React
@@ -144,8 +145,9 @@ graph TB
   SAP -- "Solr queries" --> Solr
   Agent -- "Cached prefix + tools" --> LLM
   LLM -- "SSE deltas / tool calls" --> Agent
-  Agent -- "Commerce facades" --> SAP
-  MCP -- "Commerce facades" --> SAP
+  Agent -- "Invokes tool by name" --> Tools
+  MCP -- "Dispatches tools/call" --> Tools
+  Tools -- "Commerce facades" --> SAP
   ExtClient -- "JSON-RPC tools" --> MCP
 
   classDef person fill:#2563eb,stroke:#1d4ed8,color:#fff,stroke-width:2px
@@ -154,7 +156,7 @@ graph TB
   classDef boundary fill:none,stroke:#d1d5db,stroke-width:2px,stroke-dasharray:5 5,color:#6b7280
 
   class Customer,ExtClient person
-  class React,SAP,Agent,MCP system
+  class React,SAP,Agent,MCP,Tools system
   class Solr,DB,LLM external
 `;
 

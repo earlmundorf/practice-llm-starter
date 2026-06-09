@@ -25,6 +25,18 @@ export const ProductCard = ({ product, onAddToCart }: ProductCardProps) => {
       onClick={() => navigate(`/products/${product.id}`)}
       className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow duration-300 border border-gray-200 dark:border-gray-700 cursor-pointer"
     >
+      <div className="aspect-square flex items-center justify-center overflow-hidden">
+        {product.imageUrl ? (
+          <img
+            src={product.imageUrl}
+            alt={product.name}
+            loading="lazy"
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <div className="text-gray-300 dark:text-gray-500 text-sm">No image</div>
+        )}
+      </div>
       <div className="p-6">
         <div className="mb-4">
           <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">

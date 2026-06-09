@@ -150,12 +150,12 @@ export const Orders = () => {
                 onClick={() => viewOrderDetails(order.id)}
                 className="bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700 p-6 cursor-pointer hover:shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 flex-1">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 flex-1 min-w-0">
                     <div className="text-3xl">
                       {getStatusIcon(order.status)}
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-3 mb-1">
                         <h3 className="text-xl font-bold text-gray-900 dark:text-white">
                           Order #{order.id}
@@ -176,6 +176,32 @@ export const Orders = () => {
                       </div>
                     </div>
                   </div>
+                  {order.items?.length > 0 && (
+                    <div className="hidden sm:flex items-center gap-2">
+                      {order.items.slice(0, 4).map((it, i) => (
+                        it.imageUrl ? (
+                          <img
+                            key={i}
+                            src={it.imageUrl}
+                            alt={it.productName}
+                            loading="lazy"
+                            title={it.productName}
+                            className="w-10 h-10 object-cover rounded-md"
+                          />
+                        ) : (
+                          <div
+                            key={i}
+                            className="w-10 h-10 bg-gray-100 dark:bg-gray-700 rounded-md border border-gray-200 dark:border-gray-600"
+                          />
+                        )
+                      ))}
+                      {order.items.length > 4 && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+                          +{order.items.length - 4}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div className="text-gray-400 dark:text-gray-500 text-xl">
                     ▶
                   </div>

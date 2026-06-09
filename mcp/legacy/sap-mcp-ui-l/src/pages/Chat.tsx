@@ -801,7 +801,19 @@ export const Chat = () => {
         <OrderModal orderId={openModal.orderId} onClose={() => setOpenModal(null)} />
       )}
       {openModal?.kind === 'product' && (
-        <ProductModal code={openModal.code} onClose={() => setOpenModal(null)} />
+        <ProductModal
+          code={openModal.code}
+          onClose={() => setOpenModal(null)}
+          onAddToCart={async (code) => {
+            try {
+              await api.addToCart(code, 1);
+              window.dispatchEvent(new Event('cartUpdated'));
+              window.dispatchEvent(new Event('cartItemAdded'));
+            } finally {
+              setOpenModal(null);
+            }
+          }}
+        />
       )}
       {openModal?.kind === 'orderHistory' && (
         <OrderHistoryModal

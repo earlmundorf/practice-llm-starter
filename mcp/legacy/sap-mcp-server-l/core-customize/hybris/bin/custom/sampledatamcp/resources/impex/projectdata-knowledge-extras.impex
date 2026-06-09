@@ -1,0 +1,56 @@
+# ---------------------------------------------------------------------------
+# ThinkShop knowledge base — extras
+#
+# Adds:
+#   - 5 promo entries mirroring the live AbstractPromotion records so the
+#     agent can talk about each deal in shopper-friendly terms (the
+#     promotions_get tool still drives eligibility checks against the
+#     underlying RuleBasedPromotion data).
+#   - 5 events (in-store pop-up, recurring repair clinic, ThinkPoints bonus
+#     weekend, livestream preview, back-to-school launch).
+#   - 1 charity tie-in for June.
+#
+# Load via:
+#   ./gradlew impex -Pfile=hybris/bin/custom/sampledatamcp/resources/impex/projectdata-knowledge-extras.impex
+#
+# After import, re-trigger the full knowledgeIndex Solr index.
+# ---------------------------------------------------------------------------
+
+#% impex.setLocale(new java.util.Locale("en"));
+
+$language       = en
+$published      = status(code)[default = published]
+$cat            = category(code)
+$dateFmt        = dateformat = dd.MM.yyyy HH:mm
+
+
+# ==========================================================================
+# Live deal mirrors (one KB entry per active promotion)
+# ==========================================================================
+
+INSERT_UPDATE KnowledgeEntry ; uid[unique = true]    ; $cat   ; title[lang = $language]                          ; summary[lang = $language]                                                                ; body[lang = $language]                                                                                                                                                                                                                                                                                              ; tags                                                  ; validFrom[$dateFmt] ; validTo[$dateFmt]   ; priority ; imageUrl                                                                  ; $published
+                             ; promo-free-shipping-1k ; promo  ; Free shipping on orders $1,000+                  ; Spend $1,000 or more and standard shipping is on us — applied automatically at checkout.   ; "Build a cart of $1,000 or more (after any discounts, before tax) and standard shipping is fully waived. No code needed — the discount lands automatically at checkout. Stacks with most promotions. Runs through August 18, 2026."                                                                              ; promo,free shipping,deal,threshold,sitewide           ; 20.05.2026 00:00    ; 18.08.2026 23:59    ; 170      ;                                                                           ;
+                             ; promo-laptop-10off    ; promo  ; 10% off any laptop                               ; Use a coupon code to take 10% off the Laptop Pro 15 at checkout.                            ; "Apply your coupon code at checkout to take 10% off the Laptop Pro 15 (LAPTOP_PRO_15). Per-customer limit applies — the assistant can check whether you've already redeemed this offer. Coupon-eligible through August 18, 2026."                                                                              ; promo,coupon,laptop,deal,LAPTOP_PRO_15                ; 20.05.2026 00:00    ; 18.08.2026 23:59    ; 140      ;                                                                           ;
+                             ; promo-bogo-mouse      ; promo  ; Buy One Get One — Wireless Gaming Mouse          ; Add two Wireless Gaming Mice to the cart, pay for one. No code needed.                      ; "Add two Wireless Gaming Mice (WIRELESS_GAMING_MOUSE) to your cart and the second one is free — applied automatically at checkout, no coupon code required. Great for a desktop + portable setup, or a gift. Runs through August 18, 2026."                                                                    ; promo,bogo,buy one get one,gaming,WIRELESS_GAMING_MOUSE ; 20.05.2026 00:00    ; 18.08.2026 23:59    ; 160      ;                                                                           ;
+                             ; promo-headphones-10off ; promo ; 10% off Wireless Headphones                      ; Automatic 10% discount on the Wireless Headphones. No code needed.                          ; "10% off the Wireless Headphones (WIRELESS_HEADPHONES) for the entire promotional window — discount applies automatically at checkout, no coupon required. Pairs nicely with the BOGO mouse if you're refreshing a setup. Runs through August 18, 2026."                                                       ; promo,headphones,audio,WIRELESS_HEADPHONES,deal       ; 20.05.2026 00:00    ; 18.08.2026 23:59    ; 130      ;                                                                           ;
+                             ; promo-speaker-5off    ; promo  ; 5% off Bluetooth Speaker (coupon, ending soon)   ; Coupon-driven 5% off the Bluetooth Speaker. Window ends June 19.                            ; "Apply your coupon at checkout to take 5% off the Bluetooth Speaker (BLUETOOTH_SPEAKER). Smaller window than our other coupons — this one wraps June 19, 2026, so the assistant should mention it to customers shopping speakers before then."                                                                    ; promo,coupon,speaker,BLUETOOTH_SPEAKER,ending soon    ; 20.05.2026 00:00    ; 19.06.2026 23:59    ; 120      ;                                                                           ;
+
+
+# ==========================================================================
+# Events
+# ==========================================================================
+
+INSERT_UPDATE KnowledgeEntry ; uid[unique = true]      ; $cat   ; title[lang = $language]                       ; summary[lang = $language]                                                                ; body[lang = $language]                                                                                                                                                                                                                                                                          ; tags                                          ; validFrom[$dateFmt] ; validTo[$dateFmt]   ; priority ; imageUrl                                                                ; $published
+                             ; pop-up-austin-2026     ; event  ; ThinkShop Austin Pop-Up                       ; Limited-run physical store on South Congress, July 15 through August 15.                  ; "Our first-ever brick-and-mortar pop-up opens on South Congress in Austin from July 15 through August 15, 2026. Hands-on demos of the full electronics lineup, the new swag collection, and same-day pickup for orders placed before noon. Free in-store ThinkPoints signup gets you a bonus 100 points." ; event,pop-up,austin,in-store,july             ; 15.07.2026 10:00    ; 15.08.2026 19:00    ; 175      ; https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800       ;
+                             ; repair-clinic-monthly  ; event  ; Free monthly repair clinic                    ; First Saturday of every month — free diagnostics on any ThinkShop product.               ; "Bring any ThinkShop electronics product (in or out of warranty) to the Austin pop-up on the first Saturday of each month between 11am and 3pm CT. Our techs run free diagnostics, replace simple parts on-site at cost, and refer anything bigger to the manufacturer. No appointment needed."          ; event,repair,clinic,service,monthly           ; 01.06.2026 11:00    ; 31.12.2026 15:00    ; 95       ;                                                                         ;
+                             ; thinkpoints-2x-weekend ; event  ; Double ThinkPoints weekend (June 20–22)       ; Every dollar earns 2 ThinkPoints all weekend.                                            ; "From midnight June 20 through 11:59pm June 22, every ThinkShop order earns 2 ThinkPoints per dollar instead of 1 — that's double the rewards. Applied automatically to all online orders; in-store at the Austin pop-up too once it opens. Stack with active promo discounts."                          ; event,loyalty,thinkpoints,weekend,double      ; 20.06.2026 00:00    ; 22.06.2026 23:59    ; 165      ;                                                                         ;
+                             ; holiday-preview-night  ; event  ; Holiday Preview Livestream                    ; Invite-only livestream on October 15 — first look at the holiday lineup.                  ; "ThinkPoints Pro members and newsletter subscribers get an invite link to a 90-minute livestream on October 15 at 7pm CT. We unbox the holiday lineup, take questions, and drop a one-night-only discount code at the end. RSVP link mailed two weeks prior."                                            ; event,livestream,holiday,preview,vip          ; 15.10.2026 19:00    ; 15.10.2026 20:30    ; 90       ; https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?w=800       ;
+                             ; back-to-school-launch  ; event  ; Back-to-School lineup launch                  ; New accessories drop August 1, plus 15% off backpack-friendly gear all month.            ; "August is a back-to-school moment at ThinkShop. We're rolling out a refreshed accessories lineup (compact mice, slim webcams, study-friendly headphones) on August 1, and pairing it with an automatic 15% off any 'backpack-friendly' gear through August 31. No code required."                       ; event,back-to-school,launch,august,accessories ; 01.08.2026 00:00    ; 31.08.2026 23:59    ; 140      ; https://images.unsplash.com/photo-1568667256549-094345857637?w=800      ;
+
+
+# ==========================================================================
+# Charity tie-in
+# ==========================================================================
+
+INSERT_UPDATE KnowledgeEntry ; uid[unique = true]        ; $cat   ; title[lang = $language]                ; summary[lang = $language]                                                                ; body[lang = $language]                                                                                                                                                                                                                                                                       ; tags                                       ; validFrom[$dateFmt] ; validTo[$dateFmt]   ; priority ; imageUrl                                                                ; $published
+                             ; thinkshop-for-good-june   ; promo  ; ThinkShop for Good — June              ; 5% of every June order goes to Direct Relief. No action needed on your end.              ; "Throughout June 2026, ThinkShop donates 5% of every order's subtotal to Direct Relief — a nonprofit delivering medical aid where it's needed most. Donation is automatic, no opt-in required, and shown as a line item on your order confirmation. Last year's June campaign raised over $40,000." ; charity,donation,giving back,direct relief,promo ; 01.06.2026 00:00    ; 30.06.2026 23:59    ; 155      ; https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?w=800      ;

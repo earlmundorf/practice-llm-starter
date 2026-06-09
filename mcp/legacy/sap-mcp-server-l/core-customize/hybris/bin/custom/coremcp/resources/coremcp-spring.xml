@@ -136,6 +136,31 @@
         <property name="promotionQueryService" ref="promotionQueryService"/>
     </bean>
 
+    <alias name="defaultInfoGetToolHandler" alias="infoGetToolHandler"/>
+    <bean id="defaultInfoGetToolHandler"
+          class="com.coremcp.tools.impl.InfoGetToolHandler">
+        <property name="knowledgeSearchService" ref="knowledgeSearchService"/>
+    </bean>
+
+    <alias name="defaultInfoSearchToolHandler" alias="infoSearchToolHandler"/>
+    <bean id="defaultInfoSearchToolHandler"
+          class="com.coremcp.tools.impl.InfoSearchToolHandler">
+        <property name="knowledgeSearchService" ref="knowledgeSearchService"/>
+    </bean>
+
+    <!-- ===================================================================
+         Knowledge Search Service — thin Solr wrapper over knowledgeIndex,
+         same shape as ProductSearchFacade.textSearch but for KnowledgeEntry.
+         Returns Solr Documents directly; no Model load, no FlexibleSearch.
+         =================================================================== -->
+
+    <alias name="defaultKnowledgeSearchService" alias="knowledgeSearchService"/>
+    <bean id="defaultKnowledgeSearchService"
+          class="com.coremcp.services.impl.DefaultKnowledgeSearchService">
+        <property name="facetSearchService" ref="facetSearchService"/>
+        <property name="facetSearchConfigService" ref="facetSearchConfigService"/>
+    </bean>
+
     <!-- ===================================================================
          Promotion Query Service (data access for promotions/coupons)
          =================================================================== -->
@@ -193,6 +218,8 @@
                 <ref bean="checkoutSetPaymentToolHandler"/>
                 <ref bean="orderPlaceToolHandler"/>
                 <ref bean="promotionsGetToolHandler"/>
+                <ref bean="infoGetToolHandler"/>
+                <ref bean="infoSearchToolHandler"/>
             </list>
         </property>
     </bean>
@@ -262,6 +289,8 @@
                 <ref bean="checkoutSetPaymentToolHandler"/>
                 <ref bean="orderPlaceToolHandler"/>
                 <ref bean="promotionsGetToolHandler"/>
+                <ref bean="infoGetToolHandler"/>
+                <ref bean="infoSearchToolHandler"/>
                 <ref bean="uiActionToolHandler"/>
             </list>
         </property>

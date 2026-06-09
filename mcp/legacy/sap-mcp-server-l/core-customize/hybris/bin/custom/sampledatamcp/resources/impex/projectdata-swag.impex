@@ -1,0 +1,207 @@
+# ---------------------------------------------------------------------------
+# ThinkShop swag product line (10 items + "swag" category).
+#
+# Loaded on "ant initialize" (filename matches projectdata-*.impex). To
+# refresh on a running instance use:
+#   ./gradlew impex -Pfile=hybris/bin/custom/sampledatamcp/resources/impex/projectdata-swag.impex
+#
+# After import, re-run the full Solr index for thinkshopIndex so swag
+# products appear in product_search results.
+# ---------------------------------------------------------------------------
+
+#% impex.setLocale(new java.util.Locale("en"));
+
+$productCatalog = electronicsProductCatalog
+$onlineVersion  = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Online'])[unique = true]
+$stagedVersion  = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Staged'])[unique = true]
+$taxGroup       = Europe1PriceFactory_PTG(code)[default = us-sales-tax-full]
+$currency       = USD
+$language       = en
+$warehouse      = electronics-warehouse
+$unit           = pieces
+
+
+# ==========================================================================
+# Category — Swag (both catalog versions)
+# ==========================================================================
+
+INSERT_UPDATE Category ; code[unique = true] ; name[lang = $language] ; $stagedVersion
+                       ; swag                ; Swag                   ;
+
+INSERT_UPDATE Category ; code[unique = true] ; name[lang = $language] ; $onlineVersion
+                       ; swag                ; Swag                   ;
+
+
+# ==========================================================================
+# Products (10) — Staged version
+# ==========================================================================
+
+INSERT_UPDATE Product ; code[unique = true] ; name[lang = $language]              ; summary[lang = $language]                                            ; description[lang = $language]                                                                                                                                                                            ; $stagedVersion ; unit(code)[default = '$unit'] ; approvalStatus(code)[default = 'approved'] ; $taxGroup
+                      ; TS_MUG_CLASSIC      ; ThinkShop Classic Mug               ; 12oz ceramic mug with embossed ThinkShop logo                         ; "Heavyweight 12oz ceramic mug with a debossed ThinkShop wordmark, microwave and dishwasher safe. Pairs well with a 6am compile."                                                                          ;                ;                               ;                                            ;
+                      ; TS_MUG_TRAVEL      ; ThinkShop Travel Mug                ; Double-walled stainless 16oz travel mug, keeps coffee hot 6 hours      ; "Vacuum-insulated 16oz stainless steel travel mug with a leakproof slider lid. Fits in standard cup holders. Hot for 6 hours, cold for 12."                                                                ;                ;                               ;                                            ;
+                      ; TS_TEE_BLACK      ; ThinkShop Logo Tee — Black          ; 100% combed cotton tee, soft heavyweight, black with white logo       ; "Heavyweight 6oz combed-cotton tee in black with a screen-printed white ThinkShop logo on the chest. Pre-shrunk, side-seamed, sizes XS through XXL."                                                       ;                ;                               ;                                            ;
+                      ; TS_TEE_WHITE      ; ThinkShop Logo Tee — White          ; 100% combed cotton tee, soft heavyweight, white with black logo       ; "Heavyweight 6oz combed-cotton tee in white with a screen-printed black ThinkShop logo on the chest. Pre-shrunk, side-seamed, sizes XS through XXL."                                                       ;                ;                               ;                                            ;
+                      ; TS_HOODIE_ZIP    ; ThinkShop Zip Hoodie                ; 80/20 cotton-poly fleece zip hoodie with embroidered logo             ; "Heavyweight zip hoodie in midnight navy. 80/20 cotton-polyester fleece, ribbed cuffs and hem, kangaroo pockets, embroidered ThinkShop logo. Sizes S through XXL."                                          ;                ;                               ;                                            ;
+                      ; TS_CAP_DAD       ; ThinkShop Dad Cap                   ; Unstructured 6-panel dad cap with curved brim                          ; "Unstructured washed-cotton dad cap with a curved brim and brass buckle closure. Embroidered ThinkShop logo on the front panel. One size fits most."                                                       ;                ;                               ;                                            ;
+                      ; TS_STICKER_PACK  ; ThinkShop Sticker Pack (5)          ; Five vinyl die-cut stickers, weatherproof and dishwasher safe          ; "Five die-cut vinyl stickers — ThinkShop wordmark, gear icon, retro logo, terminal cursor, and a small black square just because. Weatherproof, UV-resistant, dishwasher safe."                            ;                ;                               ;                                            ;
+                      ; TS_TOTE_CANVAS   ; ThinkShop Canvas Tote                ; 12oz natural cotton canvas tote with reinforced straps                 ; "Heavyweight 12oz natural cotton canvas tote with reinforced 24-inch shoulder straps and a screen-printed ThinkShop logo. Roomy enough for a 15-inch laptop and a lunch."                                  ;                ;                               ;                                            ;
+                      ; TS_BOTTLE_STEEL  ; ThinkShop Insulated Bottle          ; 20oz vacuum-insulated stainless bottle, BPA-free                       ; "20oz double-wall vacuum-insulated stainless steel bottle with a powder-coated finish and a leakproof lid. Keeps drinks hot 12 hours, cold 24. BPA-free."                                                  ;                ;                               ;                                            ;
+                      ; TS_NOTEBOOK_DEV  ; ThinkShop Dev Notebook              ; A5 dotted-grid notebook, 160 pages, hardbound                          ; "160-page A5 hardbound notebook with 90gsm dotted-grid paper that takes ink without bleeding. Elastic closure, ribbon marker, back pocket, and a debossed ThinkShop logo on the cover."                    ;                ;                               ;                                            ;
+
+
+# ==========================================================================
+# Products (10) — Online version
+# ==========================================================================
+
+INSERT_UPDATE Product ; code[unique = true] ; name[lang = $language]              ; summary[lang = $language]                                            ; description[lang = $language]                                                                                                                                                                            ; $onlineVersion ; unit(code)[default = '$unit'] ; approvalStatus(code)[default = 'approved'] ; $taxGroup
+                      ; TS_MUG_CLASSIC      ; ThinkShop Classic Mug               ; 12oz ceramic mug with embossed ThinkShop logo                         ; "Heavyweight 12oz ceramic mug with a debossed ThinkShop wordmark, microwave and dishwasher safe. Pairs well with a 6am compile."                                                                          ;                ;                               ;                                            ;
+                      ; TS_MUG_TRAVEL      ; ThinkShop Travel Mug                ; Double-walled stainless 16oz travel mug, keeps coffee hot 6 hours      ; "Vacuum-insulated 16oz stainless steel travel mug with a leakproof slider lid. Fits in standard cup holders. Hot for 6 hours, cold for 12."                                                                ;                ;                               ;                                            ;
+                      ; TS_TEE_BLACK      ; ThinkShop Logo Tee — Black          ; 100% combed cotton tee, soft heavyweight, black with white logo       ; "Heavyweight 6oz combed-cotton tee in black with a screen-printed white ThinkShop logo on the chest. Pre-shrunk, side-seamed, sizes XS through XXL."                                                       ;                ;                               ;                                            ;
+                      ; TS_TEE_WHITE      ; ThinkShop Logo Tee — White          ; 100% combed cotton tee, soft heavyweight, white with black logo       ; "Heavyweight 6oz combed-cotton tee in white with a screen-printed black ThinkShop logo on the chest. Pre-shrunk, side-seamed, sizes XS through XXL."                                                       ;                ;                               ;                                            ;
+                      ; TS_HOODIE_ZIP    ; ThinkShop Zip Hoodie                ; 80/20 cotton-poly fleece zip hoodie with embroidered logo             ; "Heavyweight zip hoodie in midnight navy. 80/20 cotton-polyester fleece, ribbed cuffs and hem, kangaroo pockets, embroidered ThinkShop logo. Sizes S through XXL."                                          ;                ;                               ;                                            ;
+                      ; TS_CAP_DAD       ; ThinkShop Dad Cap                   ; Unstructured 6-panel dad cap with curved brim                          ; "Unstructured washed-cotton dad cap with a curved brim and brass buckle closure. Embroidered ThinkShop logo on the front panel. One size fits most."                                                       ;                ;                               ;                                            ;
+                      ; TS_STICKER_PACK  ; ThinkShop Sticker Pack (5)          ; Five vinyl die-cut stickers, weatherproof and dishwasher safe          ; "Five die-cut vinyl stickers — ThinkShop wordmark, gear icon, retro logo, terminal cursor, and a small black square just because. Weatherproof, UV-resistant, dishwasher safe."                            ;                ;                               ;                                            ;
+                      ; TS_TOTE_CANVAS   ; ThinkShop Canvas Tote                ; 12oz natural cotton canvas tote with reinforced straps                 ; "Heavyweight 12oz natural cotton canvas tote with reinforced 24-inch shoulder straps and a screen-printed ThinkShop logo. Roomy enough for a 15-inch laptop and a lunch."                                  ;                ;                               ;                                            ;
+                      ; TS_BOTTLE_STEEL  ; ThinkShop Insulated Bottle          ; 20oz vacuum-insulated stainless bottle, BPA-free                       ; "20oz double-wall vacuum-insulated stainless steel bottle with a powder-coated finish and a leakproof lid. Keeps drinks hot 12 hours, cold 24. BPA-free."                                                  ;                ;                               ;                                            ;
+                      ; TS_NOTEBOOK_DEV  ; ThinkShop Dev Notebook              ; A5 dotted-grid notebook, 160 pages, hardbound                          ; "160-page A5 hardbound notebook with 90gsm dotted-grid paper that takes ink without bleeding. Elastic closure, ribbon marker, back pocket, and a debossed ThinkShop logo on the cover."                    ;                ;                               ;                                            ;
+
+
+# ==========================================================================
+# Assign all 10 swag products to the swag Category (both versions)
+# ==========================================================================
+
+UPDATE Product ; code[unique = true] ; $stagedVersion ; supercategories(code, $stagedVersion)[mode = append]
+               ; TS_MUG_CLASSIC      ;                ; swag
+               ; TS_MUG_TRAVEL       ;                ; swag
+               ; TS_TEE_BLACK        ;                ; swag
+               ; TS_TEE_WHITE        ;                ; swag
+               ; TS_HOODIE_ZIP       ;                ; swag
+               ; TS_CAP_DAD          ;                ; swag
+               ; TS_STICKER_PACK     ;                ; swag
+               ; TS_TOTE_CANVAS      ;                ; swag
+               ; TS_BOTTLE_STEEL     ;                ; swag
+               ; TS_NOTEBOOK_DEV     ;                ; swag
+
+UPDATE Product ; code[unique = true] ; $onlineVersion ; supercategories(code, $onlineVersion)[mode = append]
+               ; TS_MUG_CLASSIC      ;                ; swag
+               ; TS_MUG_TRAVEL       ;                ; swag
+               ; TS_TEE_BLACK        ;                ; swag
+               ; TS_TEE_WHITE        ;                ; swag
+               ; TS_HOODIE_ZIP       ;                ; swag
+               ; TS_CAP_DAD          ;                ; swag
+               ; TS_STICKER_PACK     ;                ; swag
+               ; TS_TOTE_CANVAS      ;                ; swag
+               ; TS_BOTTLE_STEEL     ;                ; swag
+               ; TS_NOTEBOOK_DEV     ;                ; swag
+
+
+# ==========================================================================
+# Prices (USD, both catalog versions)
+# ==========================================================================
+
+INSERT_UPDATE PriceRow ; productId[unique = true] ; unit(code)[default = '$unit'] ; currency(isocode)[unique = true] ; price ; minqtd ; net   ; $stagedVersion
+                       ; TS_MUG_CLASSIC          ;                                ; $currency                        ; 14.00 ; 1      ; false ;
+                       ; TS_MUG_TRAVEL           ;                                ; $currency                        ; 24.00 ; 1      ; false ;
+                       ; TS_TEE_BLACK            ;                                ; $currency                        ; 28.00 ; 1      ; false ;
+                       ; TS_TEE_WHITE            ;                                ; $currency                        ; 28.00 ; 1      ; false ;
+                       ; TS_HOODIE_ZIP           ;                                ; $currency                        ; 68.00 ; 1      ; false ;
+                       ; TS_CAP_DAD              ;                                ; $currency                        ; 22.00 ; 1      ; false ;
+                       ; TS_STICKER_PACK         ;                                ; $currency                        ;  6.00 ; 1      ; false ;
+                       ; TS_TOTE_CANVAS          ;                                ; $currency                        ; 18.00 ; 1      ; false ;
+                       ; TS_BOTTLE_STEEL         ;                                ; $currency                        ; 32.00 ; 1      ; false ;
+                       ; TS_NOTEBOOK_DEV         ;                                ; $currency                        ; 16.00 ; 1      ; false ;
+
+INSERT_UPDATE PriceRow ; productId[unique = true] ; unit(code)[default = '$unit'] ; currency(isocode)[unique = true] ; price ; minqtd ; net   ; $onlineVersion
+                       ; TS_MUG_CLASSIC          ;                                ; $currency                        ; 14.00 ; 1      ; false ;
+                       ; TS_MUG_TRAVEL           ;                                ; $currency                        ; 24.00 ; 1      ; false ;
+                       ; TS_TEE_BLACK            ;                                ; $currency                        ; 28.00 ; 1      ; false ;
+                       ; TS_TEE_WHITE            ;                                ; $currency                        ; 28.00 ; 1      ; false ;
+                       ; TS_HOODIE_ZIP           ;                                ; $currency                        ; 68.00 ; 1      ; false ;
+                       ; TS_CAP_DAD              ;                                ; $currency                        ; 22.00 ; 1      ; false ;
+                       ; TS_STICKER_PACK         ;                                ; $currency                        ;  6.00 ; 1      ; false ;
+                       ; TS_TOTE_CANVAS          ;                                ; $currency                        ; 18.00 ; 1      ; false ;
+                       ; TS_BOTTLE_STEEL         ;                                ; $currency                        ; 32.00 ; 1      ; false ;
+                       ; TS_NOTEBOOK_DEV         ;                                ; $currency                        ; 16.00 ; 1      ; false ;
+
+
+# ==========================================================================
+# Stock (warehouse-scoped, then linked to Product in both catalog versions)
+# ==========================================================================
+
+INSERT_UPDATE StockLevel ; productCode[unique = true] ; warehouse(code)[unique = true] ; available ; inStockStatus(code)
+                         ; TS_MUG_CLASSIC             ; $warehouse                     ; 200       ; notSpecified
+                         ; TS_MUG_TRAVEL              ; $warehouse                     ; 150       ; notSpecified
+                         ; TS_TEE_BLACK               ; $warehouse                     ; 300       ; notSpecified
+                         ; TS_TEE_WHITE               ; $warehouse                     ; 300       ; notSpecified
+                         ; TS_HOODIE_ZIP              ; $warehouse                     ; 120       ; notSpecified
+                         ; TS_CAP_DAD                 ; $warehouse                     ; 180       ; notSpecified
+                         ; TS_STICKER_PACK            ; $warehouse                     ; 1000      ; notSpecified
+                         ; TS_TOTE_CANVAS             ; $warehouse                     ; 220       ; notSpecified
+                         ; TS_BOTTLE_STEEL            ; $warehouse                     ; 160       ; notSpecified
+                         ; TS_NOTEBOOK_DEV            ; $warehouse                     ; 250       ; notSpecified
+
+UPDATE Product ; code[unique = true] ; $stagedVersion ; stockLevels(productCode, warehouse(code))[mode = append]
+               ; TS_MUG_CLASSIC      ;                ; TS_MUG_CLASSIC:$warehouse
+               ; TS_MUG_TRAVEL       ;                ; TS_MUG_TRAVEL:$warehouse
+               ; TS_TEE_BLACK        ;                ; TS_TEE_BLACK:$warehouse
+               ; TS_TEE_WHITE        ;                ; TS_TEE_WHITE:$warehouse
+               ; TS_HOODIE_ZIP       ;                ; TS_HOODIE_ZIP:$warehouse
+               ; TS_CAP_DAD          ;                ; TS_CAP_DAD:$warehouse
+               ; TS_STICKER_PACK     ;                ; TS_STICKER_PACK:$warehouse
+               ; TS_TOTE_CANVAS      ;                ; TS_TOTE_CANVAS:$warehouse
+               ; TS_BOTTLE_STEEL     ;                ; TS_BOTTLE_STEEL:$warehouse
+               ; TS_NOTEBOOK_DEV     ;                ; TS_NOTEBOOK_DEV:$warehouse
+
+UPDATE Product ; code[unique = true] ; $onlineVersion ; stockLevels(productCode, warehouse(code))[mode = append]
+               ; TS_MUG_CLASSIC      ;                ; TS_MUG_CLASSIC:$warehouse
+               ; TS_MUG_TRAVEL       ;                ; TS_MUG_TRAVEL:$warehouse
+               ; TS_TEE_BLACK        ;                ; TS_TEE_BLACK:$warehouse
+               ; TS_TEE_WHITE        ;                ; TS_TEE_WHITE:$warehouse
+               ; TS_HOODIE_ZIP       ;                ; TS_HOODIE_ZIP:$warehouse
+               ; TS_CAP_DAD          ;                ; TS_CAP_DAD:$warehouse
+               ; TS_STICKER_PACK     ;                ; TS_STICKER_PACK:$warehouse
+               ; TS_TOTE_CANVAS      ;                ; TS_TOTE_CANVAS:$warehouse
+               ; TS_BOTTLE_STEEL     ;                ; TS_BOTTLE_STEEL:$warehouse
+               ; TS_NOTEBOOK_DEV     ;                ; TS_NOTEBOOK_DEV:$warehouse
+
+# ====================================================================
+# Swag sub-categories — apparel / drinkware / accessories under swag.
+# ====================================================================
+INSERT_UPDATE Category ; code[unique = true]  ; name[lang = $language] ; $stagedVersion
+                       ; swag-apparel         ; Swag — Apparel         ;
+                       ; swag-drinkware       ; Swag — Drinkware       ;
+                       ; swag-accessories     ; Swag — Accessories     ;
+INSERT_UPDATE Category ; code[unique = true]  ; name[lang = $language] ; $onlineVersion
+                       ; swag-apparel         ; Swag — Apparel         ;
+                       ; swag-drinkware       ; Swag — Drinkware       ;
+                       ; swag-accessories     ; Swag — Accessories     ;
+UPDATE Category ; code[unique = true] ; $stagedVersion ; supercategories(code, $stagedVersion)[mode = append]
+                ; swag-apparel        ;                ; swag
+                ; swag-drinkware      ;                ; swag
+                ; swag-accessories    ;                ; swag
+UPDATE Category ; code[unique = true] ; $onlineVersion ; supercategories(code, $onlineVersion)[mode = append]
+                ; swag-apparel        ;                ; swag
+                ; swag-drinkware      ;                ; swag
+                ; swag-accessories    ;                ; swag
+UPDATE Product ; code[unique = true] ; $stagedVersion ; supercategories(code, $stagedVersion)[mode = append]
+               ; TS_TEE_BLACK        ;                ; swag-apparel
+               ; TS_TEE_WHITE        ;                ; swag-apparel
+               ; TS_HOODIE_ZIP       ;                ; swag-apparel
+               ; TS_CAP_DAD          ;                ; swag-apparel
+               ; TS_MUG_CLASSIC      ;                ; swag-drinkware
+               ; TS_MUG_TRAVEL       ;                ; swag-drinkware
+               ; TS_BOTTLE_STEEL     ;                ; swag-drinkware
+               ; TS_STICKER_PACK     ;                ; swag-accessories
+               ; TS_TOTE_CANVAS      ;                ; swag-accessories
+               ; TS_NOTEBOOK_DEV     ;                ; swag-accessories
+UPDATE Product ; code[unique = true] ; $onlineVersion ; supercategories(code, $onlineVersion)[mode = append]
+               ; TS_TEE_BLACK        ;                ; swag-apparel
+               ; TS_TEE_WHITE        ;                ; swag-apparel
+               ; TS_HOODIE_ZIP       ;                ; swag-apparel
+               ; TS_CAP_DAD          ;                ; swag-apparel
+               ; TS_MUG_CLASSIC      ;                ; swag-drinkware
+               ; TS_MUG_TRAVEL       ;                ; swag-drinkware
+               ; TS_BOTTLE_STEEL     ;                ; swag-drinkware
+               ; TS_STICKER_PACK     ;                ; swag-accessories
+               ; TS_TOTE_CANVAS      ;                ; swag-accessories
+               ; TS_NOTEBOOK_DEV     ;                ; swag-accessories

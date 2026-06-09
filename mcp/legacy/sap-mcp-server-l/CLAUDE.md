@@ -75,10 +75,18 @@ See `docs/getting-started.md` for the full walkthrough. Summary:
 | Command | When to Use |
 |---------|-------------|
 | `./gradlew stopServer startServer` | Quick restart (no build) |
-| `./gradlew ybuild stopServer startServer` | After Java source changes |
-| `./gradlew ybuild stopServer startServer yupdatesystem` | After `*-items.xml` changes (preserves data) |
-| `./gradlew ybuild stopServer startServer` | After `*-beans.xml` changes |
+| `./gradlew yclean ybuild stopServer startServer` | **After ANY Java source changes** — see note below |
+| `./gradlew yclean ybuild stopServer startServer yupdatesystem` | After `*-items.xml` changes (preserves data) |
+| `./gradlew yclean ybuild stopServer startServer` | After `*-beans.xml` changes |
 | `./gradlew yclean yall yinitialize` | Full data reset (**destroys all data**) |
+
+**Always `yclean` before `ybuild` for Java changes:** hybris's incremental Java
+compilation is unreliable in this project — we've observed `ybuild` silently
+skipping a recompile of edited sources, leaving stale `.class` files on disk
+even though the build reports `BUILD SUCCESSFUL`. The symptom is "my code
+change doesn't seem to take effect" with no error. `yclean` is safe (only
+deletes build outputs, never data); the cost is ~30s extra build time and a
+guarantee your edits actually deploy.
 
 ### HAC Console
 
@@ -96,6 +104,30 @@ See `docs/getting-started.md` for the full walkthrough. Summary:
 ./gradlew yunittests -Dtestclasses.extensions=coremcp        # Unit tests
 ./gradlew yintegrationtests -Dtestclasses.extensions=coremcp  # Integration tests
 ```
+
+**Test scope rule (important):** Always restrict test runs to **custom extensions**.
+Prefer `./gradlew testCustomExtensions` (runs all custom-extension tests, that's the
+intended scope). Or use `./gradlew yunittests -Dtestclasses.extensions=<ext1>,<ext2>`
+to scope further. Never run `yunittests` or `yintegrationtests` unscoped — the
+platform's own tests are slow and not what we are verifying. Comma-separate when
+more than one custom extension is involved (e.g. `-Dtestclasses.extensions=coremcp,sampledatamcp`).
+Only run the full platform suite when the user explicitly asks for it.
+
+**Stop the server before CLI test runs:** The test framework boots a junit tenant that
+binds Solr on the same port (8983) as the live server's Solr, and shuts that Solr
+down at the end of the run. The DB is isolated (junit tenant has its own schema)
+but Solr is not — running tests with the server up will leave the live server's
+Solr **dead** until the next `stopServer/startServer`. Before any
+`testCustomExtensions`/`yunittests`/`yintegrationtests` run from the command line:
+
+```bash
+./gradlew stopServer
+./gradlew testCustomExtensions
+./gradlew startServer
+```
+
+(IDE-driven JUnit runs for `@UnitTest` classes don't boot the platform and don't
+have this problem.)
 
 ## Key Paths
 

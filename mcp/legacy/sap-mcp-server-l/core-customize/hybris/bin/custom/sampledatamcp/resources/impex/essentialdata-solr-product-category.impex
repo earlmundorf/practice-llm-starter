@@ -1,0 +1,25 @@
+# ---------------------------------------------------------------------------
+# Add `category` facet to the thinkshop product Solr index so categoryCode
+# filtering (e.g. ?categoryCode=swag) actually works. Without this property,
+# the facet filter is silently dropped and product_search returns the whole
+# catalog regardless of categoryCode.
+#
+# Loaded automatically via essentialdata-*.impex pattern; load order is
+# 'p' > 's' so it lands after essentialdata-solr.impex (which creates the
+# thinkshopProductType IndexedType this references).
+# ---------------------------------------------------------------------------
+
+#% impex.setLocale(new java.util.Locale("en"));
+
+$solrIndexedType       = thinkshopProductType
+$facetSearchConfigName = thinkshopIndex
+
+
+# Indexed property — pulls each product's supercategory codes (multi-value).
+INSERT_UPDATE SolrIndexedProperty ; solrIndexedType(identifier)[unique = true] ; name[unique = true] ; type(code) ; multiValue[default = false] ; facet[default = true] ; facetType(code) ; facetSort(code) ; priority ; visible[default = true] ; fieldValueProvider    ; valueProviderParameter
+                                  ; $solrIndexedType                           ; category            ; string     ; true                        ;                       ; MultiSelectOr   ; Alpha           ; 5000     ;                         ; springELValueProvider ; supercategories.![code]
+
+
+# Wire it into the DEFAULT search query template as a facet.
+INSERT_UPDATE SolrSearchQueryProperty ; indexedProperty(name, solrIndexedType(identifier))[unique = true] ; searchQueryTemplate(name, indexedType(identifier))[unique = true] ; facet[default = true] ; facetType(code) ; includeInResponse[default = true]
+                                      ; category:$solrIndexedType                                          ; DEFAULT:$solrIndexedType                                         ; true                  ; MultiSelectOr   ;

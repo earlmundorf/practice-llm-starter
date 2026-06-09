@@ -32,11 +32,19 @@ public class ProductSearchToolHandler implements McpToolHandler
 	@Override
 	public String getDescription()
 	{
-		return "Search the ThinkShop electronics catalog by keyword, with optional category filter and pagination. " +
+		return "Search the ThinkShop catalog by keyword, with optional category filter and pagination. " +
 			"Returns matching products with prices, stock status, and pagination metadata. " +
 			"Use this when the user wants to browse, shop, find products, or asks questions like " +
 			"'what do you have', 'show me laptops', or 'find something under $200'. " +
-			"Pass an empty string for query to browse all products.";
+			"Pass an empty string for query to browse all products. " +
+			"\n\nKnown category codes:\n" +
+			"  - 'swag' — all ThinkShop branded merch\n" +
+			"  - 'swag-apparel' — tees, hoodies, caps (use this when the user asks for swag CLOTHES/clothing/apparel)\n" +
+			"  - 'swag-drinkware' — mugs and bottles (use this for drink-related swag requests)\n" +
+			"  - 'swag-accessories' — stickers, totes, notebooks\n" +
+			"When the user asks for any kind of swag, pick the most specific category code that fits and " +
+			"pass an empty query. The word 'swag' is not in product names, so a query-only search returns " +
+			"nothing. Electronics products have no category filter; just leave categoryCode empty for those.";
 	}
 
 	@Override
@@ -64,8 +72,17 @@ public class ProductSearchToolHandler implements McpToolHandler
 			final int currentPage = args.containsKey("currentPage") ? ((Number) args.get("currentPage")).intValue() : 0;
 			final int pageSize = args.containsKey("pageSize") ? ((Number) args.get("pageSize")).intValue() : 5;
 			final String sort = (String) args.getOrDefault("sort", "relevance");
+			final String categoryCode = (String) args.get("categoryCode");
 
-			final String searchQuery = query + ":" + sort;
+			// Hybris search-state encodes facet filters as :facet:value pairs
+			// appended to "<query>:<sort>". Without this the categoryCode is silently
+			// dropped and the search returns the whole catalog.
+			final StringBuilder qb = new StringBuilder().append(query).append(":").append(sort);
+			if (categoryCode != null && !categoryCode.isBlank())
+			{
+				qb.append(":category:").append(categoryCode);
+			}
+			final String searchQuery = qb.toString();
 
 			final SearchStateData searchState = new SearchStateData();
 			final de.hybris.platform.commercefacades.search.data.SearchQueryData queryData = new de.hybris.platform.commercefacades.search.data.SearchQueryData();

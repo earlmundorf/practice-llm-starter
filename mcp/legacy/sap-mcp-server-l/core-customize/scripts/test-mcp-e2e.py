@@ -248,10 +248,12 @@ def test_tools_list(base_url, auth_header, session_id):
     expected_tools = [
         "product_search", "product_get",
         "cart_get", "cart_add_product", "cart_update_entry", "cart_remove_entry",
+        "cart_apply_voucher", "cart_remove_voucher",
         "order_get", "order_history",
         "customer_get", "customer_lookup",
         "checkout_set_delivery_address", "checkout_set_delivery_mode",
-        "checkout_set_payment", "order_place","promotions_get"
+        "checkout_set_payment", "order_place","promotions_get",
+        "info_get", "info_search",
     ]
 
     check(f"tools/list returns {len(expected_tools)} tools",
@@ -392,6 +394,113 @@ def test_mutating_tools(base_url, auth_header, session_id):
             log(f"    {Colors.YELLOW}NOTE{Colors.RESET} {tool_name} returned tool error (expected without full session)")
 
 
+def test_knowledge_and_swag(base_url, auth_header, session_id):
+    """Smoke tests for the knowledge base + swag additions."""
+    log(f"\n{Colors.CYAN}── knowledge base (OCC + MCP) ──{Colors.RESET}")
+    mcp_url = base_url + MCP_PATH
+    occ_base = f"{base_url}/occ/v2/electronics"
+
+    # 1. info_get OCC — known uid returns 200 with expected fields
+    status, _, body = http_request(
+        f"{occ_base}/info/returns-policy",
+        headers={"Authorization": auth_header},
+    )
+    check("OCC info/returns-policy returns 200", status == 200, f"got {status}")
+    check("OCC info/returns-policy has uid",
+          isinstance(body, dict) and body.get("uid") == "returns-policy",
+          f"body: {str(body)[:200]}")
+    check("OCC info/returns-policy category is 'policy'",
+          isinstance(body, dict) and body.get("category") == "policy",
+          f"got: {body.get('category') if isinstance(body, dict) else body}")
+
+    # 2. info_get OCC — unknown uid returns 404
+    status, _, _ = http_request(
+        f"{occ_base}/info/does-not-exist",
+        headers={"Authorization": auth_header},
+    )
+    check("OCC info/{unknown} returns 404", status == 404, f"got {status}")
+
+    # 3. info_search OCC — free-text query returns results
+    status, _, body = http_request(
+        f"{occ_base}/info/search?q=shipping&pageSize=5",
+        headers={"Authorization": auth_header},
+    )
+    check("OCC info/search returns 200", status == 200, f"got {status}")
+    results = body.get("results", []) if isinstance(body, dict) else []
+    check("OCC info/search for 'shipping' returns at least one hit",
+          len(results) >= 1, f"got {len(results)} results")
+    uids = [r.get("uid") for r in results]
+    log_verbose(f"  info/search 'shipping' uids: {uids}")
+
+    # 4. info_search with category filter narrows results
+    status, _, body = http_request(
+        f"{occ_base}/info/search?q=&category=event&pageSize=5",
+        headers={"Authorization": auth_header},
+    )
+    check("OCC info/search?category=event returns 200", status == 200, f"got {status}")
+    cats = {r.get("category") for r in body.get("results", [])} if isinstance(body, dict) else set()
+    check("OCC info/search?category=event only returns event rows",
+          cats == set() or cats == {"event"},
+          f"got categories: {cats}")
+
+    # 5. MCP tools/call info_get
+    status, _, body = http_request(
+        mcp_url,
+        data=jsonrpc("tools/call",
+                     {"name": "info_get", "arguments": {"uid": "shipping-info"}},
+                     "call-info-get"),
+        headers={"Authorization": auth_header, "MCP-Session-Id": session_id},
+    )
+    check("MCP info_get returns 200", status == 200, f"got {status}")
+    content = body.get("result", {}).get("content", [])
+    check("MCP info_get content includes 'shipping-info'",
+          any("shipping-info" in (c.get("text", "")) for c in content),
+          f"content: {str(content)[:200]}")
+
+    # 6. MCP tools/call info_search — single term so Solr's default-AND across
+    #    multi-term queries doesn't bite (see smoke-info.sh for the same note).
+    status, _, body = http_request(
+        mcp_url,
+        data=jsonrpc("tools/call",
+                     {"name": "info_search", "arguments": {"query": "returns", "pageSize": 3}},
+                     "call-info-search"),
+        headers={"Authorization": auth_header, "MCP-Session-Id": session_id},
+    )
+    check("MCP info_search returns 200", status == 200, f"got {status}")
+    content = body.get("result", {}).get("content", [])
+    text = content[0].get("text", "") if content else ""
+    check("MCP info_search includes 'returns-policy' for 'returns'",
+          "returns-policy" in text,
+          f"text: {text[:300]}")
+
+    # 7. Swag products are reachable via product_search
+    log(f"\n{Colors.CYAN}── swag products (via product_search) ──{Colors.RESET}")
+    status, _, body = http_request(
+        mcp_url,
+        data=jsonrpc("tools/call",
+                     {"name": "product_search", "arguments": {"query": "hoodie", "pageSize": 5}},
+                     "call-swag-hoodie"),
+        headers={"Authorization": auth_header, "MCP-Session-Id": session_id},
+    )
+    check("MCP product_search('hoodie') returns 200", status == 200, f"got {status}")
+    text = body.get("result", {}).get("content", [{}])[0].get("text", "")
+    check("product_search('hoodie') finds TS_HOODIE_ZIP",
+          "TS_HOODIE_ZIP" in text,
+          f"text (first 300): {text[:300]}")
+
+    status, _, body = http_request(
+        mcp_url,
+        data=jsonrpc("tools/call",
+                     {"name": "product_search", "arguments": {"query": "mug", "pageSize": 5}},
+                     "call-swag-mug"),
+        headers={"Authorization": auth_header, "MCP-Session-Id": session_id},
+    )
+    text = body.get("result", {}).get("content", [{}])[0].get("text", "")
+    check("product_search('mug') finds at least one TS_MUG_*",
+          "TS_MUG" in text,
+          f"text (first 300): {text[:300]}")
+
+
 def test_session_delete(base_url, auth_header, session_id):
     """Test session deletion via DELETE."""
     log(f"\n{Colors.CYAN}── Session Cleanup ──{Colors.RESET}")
@@ -461,6 +570,7 @@ def main():
     test_tools_list(base_url, auth_header, session_id)
     test_tool_calls(base_url, auth_header, session_id)
     test_mutating_tools(base_url, auth_header, session_id)
+    test_knowledge_and_swag(base_url, auth_header, session_id)
     test_session_delete(base_url, auth_header, session_id)
 
     # Summary

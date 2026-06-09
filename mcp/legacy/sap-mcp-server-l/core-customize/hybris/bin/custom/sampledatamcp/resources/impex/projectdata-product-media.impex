@@ -1,0 +1,253 @@
+# ---------------------------------------------------------------------------
+# Wire product images for the 20 ThinkShop products. Mirrors the
+# `marketplacestore/products-media.impex` pattern:
+#   - `$siteResource` uses hybris's `jar:` URL scheme to reference files
+#     packaged inside the sampledatamcp extension's classpath, which is
+#     environment-independent (works on dev, CI, CCv2).
+#   - Media is catalog-versioned; one row per version.
+#   - The `mediaContainer` column lets us group hero/thumbnail into a single
+#     MediaContainer the storefront understands.
+#
+# Image files live at:
+#   bin/custom/sampledatamcp/resources/sampledatamcp/import/images/products/
+#
+# Load via:
+#   ./gradlew impex -Pfile=hybris/bin/custom/sampledatamcp/resources/impex/projectdata-product-media.impex
+# ---------------------------------------------------------------------------
+
+$productCatalog        = electronicsProductCatalog
+$onlineVersion         = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Online'])[unique = true]
+$stagedVersion         = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Staged'])[unique = true]
+$siteResource          = jar:com.sampledatamcp.constants.SampledatamcpConstants&/sampledatamcp/import/images/products
+
+
+# ==========================================================================
+# Media — one row per catalog version per product (40 rows total)
+# Column order matches the marketplacestore/products-media canonical pattern.
+# ==========================================================================
+
+INSERT_UPDATE Media ; code[unique = true]       ; @media[translator = de.hybris.platform.impex.jalo.media.MediaDataTranslator] ; mime[default = 'image/png'] ; $stagedVersion ; folder(qualifier)[default = images]
+                    ; img-LAPTOP_PRO_15         ; $siteResource/LAPTOP_PRO_15.png           ;                              ;                ;
+                    ; img-SMARTPHONE_X          ; $siteResource/SMARTPHONE_X.png            ;                              ;                ;
+                    ; img-WIRELESS_HEADPHONES   ; $siteResource/WIRELESS_HEADPHONES.png     ;                              ;                ;
+                    ; img-TABLET_AIR            ; $siteResource/TABLET_AIR.png              ;                              ;                ;
+                    ; img-SMART_WATCH_PRO       ; $siteResource/SMART_WATCH_PRO.png         ;                              ;                ;
+                    ; img-MECHANICAL_KEYBOARD   ; $siteResource/MECHANICAL_KEYBOARD.png     ;                              ;                ;
+                    ; img-WIRELESS_GAMING_MOUSE ; $siteResource/WIRELESS_GAMING_MOUSE.png   ;                              ;                ;
+                    ; img-MONITOR_4K_27         ; $siteResource/MONITOR_4K_27.png           ;                              ;                ;
+                    ; img-HD_WEBCAM             ; $siteResource/HD_WEBCAM.png               ;                              ;                ;
+                    ; img-BLUETOOTH_SPEAKER     ; $siteResource/BLUETOOTH_SPEAKER.png       ;                              ;                ;
+                    ; img-TS_MUG_CLASSIC        ; $siteResource/TS_MUG_CLASSIC.png          ;                              ;                ;
+                    ; img-TS_MUG_TRAVEL         ; $siteResource/TS_MUG_TRAVEL.png           ;                              ;                ;
+                    ; img-TS_TEE_BLACK          ; $siteResource/TS_TEE_BLACK.png            ;                              ;                ;
+                    ; img-TS_TEE_WHITE          ; $siteResource/TS_TEE_WHITE.png            ;                              ;                ;
+                    ; img-TS_HOODIE_ZIP         ; $siteResource/TS_HOODIE_ZIP.png           ;                              ;                ;
+                    ; img-TS_CAP_DAD            ; $siteResource/TS_CAP_DAD.png              ;                              ;                ;
+                    ; img-TS_STICKER_PACK       ; $siteResource/TS_STICKER_PACK.png         ;                              ;                ;
+                    ; img-TS_TOTE_CANVAS       ; $siteResource/TS_TOTE_CANVAS.png         ;                              ;                ;
+                    ; img-TS_BOTTLE_STEEL       ; $siteResource/TS_BOTTLE_STEEL.png         ;                              ;                ;
+                    ; img-TS_NOTEBOOK_DEV       ; $siteResource/TS_NOTEBOOK_DEV.png         ;                              ;                ;
+
+INSERT_UPDATE Media ; code[unique = true]       ; @media[translator = de.hybris.platform.impex.jalo.media.MediaDataTranslator] ; mime[default = 'image/png'] ; $onlineVersion ; folder(qualifier)[default = images]
+                    ; img-LAPTOP_PRO_15         ; $siteResource/LAPTOP_PRO_15.png           ;                              ;                ;
+                    ; img-SMARTPHONE_X          ; $siteResource/SMARTPHONE_X.png            ;                              ;                ;
+                    ; img-WIRELESS_HEADPHONES   ; $siteResource/WIRELESS_HEADPHONES.png     ;                              ;                ;
+                    ; img-TABLET_AIR            ; $siteResource/TABLET_AIR.png              ;                              ;                ;
+                    ; img-SMART_WATCH_PRO       ; $siteResource/SMART_WATCH_PRO.png         ;                              ;                ;
+                    ; img-MECHANICAL_KEYBOARD   ; $siteResource/MECHANICAL_KEYBOARD.png     ;                              ;                ;
+                    ; img-WIRELESS_GAMING_MOUSE ; $siteResource/WIRELESS_GAMING_MOUSE.png   ;                              ;                ;
+                    ; img-MONITOR_4K_27         ; $siteResource/MONITOR_4K_27.png           ;                              ;                ;
+                    ; img-HD_WEBCAM             ; $siteResource/HD_WEBCAM.png               ;                              ;                ;
+                    ; img-BLUETOOTH_SPEAKER     ; $siteResource/BLUETOOTH_SPEAKER.png       ;                              ;                ;
+                    ; img-TS_MUG_CLASSIC        ; $siteResource/TS_MUG_CLASSIC.png          ;                              ;                ;
+                    ; img-TS_MUG_TRAVEL         ; $siteResource/TS_MUG_TRAVEL.png           ;                              ;                ;
+                    ; img-TS_TEE_BLACK          ; $siteResource/TS_TEE_BLACK.png            ;                              ;                ;
+                    ; img-TS_TEE_WHITE          ; $siteResource/TS_TEE_WHITE.png            ;                              ;                ;
+                    ; img-TS_HOODIE_ZIP         ; $siteResource/TS_HOODIE_ZIP.png           ;                              ;                ;
+                    ; img-TS_CAP_DAD            ; $siteResource/TS_CAP_DAD.png              ;                              ;                ;
+                    ; img-TS_STICKER_PACK       ; $siteResource/TS_STICKER_PACK.png         ;                              ;                ;
+                    ; img-TS_TOTE_CANVAS        ; $siteResource/TS_TOTE_CANVAS.png          ;                              ;                ;
+                    ; img-TS_BOTTLE_STEEL       ; $siteResource/TS_BOTTLE_STEEL.png         ;                              ;                ;
+                    ; img-TS_NOTEBOOK_DEV       ; $siteResource/TS_NOTEBOOK_DEV.png         ;                              ;                ;
+
+
+# ==========================================================================
+# Wire each Media as both thumbnail + picture on the Product (both versions).
+# The Media lookup is catalog-version-scoped, so img-X here resolves to the
+# matching Media row in the same catalog version as the Product update.
+# ==========================================================================
+
+UPDATE Product ; code[unique = true]    ; $stagedVersion ; thumbnail(code, $stagedVersion) ; picture(code, $stagedVersion)
+               ; LAPTOP_PRO_15          ;                ; img-LAPTOP_PRO_15               ; img-LAPTOP_PRO_15
+               ; SMARTPHONE_X           ;                ; img-SMARTPHONE_X                ; img-SMARTPHONE_X
+               ; WIRELESS_HEADPHONES    ;                ; img-WIRELESS_HEADPHONES         ; img-WIRELESS_HEADPHONES
+               ; TABLET_AIR             ;                ; img-TABLET_AIR                  ; img-TABLET_AIR
+               ; SMART_WATCH_PRO        ;                ; img-SMART_WATCH_PRO             ; img-SMART_WATCH_PRO
+               ; MECHANICAL_KEYBOARD    ;                ; img-MECHANICAL_KEYBOARD         ; img-MECHANICAL_KEYBOARD
+               ; WIRELESS_GAMING_MOUSE  ;                ; img-WIRELESS_GAMING_MOUSE       ; img-WIRELESS_GAMING_MOUSE
+               ; MONITOR_4K_27          ;                ; img-MONITOR_4K_27               ; img-MONITOR_4K_27
+               ; HD_WEBCAM              ;                ; img-HD_WEBCAM                   ; img-HD_WEBCAM
+               ; BLUETOOTH_SPEAKER      ;                ; img-BLUETOOTH_SPEAKER           ; img-BLUETOOTH_SPEAKER
+               ; TS_MUG_CLASSIC         ;                ; img-TS_MUG_CLASSIC              ; img-TS_MUG_CLASSIC
+               ; TS_MUG_TRAVEL          ;                ; img-TS_MUG_TRAVEL               ; img-TS_MUG_TRAVEL
+               ; TS_TEE_BLACK           ;                ; img-TS_TEE_BLACK                ; img-TS_TEE_BLACK
+               ; TS_TEE_WHITE           ;                ; img-TS_TEE_WHITE                ; img-TS_TEE_WHITE
+               ; TS_HOODIE_ZIP          ;                ; img-TS_HOODIE_ZIP               ; img-TS_HOODIE_ZIP
+               ; TS_CAP_DAD             ;                ; img-TS_CAP_DAD                  ; img-TS_CAP_DAD
+               ; TS_STICKER_PACK        ;                ; img-TS_STICKER_PACK             ; img-TS_STICKER_PACK
+               ; TS_TOTE_CANVAS         ;                ; img-TS_TOTE_CANVAS              ; img-TS_TOTE_CANVAS
+               ; TS_BOTTLE_STEEL        ;                ; img-TS_BOTTLE_STEEL             ; img-TS_BOTTLE_STEEL
+               ; TS_NOTEBOOK_DEV        ;                ; img-TS_NOTEBOOK_DEV             ; img-TS_NOTEBOOK_DEV
+
+UPDATE Product ; code[unique = true]    ; $onlineVersion ; thumbnail(code, $onlineVersion) ; picture(code, $onlineVersion)
+               ; LAPTOP_PRO_15          ;                ; img-LAPTOP_PRO_15               ; img-LAPTOP_PRO_15
+               ; SMARTPHONE_X           ;                ; img-SMARTPHONE_X                ; img-SMARTPHONE_X
+               ; WIRELESS_HEADPHONES    ;                ; img-WIRELESS_HEADPHONES         ; img-WIRELESS_HEADPHONES
+               ; TABLET_AIR             ;                ; img-TABLET_AIR                  ; img-TABLET_AIR
+               ; SMART_WATCH_PRO        ;                ; img-SMART_WATCH_PRO             ; img-SMART_WATCH_PRO
+               ; MECHANICAL_KEYBOARD    ;                ; img-MECHANICAL_KEYBOARD         ; img-MECHANICAL_KEYBOARD
+               ; WIRELESS_GAMING_MOUSE  ;                ; img-WIRELESS_GAMING_MOUSE       ; img-WIRELESS_GAMING_MOUSE
+               ; MONITOR_4K_27          ;                ; img-MONITOR_4K_27               ; img-MONITOR_4K_27
+               ; HD_WEBCAM              ;                ; img-HD_WEBCAM                   ; img-HD_WEBCAM
+               ; BLUETOOTH_SPEAKER      ;                ; img-BLUETOOTH_SPEAKER           ; img-BLUETOOTH_SPEAKER
+               ; TS_MUG_CLASSIC         ;                ; img-TS_MUG_CLASSIC              ; img-TS_MUG_CLASSIC
+               ; TS_MUG_TRAVEL          ;                ; img-TS_MUG_TRAVEL               ; img-TS_MUG_TRAVEL
+               ; TS_TEE_BLACK           ;                ; img-TS_TEE_BLACK                ; img-TS_TEE_BLACK
+               ; TS_TEE_WHITE           ;                ; img-TS_TEE_WHITE                ; img-TS_TEE_WHITE
+               ; TS_HOODIE_ZIP          ;                ; img-TS_HOODIE_ZIP               ; img-TS_HOODIE_ZIP
+               ; TS_CAP_DAD             ;                ; img-TS_CAP_DAD                  ; img-TS_CAP_DAD
+               ; TS_STICKER_PACK        ;                ; img-TS_STICKER_PACK             ; img-TS_STICKER_PACK
+               ; TS_TOTE_CANVAS         ;                ; img-TS_TOTE_CANVAS              ; img-TS_TOTE_CANVAS
+               ; TS_BOTTLE_STEEL        ;                ; img-TS_BOTTLE_STEEL             ; img-TS_BOTTLE_STEEL
+               ; TS_NOTEBOOK_DEV        ;                ; img-TS_NOTEBOOK_DEV             ; img-TS_NOTEBOOK_DEV
+
+# ====================================================================
+# MediaContainer + galleryImages — wraps each Media so OCC exposes
+# images[] on /products/{code}. Required for chat product cards.
+# ====================================================================
+UPDATE Media ; code[unique = true]       ; $stagedVersion ; mediaFormat(qualifier)
+             ; img-LAPTOP_PRO_15         ;                ; 515Wx515H
+             ; img-SMARTPHONE_X          ;                ; 515Wx515H
+             ; img-WIRELESS_HEADPHONES   ;                ; 515Wx515H
+             ; img-TABLET_AIR            ;                ; 515Wx515H
+             ; img-SMART_WATCH_PRO       ;                ; 515Wx515H
+             ; img-MECHANICAL_KEYBOARD   ;                ; 515Wx515H
+             ; img-WIRELESS_GAMING_MOUSE ;                ; 515Wx515H
+             ; img-MONITOR_4K_27         ;                ; 515Wx515H
+             ; img-HD_WEBCAM             ;                ; 515Wx515H
+             ; img-BLUETOOTH_SPEAKER     ;                ; 515Wx515H
+             ; img-TS_MUG_CLASSIC        ;                ; 515Wx515H
+             ; img-TS_MUG_TRAVEL         ;                ; 515Wx515H
+             ; img-TS_TEE_BLACK          ;                ; 515Wx515H
+             ; img-TS_TEE_WHITE          ;                ; 515Wx515H
+             ; img-TS_HOODIE_ZIP         ;                ; 515Wx515H
+             ; img-TS_CAP_DAD            ;                ; 515Wx515H
+             ; img-TS_STICKER_PACK       ;                ; 515Wx515H
+             ; img-TS_TOTE_CANVAS        ;                ; 515Wx515H
+             ; img-TS_BOTTLE_STEEL       ;                ; 515Wx515H
+             ; img-TS_NOTEBOOK_DEV       ;                ; 515Wx515H
+UPDATE Media ; code[unique = true]       ; $onlineVersion ; mediaFormat(qualifier)
+             ; img-LAPTOP_PRO_15         ;                ; 515Wx515H
+             ; img-SMARTPHONE_X          ;                ; 515Wx515H
+             ; img-WIRELESS_HEADPHONES   ;                ; 515Wx515H
+             ; img-TABLET_AIR            ;                ; 515Wx515H
+             ; img-SMART_WATCH_PRO       ;                ; 515Wx515H
+             ; img-MECHANICAL_KEYBOARD   ;                ; 515Wx515H
+             ; img-WIRELESS_GAMING_MOUSE ;                ; 515Wx515H
+             ; img-MONITOR_4K_27         ;                ; 515Wx515H
+             ; img-HD_WEBCAM             ;                ; 515Wx515H
+             ; img-BLUETOOTH_SPEAKER     ;                ; 515Wx515H
+             ; img-TS_MUG_CLASSIC        ;                ; 515Wx515H
+             ; img-TS_MUG_TRAVEL         ;                ; 515Wx515H
+             ; img-TS_TEE_BLACK          ;                ; 515Wx515H
+             ; img-TS_TEE_WHITE          ;                ; 515Wx515H
+             ; img-TS_HOODIE_ZIP         ;                ; 515Wx515H
+             ; img-TS_CAP_DAD            ;                ; 515Wx515H
+             ; img-TS_STICKER_PACK       ;                ; 515Wx515H
+             ; img-TS_TOTE_CANVAS        ;                ; 515Wx515H
+             ; img-TS_BOTTLE_STEEL       ;                ; 515Wx515H
+             ; img-TS_NOTEBOOK_DEV       ;                ; 515Wx515H
+INSERT_UPDATE MediaContainer ; qualifier[unique = true]      ; $stagedVersion ; medias(code, $stagedVersion)
+                             ; mc-LAPTOP_PRO_15              ;                ; img-LAPTOP_PRO_15
+                             ; mc-SMARTPHONE_X               ;                ; img-SMARTPHONE_X
+                             ; mc-WIRELESS_HEADPHONES        ;                ; img-WIRELESS_HEADPHONES
+                             ; mc-TABLET_AIR                 ;                ; img-TABLET_AIR
+                             ; mc-SMART_WATCH_PRO            ;                ; img-SMART_WATCH_PRO
+                             ; mc-MECHANICAL_KEYBOARD        ;                ; img-MECHANICAL_KEYBOARD
+                             ; mc-WIRELESS_GAMING_MOUSE      ;                ; img-WIRELESS_GAMING_MOUSE
+                             ; mc-MONITOR_4K_27              ;                ; img-MONITOR_4K_27
+                             ; mc-HD_WEBCAM                  ;                ; img-HD_WEBCAM
+                             ; mc-BLUETOOTH_SPEAKER          ;                ; img-BLUETOOTH_SPEAKER
+                             ; mc-TS_MUG_CLASSIC             ;                ; img-TS_MUG_CLASSIC
+                             ; mc-TS_MUG_TRAVEL              ;                ; img-TS_MUG_TRAVEL
+                             ; mc-TS_TEE_BLACK               ;                ; img-TS_TEE_BLACK
+                             ; mc-TS_TEE_WHITE               ;                ; img-TS_TEE_WHITE
+                             ; mc-TS_HOODIE_ZIP              ;                ; img-TS_HOODIE_ZIP
+                             ; mc-TS_CAP_DAD                 ;                ; img-TS_CAP_DAD
+                             ; mc-TS_STICKER_PACK            ;                ; img-TS_STICKER_PACK
+                             ; mc-TS_TOTE_CANVAS             ;                ; img-TS_TOTE_CANVAS
+                             ; mc-TS_BOTTLE_STEEL            ;                ; img-TS_BOTTLE_STEEL
+                             ; mc-TS_NOTEBOOK_DEV            ;                ; img-TS_NOTEBOOK_DEV
+INSERT_UPDATE MediaContainer ; qualifier[unique = true]      ; $onlineVersion ; medias(code, $onlineVersion)
+                             ; mc-LAPTOP_PRO_15              ;                ; img-LAPTOP_PRO_15
+                             ; mc-SMARTPHONE_X               ;                ; img-SMARTPHONE_X
+                             ; mc-WIRELESS_HEADPHONES        ;                ; img-WIRELESS_HEADPHONES
+                             ; mc-TABLET_AIR                 ;                ; img-TABLET_AIR
+                             ; mc-SMART_WATCH_PRO            ;                ; img-SMART_WATCH_PRO
+                             ; mc-MECHANICAL_KEYBOARD        ;                ; img-MECHANICAL_KEYBOARD
+                             ; mc-WIRELESS_GAMING_MOUSE      ;                ; img-WIRELESS_GAMING_MOUSE
+                             ; mc-MONITOR_4K_27              ;                ; img-MONITOR_4K_27
+                             ; mc-HD_WEBCAM                  ;                ; img-HD_WEBCAM
+                             ; mc-BLUETOOTH_SPEAKER          ;                ; img-BLUETOOTH_SPEAKER
+                             ; mc-TS_MUG_CLASSIC             ;                ; img-TS_MUG_CLASSIC
+                             ; mc-TS_MUG_TRAVEL              ;                ; img-TS_MUG_TRAVEL
+                             ; mc-TS_TEE_BLACK               ;                ; img-TS_TEE_BLACK
+                             ; mc-TS_TEE_WHITE               ;                ; img-TS_TEE_WHITE
+                             ; mc-TS_HOODIE_ZIP              ;                ; img-TS_HOODIE_ZIP
+                             ; mc-TS_CAP_DAD                 ;                ; img-TS_CAP_DAD
+                             ; mc-TS_STICKER_PACK            ;                ; img-TS_STICKER_PACK
+                             ; mc-TS_TOTE_CANVAS             ;                ; img-TS_TOTE_CANVAS
+                             ; mc-TS_BOTTLE_STEEL            ;                ; img-TS_BOTTLE_STEEL
+                             ; mc-TS_NOTEBOOK_DEV            ;                ; img-TS_NOTEBOOK_DEV
+UPDATE Product ; code[unique = true]    ; $stagedVersion ; galleryImages(qualifier, $stagedVersion)
+               ; LAPTOP_PRO_15          ;                ; mc-LAPTOP_PRO_15
+               ; SMARTPHONE_X           ;                ; mc-SMARTPHONE_X
+               ; WIRELESS_HEADPHONES    ;                ; mc-WIRELESS_HEADPHONES
+               ; TABLET_AIR             ;                ; mc-TABLET_AIR
+               ; SMART_WATCH_PRO        ;                ; mc-SMART_WATCH_PRO
+               ; MECHANICAL_KEYBOARD    ;                ; mc-MECHANICAL_KEYBOARD
+               ; WIRELESS_GAMING_MOUSE  ;                ; mc-WIRELESS_GAMING_MOUSE
+               ; MONITOR_4K_27          ;                ; mc-MONITOR_4K_27
+               ; HD_WEBCAM              ;                ; mc-HD_WEBCAM
+               ; BLUETOOTH_SPEAKER      ;                ; mc-BLUETOOTH_SPEAKER
+               ; TS_MUG_CLASSIC         ;                ; mc-TS_MUG_CLASSIC
+               ; TS_MUG_TRAVEL          ;                ; mc-TS_MUG_TRAVEL
+               ; TS_TEE_BLACK           ;                ; mc-TS_TEE_BLACK
+               ; TS_TEE_WHITE           ;                ; mc-TS_TEE_WHITE
+               ; TS_HOODIE_ZIP          ;                ; mc-TS_HOODIE_ZIP
+               ; TS_CAP_DAD             ;                ; mc-TS_CAP_DAD
+               ; TS_STICKER_PACK        ;                ; mc-TS_STICKER_PACK
+               ; TS_TOTE_CANVAS         ;                ; mc-TS_TOTE_CANVAS
+               ; TS_BOTTLE_STEEL        ;                ; mc-TS_BOTTLE_STEEL
+               ; TS_NOTEBOOK_DEV        ;                ; mc-TS_NOTEBOOK_DEV
+UPDATE Product ; code[unique = true]    ; $onlineVersion ; galleryImages(qualifier, $onlineVersion)
+               ; LAPTOP_PRO_15          ;                ; mc-LAPTOP_PRO_15
+               ; SMARTPHONE_X           ;                ; mc-SMARTPHONE_X
+               ; WIRELESS_HEADPHONES    ;                ; mc-WIRELESS_HEADPHONES
+               ; TABLET_AIR             ;                ; mc-TABLET_AIR
+               ; SMART_WATCH_PRO        ;                ; mc-SMART_WATCH_PRO
+               ; MECHANICAL_KEYBOARD    ;                ; mc-MECHANICAL_KEYBOARD
+               ; WIRELESS_GAMING_MOUSE  ;                ; mc-WIRELESS_GAMING_MOUSE
+               ; MONITOR_4K_27          ;                ; mc-MONITOR_4K_27
+               ; HD_WEBCAM              ;                ; mc-HD_WEBCAM
+               ; BLUETOOTH_SPEAKER      ;                ; mc-BLUETOOTH_SPEAKER
+               ; TS_MUG_CLASSIC         ;                ; mc-TS_MUG_CLASSIC
+               ; TS_MUG_TRAVEL          ;                ; mc-TS_MUG_TRAVEL
+               ; TS_TEE_BLACK           ;                ; mc-TS_TEE_BLACK
+               ; TS_TEE_WHITE           ;                ; mc-TS_TEE_WHITE
+               ; TS_HOODIE_ZIP          ;                ; mc-TS_HOODIE_ZIP
+               ; TS_CAP_DAD             ;                ; mc-TS_CAP_DAD
+               ; TS_STICKER_PACK        ;                ; mc-TS_STICKER_PACK
+               ; TS_TOTE_CANVAS         ;                ; mc-TS_TOTE_CANVAS
+               ; TS_BOTTLE_STEEL        ;                ; mc-TS_BOTTLE_STEEL
+               ; TS_NOTEBOOK_DEV        ;                ; mc-TS_NOTEBOOK_DEV

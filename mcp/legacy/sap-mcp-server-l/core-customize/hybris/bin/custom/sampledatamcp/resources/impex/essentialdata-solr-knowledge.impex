@@ -1,0 +1,119 @@
+# ---------------------------------------------------------------------------
+# ThinkShop Knowledge Base Solr config (knowledgeIndex)
+#
+# Loaded automatically during "ant initialize" and "ant updatesystem"
+# (filename matches essentialdata-*.impex; loads after the product
+# Solr config because 's' > 'i' alphabetical sort within essentialdata-*).
+#
+# Creates: SolrFacetSearchConfig 'knowledgeIndex', SolrIndexedType
+#          'knowledgeEntryType' over KnowledgeEntry, indexed properties,
+#          a DEFAULT free-text search query template, and indexer queries.
+#
+# Prerequisites:
+#   - KnowledgeEntry type (from coremcp-items.xml — created on system update)
+#   - solrserver + solrfacetsearch extensions (already enabled)
+# ---------------------------------------------------------------------------
+
+#% impex.setLocale(new java.util.Locale("en"));
+
+$facetSearchConfigName = knowledgeIndex
+$searchIndexNamePrefix = knowledge
+$solrIndexedType       = knowledgeEntryType
+
+
+# ==========================================================================
+# Solr Facet Search Config
+# ==========================================================================
+
+INSERT_UPDATE SolrFacetSearchConfig ; name[unique = true]    ; description                ; indexNamePrefix         ; languages(isocode) ; solrServerConfig(name) ; solrSearchConfig(description) ; solrIndexConfig(name) ; solrIndexedTypes(identifier) ; enabledLanguageFallbackMechanism
+                                    ; $facetSearchConfigName ; ThinkShop Knowledge Search ; $searchIndexNamePrefix  ; en                 ; Default                ; Default                       ; Default               ; $solrIndexedType             ; true
+
+
+# ==========================================================================
+# Solr Indexed Type
+# ==========================================================================
+
+INSERT_UPDATE SolrIndexedType ; identifier[unique = true] ; type(code)     ; variant ; sorts(&sortRefID)
+                              ; $solrIndexedType          ; KnowledgeEntry ; false   ; kSortRef1,kSortRef2
+
+
+# ==========================================================================
+# Indexed Properties — Searchable text fields
+# ==========================================================================
+
+INSERT_UPDATE SolrIndexedProperty ; solrIndexedType(identifier)[unique = true] ; name[unique = true] ; type(code) ; sortableType(code) ; localized[default = false] ; multiValue[default = false] ; useForSpellchecking[default = false] ; useForAutocomplete[default = false] ; fieldValueProvider    ; valueProviderParameter
+                                  ; $solrIndexedType                           ; uid                 ; string     ;                    ;                            ;                             ; true                                 ; true                                ; springELValueProvider ; uid
+                                  ; $solrIndexedType                           ; title               ; text       ; sortabletext       ; true                       ;                             ; true                                 ; true                                ; springELValueProvider ; getTitle(#lang)
+                                  ; $solrIndexedType                           ; summary             ; text       ;                    ; true                       ;                             ; true                                 ;                                     ; springELValueProvider ; getSummary(#lang)
+                                  ; $solrIndexedType                           ; body                ; text       ;                    ; true                       ;                             ;                                      ;                                     ; springELValueProvider ; getBody(#lang)
+                                  ; $solrIndexedType                           ; tags                ; text       ;                    ;                            ;                             ;                                      ;                                     ; springELValueProvider ; tags
+                                  ; $solrIndexedType                           ; searchableText      ; text       ;                    ; true                       ;                             ;                                      ;                                     ; springELValueProvider ; '' + getTitle(#lang) + ' ' + getSummary(#lang) + ' ' + getBody(#lang) + ' ' + tags
+
+
+# ==========================================================================
+# Indexed Properties — Facets / Filters / Sorts
+# ==========================================================================
+
+INSERT_UPDATE SolrIndexedProperty ; solrIndexedType(identifier)[unique = true] ; name[unique = true] ; type(code) ; facet[default = true] ; facetType(code) ; facetSort(code) ; priority ; visible[default = true] ; fieldValueProvider    ; valueProviderParameter
+                                  ; $solrIndexedType                           ; category            ; string     ;                       ; MultiSelectOr   ; Alpha           ; 1000     ;                         ; springELValueProvider ; category?.code
+
+INSERT_UPDATE SolrIndexedProperty ; solrIndexedType(identifier)[unique = true] ; name[unique = true] ; type(code) ; facet[default = false] ; fieldValueProvider    ; valueProviderParameter
+                                  ; $solrIndexedType                           ; priority            ; int        ;                        ; springELValueProvider ; priority
+                                  ; $solrIndexedType                           ; imageUrl            ; string     ;                        ; springELValueProvider ; imageUrl
+
+# Note: validFrom / validTo are intentionally NOT indexed in Solr — the
+# springELValueProvider serializes java.util.Date via toString() which Solr
+# rejects as not-ISO-8601. activeOnly filtering is applied in Java after
+# Solr returns matching uids (see DefaultKnowledgeService.search).
+
+
+# ==========================================================================
+# Sorts (relevance + priority)
+# ==========================================================================
+
+INSERT_UPDATE SolrSort ; &sortRefID ; indexedType(identifier)[unique = true] ; code[unique = true] ; useBoost
+                       ; kSortRef1  ; $solrIndexedType                       ; relevance           ; true
+                       ; kSortRef2  ; $solrIndexedType                       ; priority-desc       ; false
+
+INSERT_UPDATE SolrSortField ; sort(indexedType(identifier), code)[unique = true] ; fieldName[unique = true] ; ascending[unique = true]
+                            ; $solrIndexedType:relevance                         ; score                    ; false
+                            ; $solrIndexedType:relevance                         ; priority                 ; false
+                            ; $solrIndexedType:priority-desc                     ; priority                 ; false
+
+
+# ==========================================================================
+# Search Query Template — DEFAULT (free text query with weighted boosts)
+# ==========================================================================
+
+INSERT_UPDATE SolrSearchQueryTemplate ; name[unique = true] ; indexedType(identifier)[unique = true] ; ftsQueryBuilder             ; enableHighlighting[default = true]
+                                      ; DEFAULT             ; $solrIndexedType                       ; defaultFreeTextQueryBuilder ;
+
+INSERT_UPDATE SolrSearchQueryProperty ; indexedProperty(name, solrIndexedType(identifier))[unique = true] ; searchQueryTemplate(name, indexedType(identifier))[unique = true] ; ftsPhraseQuery[default = false] ; ftsPhraseQueryBoost ; ftsQuery[default = false] ; ftsQueryBoost ; ftsFuzzyQuery[default = false] ; ftsFuzzyQueryBoost ; ftsWildcardQuery[default = false] ; ftsWildcardQueryType(code)[default = POSTFIX] ; includeInResponse[default = true]
+                                      ; uid:$solrIndexedType                                              ; DEFAULT:$solrIndexedType                                         ;                                 ;                     ; true                      ; 200           ;                                ;                    ;                                   ;                                                ;
+                                      ; title:$solrIndexedType                                            ; DEFAULT:$solrIndexedType                                         ; true                            ; 150                 ; true                      ; 120           ; true                           ; 40                 ; true                              ;                                                ;
+                                      ; summary:$solrIndexedType                                          ; DEFAULT:$solrIndexedType                                         ; true                            ; 80                  ; true                      ; 60            ; true                           ; 20                 ;                                   ;                                                ;
+                                      ; body:$solrIndexedType                                             ; DEFAULT:$solrIndexedType                                         ;                                 ;                     ; true                      ; 25            ;                                ;                    ;                                   ;                                                ;
+                                      ; tags:$solrIndexedType                                             ; DEFAULT:$solrIndexedType                                         ;                                 ;                     ; true                      ; 80            ; true                           ; 25                 ;                                   ;                                                ;
+                                      ; searchableText:$solrIndexedType                                   ; DEFAULT:$solrIndexedType                                         ;                                 ;                     ; true                      ; 30            ; true                           ; 15                 ;                                   ;                                                ;
+                                      ; category:$solrIndexedType                                         ; DEFAULT:$solrIndexedType                                         ;                                 ;                     ;                           ;               ;                                ;                    ;                                   ;                                                ; true
+                                      ; priority:$solrIndexedType                                         ; DEFAULT:$solrIndexedType                                         ;                                 ;                     ;                           ;               ;                                ;                    ;                                   ;                                                ; true
+                                      ; imageUrl:$solrIndexedType                                         ; DEFAULT:$solrIndexedType                                         ;                                 ;                     ;                           ;               ;                                ;                    ;                                   ;                                                ; true
+
+
+# ==========================================================================
+# Indexer Queries — only index published entries
+# ==========================================================================
+
+INSERT_UPDATE SolrIndexerQuery ; solrIndexedType(identifier)[unique = true] ; identifier[unique = true]            ; type(code) ; injectCurrentDate[default = true] ; injectCurrentTime[default = true] ; injectLastIndexTime[default = false] ; query                                                                                                                              ; user(uid)
+                               ; $solrIndexedType                           ; $facetSearchConfigName-fullQuery     ; full       ;                                   ;                                   ;                                      ; "SELECT {ke.PK} FROM {KnowledgeEntry AS ke JOIN KnowledgeStatus AS ks ON {ke.status} = {ks.PK}} WHERE {ks.code} = 'published'"     ; admin
+                               ; $solrIndexedType                           ; $facetSearchConfigName-updateQuery   ; update     ;                                   ;                                   ; true                                 ; "SELECT {ke.PK} FROM {KnowledgeEntry AS ke JOIN KnowledgeStatus AS ks ON {ke.status} = {ks.PK}} WHERE {ks.code} = 'published' AND {ke.modifiedtime} >= ?lastIndexTime" ; admin
+
+
+# ==========================================================================
+# Indexer Cron Jobs (defined but inactive — trigger manually via HAC or
+# the gradlew groovy task; tiny dataset doesn't need a recurring schedule)
+# ==========================================================================
+
+INSERT_UPDATE SolrIndexerCronJob ; code[unique = true]                    ; job(code)      ; singleExecutable ; sessionLanguage(isocode) ; active ; facetSearchConfig(name) ; indexerOperation(code)
+                                 ; full-$facetSearchConfigName-cronJob    ; solrIndexerJob ; false            ; en                       ; false  ; $facetSearchConfigName  ; full
+                                 ; update-$facetSearchConfigName-cronJob  ; solrIndexerJob ; false            ; en                       ; false  ; $facetSearchConfigName  ; update

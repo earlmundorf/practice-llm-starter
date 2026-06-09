@@ -612,8 +612,18 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
                           key={idx}
                           className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600"
                         >
-                          <div className="flex justify-between items-start mb-2">
-                            <div className="flex-1">
+                          <div className="flex justify-between items-start mb-2 gap-3">
+                            {item.product?.imageUrl ? (
+                              <img
+                                src={item.product.imageUrl}
+                                alt={item.productName}
+                                loading="lazy"
+                                className="w-14 h-14 object-cover rounded-md flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="w-14 h-14 bg-gray-100 dark:bg-gray-600 rounded-md flex-shrink-0" />
+                            )}
+                            <div className="flex-1 min-w-0">
                               <h4 className="font-semibold text-gray-900 dark:text-white">
                                 {item.productName}
                               </h4>

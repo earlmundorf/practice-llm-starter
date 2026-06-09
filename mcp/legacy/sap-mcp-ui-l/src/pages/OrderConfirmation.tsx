@@ -191,14 +191,24 @@ export const OrderConfirmation = () => {
                           className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
                         >
                           <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-3">
                               <svg
-                                className={`w-3 h-3 text-gray-400 transition-transform ${expandedItem === idx ? 'rotate-90' : ''}`}
+                                className={`w-3 h-3 text-gray-400 transition-transform flex-shrink-0 ${expandedItem === idx ? 'rotate-90' : ''}`}
                                 fill="currentColor"
                                 viewBox="0 0 20 20"
                               >
                                 <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
                               </svg>
+                              {item.imageUrl ? (
+                                <img
+                                  src={item.imageUrl}
+                                  alt={item.productName}
+                                  loading="lazy"
+                                  className="w-12 h-12 object-cover rounded-md flex-shrink-0"
+                                />
+                              ) : (
+                                <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-md flex-shrink-0" />
+                              )}
                               <span className="text-blue-600 dark:text-blue-400 hover:underline font-medium">
                                 {item.productName}
                               </span>
