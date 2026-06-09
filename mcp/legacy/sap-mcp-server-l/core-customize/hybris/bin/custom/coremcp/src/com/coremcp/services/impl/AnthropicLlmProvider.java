@@ -9,15 +9,19 @@ import de.hybris.platform.util.Config;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * Direct Anthropic provider. Adapts Anthropic's content-block request/response format
@@ -79,6 +83,7 @@ public class AnthropicLlmProvider implements LlmProvider
 
 			final Map<String, Object> raw = objectMapper.readValue(response.body(),
 				new TypeReference<Map<String, Object>>() {});
+			logUsage(raw);
 			return normalizeResponse(raw);
 		}
 		catch (final InterruptedException e)
@@ -96,6 +101,226 @@ public class AnthropicLlmProvider implements LlmProvider
 		}
 	}
 
+	@Override
+	public Map<String, Object> chatCompletionStream(final List<Map<String, Object>> messages,
+		final List<Map<String, Object>> tools,
+		final String modelOverride,
+		final Consumer<String> textDeltaConsumer)
+	{
+		try
+		{
+			final Map<String, Object> body = buildRequestBody(messages, tools, modelOverride);
+			body.put("stream", true);
+			final HttpRequest request = HttpRequest.newBuilder()
+				.uri(URI.create(resolveApiUrl()))
+				.header("Content-Type", "application/json")
+				.header("Accept", "text/event-stream")
+				.header("x-api-key", requireApiKey())
+				.header("anthropic-version", Config.getString("coremcp.anthropic.version", "2023-06-01"))
+				.timeout(Duration.ofSeconds(Config.getInt("coremcp.llm.timeout.seconds", 60)))
+				.POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+				.build();
+
+			final HttpResponse<java.io.InputStream> response =
+				httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+
+			final String contentType = response.headers().firstValue("content-type").orElse("").toLowerCase();
+			if (response.statusCode() != 200 || !contentType.contains("text/event-stream"))
+			{
+				// Gateway/proxy didn't honor streaming. Drain whatever we got, log, and fall back
+				// to non-streaming so the caller still gets a usable result.
+				final String drained = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
+				LOG.info("Anthropic streaming unavailable (status={}, contentType={}); falling back to non-streaming",
+					response.statusCode(), contentType);
+				if (response.statusCode() != 200)
+				{
+					LOG.warn("Anthropic streaming non-200 body: {}", drained);
+				}
+				return fallbackToNonStreaming(messages, tools, modelOverride, textDeltaConsumer);
+			}
+
+			return consumeStream(response.body(), textDeltaConsumer);
+		}
+		catch (final InterruptedException e)
+		{
+			Thread.currentThread().interrupt();
+			throw new RuntimeException("Anthropic streaming request interrupted", e);
+		}
+		catch (final RuntimeException e)
+		{
+			throw e;
+		}
+		catch (final Exception e)
+		{
+			LOG.warn("Anthropic streaming failed ({}); falling back to non-streaming", e.getMessage());
+			return fallbackToNonStreaming(messages, tools, modelOverride, textDeltaConsumer);
+		}
+	}
+
+	private Map<String, Object> fallbackToNonStreaming(final List<Map<String, Object>> messages,
+		final List<Map<String, Object>> tools,
+		final String modelOverride,
+		final Consumer<String> textDeltaConsumer)
+	{
+		final Map<String, Object> result = chatCompletion(messages, tools, modelOverride);
+		try
+		{
+			@SuppressWarnings("unchecked")
+			final List<Map<String, Object>> choices = (List<Map<String, Object>>) result.get("choices");
+			if (choices != null && !choices.isEmpty())
+			{
+				@SuppressWarnings("unchecked")
+				final Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
+				final Object content = message == null ? null : message.get("content");
+				if (content instanceof String && !((String) content).isEmpty())
+				{
+					textDeltaConsumer.accept((String) content);
+				}
+			}
+		}
+		catch (final Exception ignored)
+		{
+		}
+		return result;
+	}
+
+	/**
+	 * Consume an Anthropic SSE stream. Emits text deltas through the consumer as they
+	 * arrive and accumulates the full response shape (text + tool_use blocks + usage)
+	 * so we can return a non-streaming-equivalent result Map at the end.
+	 */
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> consumeStream(final java.io.InputStream body,
+		final Consumer<String> textDeltaConsumer) throws Exception
+	{
+		final List<Map<String, Object>> contentBlocks = new ArrayList<>();
+		final Map<Integer, StringBuilder> textBuffers = new LinkedHashMap<>();
+		final Map<Integer, StringBuilder> toolInputBuffers = new LinkedHashMap<>();
+		Map<String, Object> usage = null;
+
+		try (BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8)))
+		{
+			String line;
+			while ((line = reader.readLine()) != null)
+			{
+				if (!line.startsWith("data:")) continue;
+				final String payload = line.substring(5).trim();
+				if (payload.isEmpty() || "[DONE]".equals(payload)) continue;
+				final Map<String, Object> evt;
+				try
+				{
+					evt = objectMapper.readValue(payload, new TypeReference<Map<String, Object>>() {});
+				}
+				catch (final Exception parseEx)
+				{
+					LOG.debug("Skipping unparseable SSE event: {}", payload);
+					continue;
+				}
+				final String type = asString(evt.get("type"));
+				switch (type)
+				{
+					case "content_block_start":
+					{
+						final int idx = ((Number) evt.getOrDefault("index", 0)).intValue();
+						final Map<String, Object> block = (Map<String, Object>) evt.get("content_block");
+						if (block != null)
+						{
+							final String blockType = asString(block.get("type"));
+							if ("text".equals(blockType))
+							{
+								textBuffers.put(idx, new StringBuilder());
+								while (contentBlocks.size() <= idx) contentBlocks.add(null);
+								contentBlocks.set(idx, new LinkedHashMap<>(Map.of("type", "text", "text", "")));
+							}
+							else if ("tool_use".equals(blockType))
+							{
+								toolInputBuffers.put(idx, new StringBuilder());
+								while (contentBlocks.size() <= idx) contentBlocks.add(null);
+								final Map<String, Object> tu = new LinkedHashMap<>();
+								tu.put("type", "tool_use");
+								tu.put("id", asString(block.get("id")));
+								tu.put("name", asString(block.get("name")));
+								tu.put("input", Map.of());
+								contentBlocks.set(idx, tu);
+							}
+						}
+						break;
+					}
+					case "content_block_delta":
+					{
+						final int idx = ((Number) evt.getOrDefault("index", 0)).intValue();
+						final Map<String, Object> delta = (Map<String, Object>) evt.get("delta");
+						if (delta == null) break;
+						final String dtype = asString(delta.get("type"));
+						if ("text_delta".equals(dtype))
+						{
+							final String chunk = asString(delta.get("text"));
+							if (!chunk.isEmpty())
+							{
+								final StringBuilder buf = textBuffers.get(idx);
+								if (buf != null) buf.append(chunk);
+								textDeltaConsumer.accept(chunk);
+							}
+						}
+						else if ("input_json_delta".equals(dtype))
+						{
+							final String chunk = asString(delta.get("partial_json"));
+							final StringBuilder buf = toolInputBuffers.get(idx);
+							if (buf != null) buf.append(chunk);
+						}
+						break;
+					}
+					case "content_block_stop":
+					{
+						final int idx = ((Number) evt.getOrDefault("index", 0)).intValue();
+						if (textBuffers.containsKey(idx))
+						{
+							final Map<String, Object> tb = contentBlocks.get(idx);
+							if (tb != null) tb.put("text", textBuffers.get(idx).toString());
+						}
+						else if (toolInputBuffers.containsKey(idx))
+						{
+							final Map<String, Object> tu = contentBlocks.get(idx);
+							if (tu != null)
+							{
+								final String json = toolInputBuffers.get(idx).toString();
+								Object parsed = Map.of();
+								if (!json.isEmpty())
+								{
+									try
+									{
+										parsed = objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+									}
+									catch (final Exception ignored)
+									{
+										LOG.debug("Failed to parse streamed tool input json: {}", json);
+									}
+								}
+								tu.put("input", parsed);
+							}
+						}
+						break;
+					}
+					case "message_delta":
+					{
+						final Map<String, Object> u = (Map<String, Object>) evt.get("usage");
+						if (u != null) usage = u;
+						break;
+					}
+					case "message_stop":
+					default:
+						break;
+				}
+			}
+		}
+
+		final Map<String, Object> raw = new LinkedHashMap<>();
+		raw.put("content", contentBlocks);
+		if (usage != null) raw.put("usage", usage);
+		logUsage(raw);
+		return normalizeResponse(raw);
+	}
+
 	private Map<String, Object> buildRequestBody(final List<Map<String, Object>> messages,
 		final List<Map<String, Object>> tools,
 		final String modelOverride)
@@ -104,14 +329,15 @@ public class AnthropicLlmProvider implements LlmProvider
 		requestBody.put("model", resolveModel(modelOverride));
 		requestBody.put("max_tokens", DEFAULT_MAX_TOKENS);
 
-		String system = null;
+		final List<String> systemTexts = new ArrayList<>();
 		final List<Map<String, Object>> anthropicMessages = new ArrayList<>();
 		for (final Map<String, Object> message : messages)
 		{
 			final String role = asString(message.get("role"));
 			if ("system".equals(role))
 			{
-				system = asString(message.get("content"));
+				final String text = asString(message.get("content"));
+				if (!text.isBlank()) systemTexts.add(text);
 				continue;
 			}
 			if ("tool".equals(role))
@@ -140,18 +366,55 @@ public class AnthropicLlmProvider implements LlmProvider
 			));
 		}
 
-		if (system != null && !system.isBlank())
+		// Send system as an array of content blocks. The FIRST block (caller convention:
+		// the stable persona prompt) gets a cache_control breakpoint so Anthropic's
+		// ephemeral prompt cache can reuse it across turns within ~5 minutes. Subsequent
+		// system blocks (per-turn state snapshot) stay uncached.
+		if (!systemTexts.isEmpty())
 		{
-			requestBody.put("system", system);
+			final List<Map<String, Object>> systemBlocks = new ArrayList<>();
+			for (int i = 0; i < systemTexts.size(); i++)
+			{
+				final Map<String, Object> block = new LinkedHashMap<>();
+				block.put("type", "text");
+				block.put("text", systemTexts.get(i));
+				if (i == 0)
+				{
+					block.put("cache_control", Map.of("type", "ephemeral"));
+				}
+				systemBlocks.add(block);
+			}
+			requestBody.put("system", systemBlocks);
 		}
 		requestBody.put("messages", anthropicMessages);
 
 		if (tools != null && !tools.isEmpty())
 		{
-			requestBody.put("tools", normalizeTools(tools));
+			// Tag the last tool with a cache breakpoint so the entire tools section is cacheable.
+			final List<Map<String, Object>> normalizedTools = normalizeTools(tools);
+			if (!normalizedTools.isEmpty())
+			{
+				final Map<String, Object> last = new LinkedHashMap<>(normalizedTools.get(normalizedTools.size() - 1));
+				last.put("cache_control", Map.of("type", "ephemeral"));
+				normalizedTools.set(normalizedTools.size() - 1, last);
+			}
+			requestBody.put("tools", normalizedTools);
 		}
 
 		return requestBody;
+	}
+
+	@SuppressWarnings("unchecked")
+	private void logUsage(final Map<String, Object> raw)
+	{
+		final Object usageObj = raw == null ? null : raw.get("usage");
+		if (!(usageObj instanceof Map)) return;
+		final Map<String, Object> usage = (Map<String, Object>) usageObj;
+		LOG.info("[perf] anthropic.usage input={} output={} cacheCreate={} cacheRead={}",
+			usage.get("input_tokens"),
+			usage.get("output_tokens"),
+			usage.getOrDefault("cache_creation_input_tokens", 0),
+			usage.getOrDefault("cache_read_input_tokens", 0));
 	}
 
 	// Package-private — exercised directly by AnthropicLlmProviderTest.

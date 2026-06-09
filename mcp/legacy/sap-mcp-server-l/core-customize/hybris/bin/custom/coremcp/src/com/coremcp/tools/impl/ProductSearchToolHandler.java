@@ -1,6 +1,9 @@
 package com.coremcp.tools.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.coremcp.services.DeepLinkBuilder;
 import com.coremcp.tools.McpToolHandler;
 import com.coremcp.tools.McpToolResult;
 import de.hybris.platform.commercefacades.product.data.ProductData;
@@ -17,6 +20,7 @@ import java.util.Map;
 public class ProductSearchToolHandler implements McpToolHandler
 {
 	private ProductSearchFacade<ProductData> productSearchFacade;
+	private DeepLinkBuilder deepLinkBuilder;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Override
@@ -44,7 +48,7 @@ public class ProductSearchToolHandler implements McpToolHandler
 			"query", Map.of("type", "string", "description", "Search keyword or phrase"),
 			"categoryCode", Map.of("type", "string", "description", "Optional category code to filter results"),
 			"currentPage", Map.of("type", "integer", "description", "Page number (0-based)", "default", 0),
-			"pageSize", Map.of("type", "integer", "description", "Number of results per page (max 100)", "default", 20),
+			"pageSize", Map.of("type", "integer", "description", "Number of results per page (max 100). Default is small to keep the conversation light; ask for more only when the user wants a wider view.", "default", 5),
 			"sort", Map.of("type", "string", "description", "Sort code (e.g., 'relevance', 'name-asc', 'price-asc')")
 		));
 		schema.put("required", List.of("query"));
@@ -58,7 +62,7 @@ public class ProductSearchToolHandler implements McpToolHandler
 		{
 			final String query = (String) args.get("query");
 			final int currentPage = args.containsKey("currentPage") ? ((Number) args.get("currentPage")).intValue() : 0;
-			final int pageSize = args.containsKey("pageSize") ? ((Number) args.get("pageSize")).intValue() : 20;
+			final int pageSize = args.containsKey("pageSize") ? ((Number) args.get("pageSize")).intValue() : 5;
 			final String sort = (String) args.getOrDefault("sort", "relevance");
 
 			final String searchQuery = query + ":" + sort;
@@ -73,7 +77,19 @@ public class ProductSearchToolHandler implements McpToolHandler
 			pageableData.setPageSize(pageSize);
 
 			final Object result = productSearchFacade.textSearch(searchState, pageableData);
-			return McpToolResult.success(objectMapper.writeValueAsString(result));
+			final ObjectNode tree = objectMapper.valueToTree(result);
+			if (tree.get("results") instanceof ArrayNode results)
+			{
+				for (int i = 0; i < results.size(); i++)
+				{
+					if (results.get(i) instanceof ObjectNode product && product.has("code"))
+					{
+						final String url = deepLinkBuilder.productUrl(product.get("code").asText());
+						if (url != null) product.put("url", url);
+					}
+				}
+			}
+			return McpToolResult.success(objectMapper.writeValueAsString(tree));
 		}
 		catch (final Exception e)
 		{
@@ -85,5 +101,11 @@ public class ProductSearchToolHandler implements McpToolHandler
 	public void setProductSearchFacade(final ProductSearchFacade<ProductData> productSearchFacade)
 	{
 		this.productSearchFacade = productSearchFacade;
+	}
+
+	@Required
+	public void setDeepLinkBuilder(final DeepLinkBuilder deepLinkBuilder)
+	{
+		this.deepLinkBuilder = deepLinkBuilder;
 	}
 }

@@ -11,7 +11,6 @@ import de.hybris.platform.commercefacades.order.data.CartData;
 import de.hybris.platform.commercefacades.order.data.OrderEntryData;
 import de.hybris.platform.commercefacades.customer.CustomerFacade;
 import de.hybris.platform.commercefacades.user.data.CustomerData;
-import de.hybris.platform.util.Config;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class DefaultAgentService implements AgentService
@@ -38,23 +38,6 @@ public class DefaultAgentService implements AgentService
 	private static final int TOOL_RESULT_SUMMARY_THRESHOLD = 300;
 	private static final int TOOL_RESULT_SUMMARY_SNIPPET = 200;
 
-	private static final Set<String> BROWSE_TOOLS = Set.of(
-		"product_search", "product_get", "cart_add_product",
-		"customer_get", "customer_lookup", "order_history", "order_get", "promotions_get");
-
-	private static final Set<String> CART_TOOLS = Set.of(
-		"product_search", "product_get", "cart_add_product",
-		"customer_get", "customer_lookup", "order_history", "order_get",
-		"cart_get", "cart_update_entry", "cart_remove_entry",
-		"cart_apply_voucher", "cart_remove_voucher", "promotions_get");
-
-	private static final String INTENT_PROMPT =
-		"Classify the user's shopping intent as exactly one word: browse, cart, or checkout.\n" +
-		"- browse: searching, viewing products, asking questions, greeting, general chat\n" +
-		"- cart: viewing cart, changing quantities, removing items, applying coupons or vouchers\n" +
-		"- checkout: buying, purchasing, placing order, ready to pay, completing a purchase\n" +
-		"Reply with ONLY that single word.";
-
 	private static final String SYSTEM_PROMPT =
 		"You are a knowledgeable friend who happens to know the ThinkShop electronics catalog (powered by " +
 		"SAP Commerce). Talk like a person who genuinely enjoys this stuff — share observations, opinions, " +
@@ -65,6 +48,11 @@ public class DefaultAgentService implements AgentService
 		"and completing purchases. When a customer wants to buy something, guide them through: " +
 		"add to cart → set delivery address → set delivery mode → set payment → place order. " +
 		"When showing products, include the product code, name, and price.\n\n" +
+		"LINKS: Don't try to render URLs in your replies. The chat UI automatically attaches " +
+		"clickable chips below your message for any products, orders, or order-history pages your " +
+		"tool calls touched — the user can open them from there. Just describe the entity in " +
+		"normal text (e.g., \"your most recent order is #THINK-0001\") and let the UI handle " +
+		"navigation.\n\n" +
 		"IMAGES: When the user attaches an image, look at it the way a friend would. Describe what you see " +
 		"naturally — what it looks like, what it's probably for, a thought or observation about it. If a " +
 		"product in the image (or something close to it) seems like something the user might want to find " +
@@ -97,34 +85,18 @@ public class DefaultAgentService implements AgentService
 
 	private Map<String, McpToolHandler> toolHandlerMap;
 	private List<Map<String, Object>> openAiToolDefinitions;
-	private List<Map<String, Object>> browseToolDefinitions;
-	private List<Map<String, Object>> cartToolDefinitions;
 
 	@PostConstruct
 	public void init()
 	{
-		// Build lookup map
 		toolHandlerMap = toolHandlers.stream()
 			.collect(Collectors.toMap(McpToolHandler::getName, h -> h));
 
-		// Build OpenAI function definitions
 		openAiToolDefinitions = toolHandlers.stream()
 			.map(this::buildToolDefinition)
 			.collect(Collectors.toList());
 
-		// Pre-build filtered tool lists per intent
-		browseToolDefinitions = toolHandlers.stream()
-			.filter(h -> BROWSE_TOOLS.contains(h.getName()))
-			.map(this::buildToolDefinition)
-			.collect(Collectors.toList());
-
-		cartToolDefinitions = toolHandlers.stream()
-			.filter(h -> CART_TOOLS.contains(h.getName()))
-			.map(this::buildToolDefinition)
-			.collect(Collectors.toList());
-
-		LOG.info("Intent tool groups — browse: {} tools, cart: {} tools, checkout: {} tools",
-			browseToolDefinitions.size(), cartToolDefinitions.size(), openAiToolDefinitions.size());
+		LOG.info("Agent initialized with {} tool definitions", openAiToolDefinitions.size());
 	}
 
 	private Map<String, Object> buildToolDefinition(final McpToolHandler handler)
@@ -139,76 +111,37 @@ public class DefaultAgentService implements AgentService
 		return tool;
 	}
 
-	@SuppressWarnings("unchecked")
-	private String classifyIntent(final List<Map<String, Object>> messages)
+	private static long elapsedMs(final long startNs)
 	{
-		try
-		{
-			// Find the last user message (extract text portion if content is a multimodal array)
-			String lastUserMessage = "";
-			for (int i = messages.size() - 1; i >= 0; i--)
-			{
-				if ("user".equals(messages.get(i).get("role")))
-				{
-					lastUserMessage = extractTextContent(messages.get(i).get("content"));
-					break;
-				}
-			}
-
-			if (lastUserMessage.isBlank())
-			{
-				// Image-only turn — let the tool loop handle it under the browse tool set.
-				return "browse";
-			}
-
-			final String intentModel = resolveIntentModel();
-
-			final List<Map<String, Object>> intentMessages = List.of(
-				Map.of("role", "system", "content", INTENT_PROMPT),
-				Map.of("role", "user", "content", lastUserMessage)
-			);
-
-			final Map<String, Object> response = llmClient.chatCompletion(intentMessages, null, intentModel);
-			final List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
-			if (choices != null && !choices.isEmpty())
-			{
-				final Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-				final String content = ((String) message.getOrDefault("content", "")).trim().toLowerCase();
-				if (Set.of("browse", "cart", "checkout").contains(content))
-				{
-					return content;
-				}
-				LOG.warn("Intent classification returned unexpected value: '{}', defaulting to browse", content);
-			}
-		}
-		catch (final Exception e)
-		{
-			LOG.warn("Intent classification failed, defaulting to browse: {}", e.getMessage());
-		}
-		return "browse";
-	}
-
-	private List<Map<String, Object>> toolsForIntent(final String intent)
-	{
-		switch (intent)
-		{
-			case "cart":
-				return cartToolDefinitions;
-			case "checkout":
-				return openAiToolDefinitions;
-			default:
-				return browseToolDefinitions;
-		}
+		return (System.nanoTime() - startNs) / 1_000_000L;
 	}
 
 	@Override
-	@SuppressWarnings("unchecked")
 	public Map<String, Object> chat(final List<Map<String, Object>> messages)
 	{
-		// Classify intent and select filtered tools
-		final String intent = classifyIntent(messages);
-		final List<Map<String, Object>> tools = toolsForIntent(intent);
-		LOG.info("Classified intent: {} — sending {} tool definitions", intent, tools.size());
+		return runChat(messages, null, null);
+	}
+
+	@Override
+	public Map<String, Object> chatStream(final List<Map<String, Object>> messages,
+		final Consumer<String> textDeltaConsumer,
+		final Consumer<String> toolEventConsumer)
+	{
+		return runChat(messages, textDeltaConsumer, toolEventConsumer);
+	}
+
+	@SuppressWarnings("unchecked")
+	private Map<String, Object> runChat(final List<Map<String, Object>> messages,
+		final Consumer<String> textDeltaConsumer,
+		final Consumer<String> toolEventConsumer)
+	{
+		final boolean streaming = textDeltaConsumer != null;
+		final long turnStartNs = System.nanoTime();
+		// Send the full tool set every turn. We previously ran a Haiku classifier to filter
+		// tools per intent (browse/cart/checkout) but it added 1.3–2.3 s of latency AND caused
+		// the Anthropic prompt cache to thrash whenever the user shifted intents. Sonnet picks
+		// tools fine from the full list; cache stays warm; net win on both latency and cost.
+		final List<Map<String, Object>> tools = openAiToolDefinitions;
 
 		// If the provider doesn't support vision, strip any image content blocks defensively so the
 		// LLM doesn't choke on multimodal arrays. The UI is supposed to gate this via the capabilities
@@ -223,17 +156,24 @@ public class DefaultAgentService implements AgentService
 		// customer_get.
 		final List<Map<String, Object>> fullMessages = new ArrayList<>();
 		fullMessages.add(Map.of("role", "system", "content", SYSTEM_PROMPT));
-		fullMessages.add(Map.of("role", "system", "content", buildStateSnapshotMessage(intent)));
+		fullMessages.add(Map.of("role", "system", "content", buildStateSnapshotMessage()));
 		fullMessages.addAll(incoming);
 
 		String uiAction = null;
 		final Set<String> seenInvocations = new HashSet<>();
+		final List<Map<String, String>> entityRefs = new ArrayList<>();
+		final Set<String> entityRefKeys = new HashSet<>();
 
 		int iterations = 0;
 		while (iterations < MAX_TOOL_ITERATIONS)
 		{
 			iterations++;
-			final Map<String, Object> response = llmClient.chatCompletion(fullMessages, tools);
+			final long llmStartNs = System.nanoTime();
+			final Map<String, Object> response = streaming
+				? llmClient.chatCompletionStream(fullMessages, tools, textDeltaConsumer)
+				: llmClient.chatCompletion(fullMessages, tools);
+			LOG.info("[perf] llmRound iter={} streaming={} durationMs={}",
+				iterations, streaming, elapsedMs(llmStartNs));
 
 			final List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
 			if (choices == null || choices.isEmpty())
@@ -261,6 +201,12 @@ public class DefaultAgentService implements AgentService
 				{
 					result.put("action", uiAction);
 				}
+				if (!entityRefs.isEmpty())
+				{
+					result.put("entityRefs", entityRefs);
+				}
+				LOG.info("[perf] turn=complete iterations={} entityRefs={} durationMs={}",
+					iterations, entityRefs.size(), elapsedMs(turnStartNs));
 				return result;
 			}
 
@@ -288,6 +234,13 @@ public class DefaultAgentService implements AgentService
 				{
 					allDuplicates = false;
 					LOG.info("Agent executing tool: {} with args: {}", toolName, argsJson);
+					// Notify the streaming caller that a tool is starting so the UI can render
+					// a transient "Looking up..." status while we wait for the round-trip. We
+					// suppress ui_action since it isn't user-visible work.
+					if (toolEventConsumer != null && !"ui_action".equals(toolName))
+					{
+						try { toolEventConsumer.accept(toolName); } catch (final Exception ignored) {}
+					}
 					try
 					{
 						final Map<String, Object> toolArgs = objectMapper.readValue(argsJson, Map.class);
@@ -306,8 +259,12 @@ public class DefaultAgentService implements AgentService
 						}
 						else
 						{
+							final long toolStartNs = System.nanoTime();
 							final McpToolResult toolResult = handler.execute(toolArgs);
 							toolResultContent = toolResult.getContent();
+							LOG.info("[perf] tool={} bytes={} durationMs={}",
+								toolName, toolResultContent == null ? 0 : toolResultContent.length(), elapsedMs(toolStartNs));
+							collectEntityRefs(toolName, toolArgs, toolResultContent, entityRefs, entityRefKeys);
 						}
 					}
 					catch (final Exception e)
@@ -336,13 +293,18 @@ public class DefaultAgentService implements AgentService
 		final Map<String, Object> result = new LinkedHashMap<>();
 		result.put("reply", "I apologize, but I'm having trouble completing your request. Could you try rephrasing it?");
 		result.put("messages", summarizeHistoryForClient(pruneImageContent(fullMessages.subList(2, fullMessages.size()))));
+		if (!entityRefs.isEmpty())
+		{
+			result.put("entityRefs", entityRefs);
+		}
+		LOG.info("[perf] turn=maxIter iterations={} durationMs={}",
+			MAX_TOOL_ITERATIONS, elapsedMs(turnStartNs));
 		return result;
 	}
 
-	private String buildStateSnapshotMessage(final String intent)
+	private String buildStateSnapshotMessage()
 	{
 		final Map<String, Object> state = new LinkedHashMap<>();
-		state.put("intent", intent);
 
 		try
 		{
@@ -496,6 +458,97 @@ public class DefaultAgentService implements AgentService
 		return out;
 	}
 
+	private static final java.util.regex.Pattern URL_FIELD_PATTERN =
+		java.util.regex.Pattern.compile("\"url\"\\s*:\\s*\"([^\"]+)\"");
+
+	// Cap chips per turn so a wide search doesn't explode the chat with 50 chips.
+	private static final int MAX_PRODUCT_REFS_PER_CALL = 5;
+	private static final int MAX_ORDER_REFS_PER_CALL = 5;
+
+	/**
+	 * Inspect a tool call's args + result and append entity references the UI can render as
+	 * clickable chips. Each ref is a map with `type` (product, order, orderHistory) and an
+	 * optional `code`. Dedupes via {@code entityRefKeys} so repeated tools don't emit dupes.
+	 */
+	private void collectEntityRefs(
+		final String toolName,
+		final Map<String, Object> toolArgs,
+		final String toolResultJson,
+		final List<Map<String, String>> entityRefs,
+		final Set<String> entityRefKeys)
+	{
+		try
+		{
+			switch (toolName)
+			{
+				case "product_get":
+				{
+					final Object code = toolArgs.get("code");
+					if (code instanceof String s) addRef(entityRefs, entityRefKeys, "product", s);
+					break;
+				}
+				case "order_get":
+				{
+					final Object code = toolArgs.get("code");
+					if (code instanceof String s) addRef(entityRefs, entityRefKeys, "order", s);
+					break;
+				}
+				case "order_history":
+				{
+					addRef(entityRefs, entityRefKeys, "orderHistory", null);
+					final com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(toolResultJson);
+					final com.fasterxml.jackson.databind.JsonNode results = root.get("orders") != null
+						? root.get("orders") : root.get("results");
+					if (results != null && results.isArray())
+					{
+						int n = 0;
+						for (com.fasterxml.jackson.databind.JsonNode order : results)
+						{
+							if (n++ >= MAX_ORDER_REFS_PER_CALL) break;
+							if (order.has("code")) addRef(entityRefs, entityRefKeys, "order", order.get("code").asText());
+						}
+					}
+					break;
+				}
+				case "product_search":
+				{
+					final com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(toolResultJson);
+					final com.fasterxml.jackson.databind.JsonNode results = root.get("results");
+					if (results != null && results.isArray())
+					{
+						int n = 0;
+						for (com.fasterxml.jackson.databind.JsonNode product : results)
+						{
+							if (n++ >= MAX_PRODUCT_REFS_PER_CALL) break;
+							if (product.has("code")) addRef(entityRefs, entityRefKeys, "product", product.get("code").asText());
+						}
+					}
+					break;
+				}
+				default:
+					// Other tools (cart, checkout, customer, ui_action) don't produce chips.
+			}
+		}
+		catch (final Exception e)
+		{
+			LOG.debug("collectEntityRefs failed for {}: {}", toolName, e.getMessage());
+		}
+	}
+
+	private void addRef(
+		final List<Map<String, String>> refs,
+		final Set<String> keys,
+		final String type,
+		final String code)
+	{
+		final String key = type + "|" + (code == null ? "" : code);
+		if (!keys.add(key)) return;
+		final Map<String, String> ref = new LinkedHashMap<>();
+		ref.put("type", type);
+		if (code != null) ref.put("code", code);
+		refs.add(ref);
+	}
+
 	private List<Map<String, Object>> summarizeHistoryForClient(final List<Map<String, Object>> history)
 	{
 		final List<Map<String, Object>> out = new ArrayList<>(history.size());
@@ -514,23 +567,29 @@ public class DefaultAgentService implements AgentService
 			}
 			final Map<String, Object> summarized = new LinkedHashMap<>(message);
 			summarized.put("content", "[previous tool result summarized; " + content.length()
-				+ " chars omitted] " + content.substring(0, TOOL_RESULT_SUMMARY_SNIPPET) + "...");
+				+ " chars omitted] " + content.substring(0, TOOL_RESULT_SUMMARY_SNIPPET) + "..."
+				+ extractDeepLinks(content));
 			out.add(summarized);
 		}
 		return out;
 	}
 
-	private String resolveIntentModel()
+	/**
+	 * Pull every "url":"..." value out of the original tool-result JSON and append it to the
+	 * summary, so deep links survive truncation and are still available to the agent on
+	 * subsequent turns.
+	 */
+	private String extractDeepLinks(final String json)
 	{
-		switch (Config.getString("coremcp.llm.provider", "openai").trim().toLowerCase())
+		final java.util.regex.Matcher m = URL_FIELD_PATTERN.matcher(json);
+		final List<String> urls = new ArrayList<>();
+		while (m.find())
 		{
-			case "anthropic":
-				return Config.getString("coremcp.anthropic.intent.model", "claude-3-5-haiku-latest");
-			case "openai-compatible":
-				return Config.getString("coremcp.openai-compatible.intent.model", "gpt-4o-mini");
-			default:
-				return Config.getString("coremcp.openai.intent.model", "gpt-4o-mini");
+			final String url = m.group(1);
+			if (!urls.contains(url)) urls.add(url);
 		}
+		if (urls.isEmpty()) return "";
+		return " [preserved deep links: " + String.join(", ", urls) + "]";
 	}
 
 	@Required

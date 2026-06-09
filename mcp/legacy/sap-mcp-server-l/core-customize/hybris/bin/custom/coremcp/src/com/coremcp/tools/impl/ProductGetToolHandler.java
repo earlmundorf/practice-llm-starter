@@ -1,6 +1,8 @@
 package com.coremcp.tools.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.coremcp.services.DeepLinkBuilder;
 import com.coremcp.tools.McpToolHandler;
 import com.coremcp.tools.McpToolResult;
 import de.hybris.platform.commercefacades.product.ProductFacade;
@@ -18,6 +20,7 @@ import java.util.stream.Collectors;
 public class ProductGetToolHandler implements McpToolHandler
 {
 	private ProductFacade productFacade;
+	private DeepLinkBuilder deepLinkBuilder;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Override
@@ -44,8 +47,8 @@ public class ProductGetToolHandler implements McpToolHandler
 			"code", Map.of("type", "string", "description", "Product code (e.g., 'LAPTOP_PRO_15')"),
 			"options", Map.of("type", "array",
 				"items", Map.of("type", "string", "enum", List.of("BASIC", "PRICE", "STOCK", "DESCRIPTION", "GALLERY", "CATEGORIES", "REVIEW", "CLASSIFICATION", "REFERENCES", "PROMOTIONS")),
-				"description", "Data options to include. Defaults to all if omitted.",
-				"default", List.of("BASIC", "PRICE", "STOCK", "DESCRIPTION", "CATEGORIES"))
+				"description", "Data options to include. Default is the lean set (BASIC + PRICE + STOCK). Add DESCRIPTION when the user actually wants details, CATEGORIES when relevant, etc. — bigger payloads slow the conversation down.",
+				"default", List.of("BASIC", "PRICE", "STOCK"))
 		));
 		schema.put("required", List.of("code"));
 		return schema;
@@ -68,12 +71,14 @@ public class ProductGetToolHandler implements McpToolHandler
 			}
 			else
 			{
-				options = Arrays.asList(ProductOption.BASIC, ProductOption.PRICE, ProductOption.STOCK,
-					ProductOption.DESCRIPTION, ProductOption.CATEGORIES);
+				options = Arrays.asList(ProductOption.BASIC, ProductOption.PRICE, ProductOption.STOCK);
 			}
 
 			final Object result = productFacade.getProductForCodeAndOptions(code, options);
-			return McpToolResult.success(objectMapper.writeValueAsString(result));
+			final ObjectNode tree = objectMapper.valueToTree(result);
+			final String url = deepLinkBuilder.productUrl(code);
+			if (url != null) tree.put("url", url);
+			return McpToolResult.success(objectMapper.writeValueAsString(tree));
 		}
 		catch (final Exception e)
 		{
@@ -85,5 +90,11 @@ public class ProductGetToolHandler implements McpToolHandler
 	public void setProductFacade(final ProductFacade productFacade)
 	{
 		this.productFacade = productFacade;
+	}
+
+	@Required
+	public void setDeepLinkBuilder(final DeepLinkBuilder deepLinkBuilder)
+	{
+		this.deepLinkBuilder = deepLinkBuilder;
 	}
 }

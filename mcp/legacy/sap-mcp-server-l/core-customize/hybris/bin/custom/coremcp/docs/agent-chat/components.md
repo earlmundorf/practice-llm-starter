@@ -4,53 +4,59 @@
 
 | File | Location | Purpose |
 |------|----------|---------|
-| `AgentController.java` | `src/com/coremcp/controllers/` | REST endpoint `POST /{baseSiteId}/agent/chat`. Parses the request body, loads the user's cart into the Hybris session (explicit `cartCode` or `"current"` fallback), delegates to `AgentService.chat()`, attaches the session cart code to the response. Secured to `ROLE_CUSTOMERGROUP` and `ROLE_TRUSTED_CLIENT`. |
-| `AgentService.java` | `src/com/coremcp/services/` | Interface with single method: `Map<String, Object> chat(List<Map<String, Object>> messages)` |
-| `DefaultAgentService.java` | `src/com/coremcp/services/impl/` | Core orchestration. On `@PostConstruct`, builds a tool handler lookup map and pre-filters tool definition lists per intent (browse, cart, checkout). On each `chat()` call: classifies intent via lightweight OpenAI call, selects filtered tools, prepends system prompt, runs the OpenAI tool loop (up to 10 iterations), captures `ui_action` calls, returns reply + conversation history + optional action. |
-| `LlmClient.java` | `src/com/coremcp/services/` | Provider-neutral interface with two overloads of `chatCompletion()`: default model and explicit model override |
-| `DefaultLlmClient.java` | `src/com/coremcp/services/impl/` | Routes to the configured provider based on `COREMCP_LLM_PROVIDER` (default `openai`). See `coremcp/docs/llm/README.md` for the provider matrix and env var reference. |
-| `LlmProvider.java` | `src/com/coremcp/services/` | Strategy interface — one implementation per vendor (`OpenAiLlmProvider`, `AnthropicLlmProvider`, `OpenAiCompatibleLlmProvider`) |
-| `AbstractOpenAiCompatibleLlmProvider.java` | `src/com/coremcp/services/impl/` | Shared HTTP + JSON plumbing for any provider that speaks the OpenAI `/v1/chat/completions` protocol. Reads `COREMCP_LLM_TIMEOUT_SECONDS`. |
+| `AgentController.java` | `src/com/coremcp/controllers/` | REST endpoints `POST /{baseSiteId}/agent/chat` (JSON) and `POST /{baseSiteId}/agent/chat/stream` (SSE). Parses request body, loads cart into Hybris session, delegates to `AgentService`, attaches the session cart code, writes either a JSON response or SSE events depending on the route + `coremcp.agent.streaming.enabled`. Secured to `ROLE_CUSTOMERGROUP` and `ROLE_TRUSTED_CLIENT`. |
+| `AgentService.java` | `src/com/coremcp/services/` | Interface with two methods: `chat(messages)` (non-streaming) and `chatStream(messages, textDeltaConsumer, toolEventConsumer)`. |
+| `DefaultAgentService.java` | `src/com/coremcp/services/impl/` | Core orchestration. On `@PostConstruct`, builds a tool handler lookup map and the full tool definition list. On each turn: prepends persona prompt + state snapshot, runs the LLM tool loop (up to 10 iterations), captures `ui_action` calls, collects `entityRefs` from product/order tool calls, returns `{reply, messages, action?, entityRefs?}`. Both `chat()` and `chatStream()` share `runChat()`; the streaming path simply threads the consumers through to `LlmClient.chatCompletionStream`. |
+| `LlmClient.java` | `src/com/coremcp/services/` | Provider-neutral interface: `chatCompletion()` (with optional model override) and `chatCompletionStream()` (with text delta consumer). |
+| `DefaultLlmClient.java` | `src/com/coremcp/services/impl/` | Routes to the configured provider based on `coremcp.llm.provider` (default `openai`; production default `anthropic`). See `coremcp/docs/llm/README.md`. |
+| `LlmProvider.java` | `src/com/coremcp/services/` | Strategy interface — one implementation per vendor (`OpenAiLlmProvider`, `AnthropicLlmProvider`, `OpenAiCompatibleLlmProvider`). The default `chatCompletionStream` calls `chatCompletion` and emits the full reply as one chunk, so vendors that can't stream still satisfy the contract. |
+| `AnthropicLlmProvider.java` | `src/com/coremcp/services/impl/` | Anthropic-specific provider. Sends system as an array of content blocks with `cache_control: ephemeral` on the persona block; tags the last tool definition with `cache_control: ephemeral`. Implements true SSE consumption for `chatCompletionStream`, with auto-fallback to non-streaming when the gateway returns non-`text/event-stream` content. Logs `cache_creation_input_tokens` / `cache_read_input_tokens` for observability. |
+| `AbstractOpenAiCompatibleLlmProvider.java` | `src/com/coremcp/services/impl/` | Shared HTTP + JSON plumbing for OpenAI-flavored providers. Reads `coremcp.llm.timeout.seconds`. |
 
 ## Tool Handlers Injected into AgentService
 
-The `agentService` bean receives all 16 tool handlers via Spring XML. These are the tools the agent can call during the tool loop:
+The `agentService` bean receives all 18 tool handlers via Spring XML. The full set is sent to the LLM on every turn (no per-intent filtering).
 
 | # | Bean Name | Tool Name | Purpose |
 |---|-----------|-----------|---------|
-| 1 | `productSearchToolHandler` | `product_search` | Solr free-text product search |
-| 2 | `productGetToolHandler` | `product_get` | Get product details by code |
+| 1 | `productSearchToolHandler` | `product_search` | Solr free-text product search. Default `pageSize=5`. |
+| 2 | `productGetToolHandler` | `product_get` | Get product details by code. Default options: `BASIC + PRICE + STOCK`. |
 | 3 | `cartGetToolHandler` | `cart_get` | View current cart contents |
 | 4 | `cartAddProductToolHandler` | `cart_add_product` | Add a product to cart |
 | 5 | `cartUpdateEntryToolHandler` | `cart_update_entry` | Update cart entry quantity |
 | 6 | `cartRemoveEntryToolHandler` | `cart_remove_entry` | Remove entry from cart |
-| 7 | `orderGetToolHandler` | `order_get` | Get order details by code |
-| 8 | `orderHistoryToolHandler` | `order_history` | List past orders |
-| 9 | `customerGetToolHandler` | `customer_get` | Get current customer profile |
-| 10 | `customerLookupToolHandler` | `customer_lookup` | Look up customer by criteria |
-| 11 | `checkoutSetDeliveryAddressToolHandler` | `checkout_set_delivery_address` | Set delivery address on cart |
-| 12 | `checkoutSetDeliveryModeToolHandler` | `checkout_set_delivery_mode` | Set delivery mode on cart |
-| 13 | `checkoutSetPaymentToolHandler` | `checkout_set_payment` | Set payment info on cart |
-| 14 | `orderPlaceToolHandler` | `order_place` | Place the order |
-| 15 | `promotionsGetToolHandler` | `promotions_get` | Query active promotions and coupon redemption data |
-| 16 | `uiActionToolHandler` | `ui_action` | Trigger UI-side navigation (e.g., go to checkout page) |
+| 7 | `cartApplyVoucherToolHandler` | `cart_apply_voucher` | Apply a coupon code |
+| 8 | `cartRemoveVoucherToolHandler` | `cart_remove_voucher` | Remove a previously applied coupon |
+| 9 | `orderGetToolHandler` | `order_get` | Get order details by code |
+| 10 | `orderHistoryToolHandler` | `order_history` | List past orders. Default `pageSize=5`. |
+| 11 | `customerGetToolHandler` | `customer_get` | Get current customer profile |
+| 12 | `customerLookupToolHandler` | `customer_lookup` | Look up customer by criteria |
+| 13 | `checkoutSetDeliveryAddressToolHandler` | `checkout_set_delivery_address` | Set delivery address on cart |
+| 14 | `checkoutSetDeliveryModeToolHandler` | `checkout_set_delivery_mode` | Set delivery mode on cart |
+| 15 | `checkoutSetPaymentToolHandler` | `checkout_set_payment` | Set payment info on cart |
+| 16 | `orderPlaceToolHandler` | `order_place` | Place the order |
+| 17 | `promotionsGetToolHandler` | `promotions_get` | Query active promotions and coupon redemption data |
+| 18 | `uiActionToolHandler` | `ui_action` | Trigger UI-side navigation (e.g., go to checkout page) |
 
-## Intent-Based Tool Filtering
+## Entity Reference Collection
 
-Not all 16 tools are sent to OpenAI on every request. `DefaultAgentService` pre-builds filtered lists at startup:
+`DefaultAgentService.collectEntityRefs()` runs after each tool execution and pulls user-visible identifiers out of the tool result so the chat UI can render clickable chips:
 
-| Intent | Tools Available | Count |
-|--------|----------------|-------|
-| **browse** | `product_search`, `product_get`, `cart_add_product`, `customer_get`, `customer_lookup`, `order_history`, `order_get`, `promotions_get` | 8 |
-| **cart** | `product_search`, `product_get`, `cart_add_product`, `customer_get`, `customer_lookup`, `order_history`, `order_get`, `cart_get`, `cart_update_entry`, `cart_remove_entry`, `promotions_get` | 11 |
-| **checkout** | All 16 tools (full set including checkout + ui_action) | 16 |
+| Tool | Refs emitted |
+|------|--------------|
+| `product_get` | `{type: "product", code: <args.code>}` |
+| `product_search` | `{type: "product", code}` for the first 5 results |
+| `order_get` | `{type: "order", code: <args.code>}` |
+| `order_history` | `{type: "orderHistory"}` plus `{type: "order", code}` for the first 5 results |
+
+Refs are deduplicated and capped per turn to keep the chip row sane. Other tools produce no refs.
 
 ## Spring Bean Wiring (coremcp-spring.xml)
 
 ```xml
 <!-- LLM providers + router -->
-<bean id="openAiLlmProvider"          class="com.coremcp.services.impl.OpenAiLlmProvider"/>
-<bean id="anthropicLlmProvider"       class="com.coremcp.services.impl.AnthropicLlmProvider"/>
+<bean id="openAiLlmProvider"           class="com.coremcp.services.impl.OpenAiLlmProvider"/>
+<bean id="anthropicLlmProvider"        class="com.coremcp.services.impl.AnthropicLlmProvider"/>
 <bean id="openAiCompatibleLlmProvider" class="com.coremcp.services.impl.OpenAiCompatibleLlmProvider"/>
 
 <alias name="defaultLlmClient" alias="llmClient"/>
@@ -69,6 +75,8 @@ Not all 16 tools are sent to OpenAI on every request. `DefaultAgentService` pre-
 <bean id="defaultAgentService"
       class="com.coremcp.services.impl.DefaultAgentService">
     <property name="llmClient" ref="llmClient"/>
+    <property name="cartFacade" ref="cartFacade"/>
+    <property name="customerFacade" ref="customerFacade"/>
     <property name="toolHandlers">
         <list>
             <ref bean="productSearchToolHandler"/>
@@ -77,6 +85,8 @@ Not all 16 tools are sent to OpenAI on every request. `DefaultAgentService` pre-
             <ref bean="cartAddProductToolHandler"/>
             <ref bean="cartUpdateEntryToolHandler"/>
             <ref bean="cartRemoveEntryToolHandler"/>
+            <ref bean="cartApplyVoucherToolHandler"/>
+            <ref bean="cartRemoveVoucherToolHandler"/>
             <ref bean="orderGetToolHandler"/>
             <ref bean="orderHistoryToolHandler"/>
             <ref bean="customerGetToolHandler"/>
@@ -92,7 +102,17 @@ Not all 16 tools are sent to OpenAI on every request. `DefaultAgentService` pre-
 </bean>
 ```
 
-`AgentController` is discovered via component-scan in `coremcp-web-spring.xml` and injects `agentService`, `cartLoaderStrategy`, and `cartService` via `@Resource`.
+`AgentController` is discovered via component-scan in `coremcp-web-spring.xml` and injects `agentService`, `mcpCartSessionService`, and `llmClient` via `@Resource`.
+
+## Configuration Properties
+
+| Property | Default | Effect |
+|----------|---------|--------|
+| `coremcp.llm.provider` | `openai` | Selects which `LlmProvider` to use. Production sets this to `anthropic`. |
+| `coremcp.llm.timeout.seconds` | `60` | Read timeout on the upstream LLM HTTP request. |
+| `coremcp.agent.streaming.enabled` | `true` | Master kill-switch for the SSE endpoint. When `false`, `/agent/chat/stream` returns plain JSON in the same shape as `/agent/chat`. |
+| `coremcp.anthropic.model` | `claude-3-5-sonnet-latest` | Main Anthropic chat model (production override: `claude-sonnet-4-6`). |
+| `coremcp.anthropic.version` | `2023-06-01` | `anthropic-version` header value. |
 
 ## Existing Files Used (no changes)
 
@@ -101,9 +121,8 @@ Not all 16 tools are sent to OpenAI on every request. `DefaultAgentService` pre-
 | `coremcp-web-spring.xml` | Component-scans `com.coremcp.controllers`, picks up `AgentController` automatically |
 | `McpToolHandler.java` | Interface implemented by all tool handlers — `getName()`, `getDescription()`, `getInputSchema()`, `execute()` |
 | `McpToolResult.java` | Return type from `handler.execute()` — wraps content string |
-| All 16 tool handler implementations | Each called by the agent during the tool loop via the handler map |
-| `CartLoaderStrategy` (platform) | Loads a cart into the Hybris session by code |
-| `CartService` (platform) | Checks for and retrieves the session cart after agent processing |
+| All 18 tool handler implementations | Each called by the agent during the tool loop via the handler map |
+| `McpCartSessionService` | Loads a cart into the Hybris session by code or `"current"` |
 
 ## Dependency Chain
 
@@ -111,15 +130,19 @@ Not all 16 tools are sent to OpenAI on every request. `DefaultAgentService` pre-
 AgentController
   ├─ @Resource agentService
   │    ├─ llmClient (DefaultLlmClient → routes to selected LlmProvider)
-  │    │    └─ Chat Completions API (OpenAI / Anthropic / OpenAI-compatible host)
-  │    └─ toolHandlers (16 McpToolHandler instances)
+  │    │    └─ Anthropic / OpenAI / OpenAI-compatible HTTP API
+  │    │       (streaming variant for SSE; default fallback for non-streaming)
+  │    ├─ cartFacade  (state snapshot)
+  │    ├─ customerFacade  (state snapshot)
+  │    └─ toolHandlers (18 McpToolHandler instances)
   │         ├─ productSearchFacade (Solr)
   │         ├─ productFacade
   │         ├─ cartFacade
   │         ├─ orderFacade
   │         ├─ checkoutFacade
   │         ├─ customerFacade
+  │         ├─ voucherFacade
   │         └─ promotionQueryService
-  ├─ @Resource cartLoaderStrategy (platform)
-  └─ @Resource cartService (platform)
+  ├─ @Resource mcpCartSessionService
+  └─ @Resource llmClient (capabilities endpoint)
 ```

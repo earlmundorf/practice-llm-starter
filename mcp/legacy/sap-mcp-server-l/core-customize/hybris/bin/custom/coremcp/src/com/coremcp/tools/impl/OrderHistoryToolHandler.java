@@ -1,6 +1,9 @@
 package com.coremcp.tools.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.coremcp.services.DeepLinkBuilder;
 import com.coremcp.tools.McpToolHandler;
 import com.coremcp.tools.McpToolResult;
 import de.hybris.platform.commercefacades.order.OrderFacade;
@@ -19,6 +22,7 @@ import java.util.stream.Collectors;
 public class OrderHistoryToolHandler implements McpToolHandler
 {
 	private OrderFacade orderFacade;
+	private DeepLinkBuilder deepLinkBuilder;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Override
@@ -46,7 +50,7 @@ public class OrderHistoryToolHandler implements McpToolHandler
 				"items", Map.of("type", "string", "enum", List.of("CREATED", "CHECKED_VALID", "PAYMENT_AUTHORIZED", "PAYMENT_CAPTURED", "READY", "COMPLETED", "CANCELLED")),
 				"description", "Filter by order statuses. Returns all statuses if omitted."),
 			"currentPage", Map.of("type", "integer", "description", "Page number (0-based)", "default", 0),
-			"pageSize", Map.of("type", "integer", "description", "Number of orders per page", "default", 20),
+			"pageSize", Map.of("type", "integer", "description", "Number of orders per page. Default is small to keep the conversation light; ask for more only when the user wants the full history.", "default", 5),
 			"sort", Map.of("type", "string", "description", "Sort field (e.g., 'byDate', 'byOrderNumber')")
 		));
 		schema.put("required", Collections.emptyList());
@@ -60,7 +64,7 @@ public class OrderHistoryToolHandler implements McpToolHandler
 		try
 		{
 			final int currentPage = args.containsKey("currentPage") ? ((Number) args.get("currentPage")).intValue() : 0;
-			final int pageSize = args.containsKey("pageSize") ? ((Number) args.get("pageSize")).intValue() : 20;
+			final int pageSize = args.containsKey("pageSize") ? ((Number) args.get("pageSize")).intValue() : 5;
 			final String sort = (String) args.getOrDefault("sort", "byDate");
 
 			final PageableData pageableData = new PageableData();
@@ -82,7 +86,19 @@ public class OrderHistoryToolHandler implements McpToolHandler
 				: null;
 
 			final Object result = orderFacade.getPagedOrderHistoryForStatuses(pageableData, statusArray);
-			return McpToolResult.success(objectMapper.writeValueAsString(result));
+			final ObjectNode tree = objectMapper.valueToTree(result);
+			tree.put("url", deepLinkBuilder.orderHistoryUrl());
+			if (tree.get("results") instanceof ArrayNode results)
+			{
+				for (int i = 0; i < results.size(); i++)
+				{
+					if (results.get(i) instanceof ObjectNode order && order.has("code"))
+					{
+						order.put("url", deepLinkBuilder.orderUrl(order.get("code").asText()));
+					}
+				}
+			}
+			return McpToolResult.success(objectMapper.writeValueAsString(tree));
 		}
 		catch (final Exception e)
 		{
@@ -94,5 +110,11 @@ public class OrderHistoryToolHandler implements McpToolHandler
 	public void setOrderFacade(final OrderFacade orderFacade)
 	{
 		this.orderFacade = orderFacade;
+	}
+
+	@Required
+	public void setDeepLinkBuilder(final DeepLinkBuilder deepLinkBuilder)
+	{
+		this.deepLinkBuilder = deepLinkBuilder;
 	}
 }

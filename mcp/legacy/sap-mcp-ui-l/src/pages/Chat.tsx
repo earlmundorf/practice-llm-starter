@@ -1,7 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeExternalLinks from 'rehype-external-links';
 import { api, auth, getStoredCartCode, storeCartCode, clearStoredCartCode } from '../services/api';
 import { Checkout } from './Checkout';
+import { OrderModal } from '../components/OrderModal';
+import { ProductModal } from '../components/ProductModal';
+import { OrderHistoryModal } from '../components/OrderHistoryModal';
 
 const MAX_IMAGES_PER_TURN = 4;
 
@@ -31,10 +37,47 @@ const compressImageToDataUrl = async (file: File): Promise<string> => {
   }
 };
 
+interface EntityRef {
+  type: 'product' | 'order' | 'orderHistory';
+  code?: string;
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  entityRefs?: EntityRef[];
+  /** Set on assistant bubbles that are still receiving streamed text deltas. */
+  streaming?: boolean;
+  /** Transient "Looking up your orders…" line shown while a tool round is running. */
+  toolStatus?: string;
 }
+
+/** Human-readable status labels for in-progress tool calls (R1: tool SSE events). */
+const TOOL_STATUS_LABEL: Record<string, string> = {
+  product_search: 'Searching products…',
+  product_get: 'Loading product details…',
+  order_history: 'Looking up your orders…',
+  order_get: 'Loading order details…',
+  cart_get: 'Checking your cart…',
+  cart_add_product: 'Adding to cart…',
+  cart_update_entry: 'Updating your cart…',
+  cart_remove_entry: 'Removing item from cart…',
+  cart_apply_voucher: 'Applying coupon…',
+  cart_remove_voucher: 'Removing coupon…',
+  customer_get: 'Looking you up…',
+  customer_lookup: 'Finding customer…',
+  promotions_get: 'Checking promotions…',
+  checkout_set_delivery_address: 'Saving delivery address…',
+  checkout_set_delivery_mode: 'Setting delivery option…',
+  checkout_set_payment: 'Saving payment details…',
+  order_place: 'Placing your order…',
+};
+
+type OpenModal =
+  | { kind: 'order'; orderId: string }
+  | { kind: 'product'; code: string }
+  | { kind: 'orderHistory' }
+  | null;
 
 const DEFAULT_SUGGESTIONS = [
   'What products do you have?',
@@ -68,6 +111,16 @@ const ACTION_MAP: Record<string, string> = {
   // cart: 'cart',        // TODO: opens cart modal (future)
 };
 
+/**
+ * Phrases that should always navigate the user to /checkout, regardless of
+ * what the agent decides. The agent is unreliable about emitting ui_action,
+ * and this intent is unambiguous and high-cost-when-missed.
+ */
+const CHECKOUT_INTENT_REGEX =
+  /\b(proceed (to )?check\s*out|go to check\s*out|take me to check\s*out|let'?s check\s*out|i (want|need|'?d like) to check\s*out|ready to check\s*out|check\s*out now|^check\s*out$)\b/i;
+
+const isCheckoutIntent = (text: string): boolean => CHECKOUT_INTENT_REGEX.test(text.trim());
+
 /** Parse SUGGESTIONS:[...] from the last line of agent response */
 const parseSuggestions = (text: string): { clean: string; suggestions: string[] } => {
   const match = text.match(/\n?SUGGESTIONS:\s*(\[.*\])\s*$/);
@@ -80,6 +133,123 @@ const parseSuggestions = (text: string): { clean: string; suggestions: string[] 
   }
 };
 
+/** Shape returned by /agent/chat (and the done event of the streaming endpoint). */
+interface AgentResponse {
+  reply: string;
+  entityRefs?: EntityRef[];
+  action?: string;
+  cartCode?: string;
+  messages?: unknown[];
+  intent?: string;
+}
+
+/**
+ * Send the chat request, preferring the streaming endpoint and gracefully falling back when:
+ *  - the server returns plain JSON (feature flag disabled, or gateway stripped SSE),
+ *  - the response Content-Type isn't `text/event-stream`, or
+ *  - the stream errors mid-flight.
+ *
+ * Text deltas are pushed through `onDelta` as they arrive (during SSE only — the JSON-fallback
+ * path skips deltas because the full reply is already in hand).
+ */
+const fetchAgentResponse = async (
+  occBase: string,
+  headers: Record<string, string>,
+  payload: string,
+  onDelta: (chunk: string) => void,
+  onTool: (toolName: string) => void,
+): Promise<AgentResponse> => {
+  const fallback = async (): Promise<AgentResponse> => {
+    const res = await fetch(`${occBase}/agent/chat`, { method: 'POST', headers, body: payload });
+    if (res.status === 401) { auth.logout(); throw new Error('Session expired. Please log in again.'); }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { error?: string }).error || 'Request failed');
+    }
+    return (await res.json()) as AgentResponse;
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(`${occBase}/agent/chat/stream`, { method: 'POST', headers, body: payload });
+  } catch {
+    // Network-level error reaching the streaming endpoint — try the legacy path.
+    return fallback();
+  }
+
+  if (res.status === 401) { auth.logout(); throw new Error('Session expired. Please log in again.'); }
+
+  // 404/405 typically means the streaming route isn't deployed in this env — fall back.
+  if (res.status === 404 || res.status === 405) {
+    return fallback();
+  }
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string }).error || 'Request failed');
+  }
+
+  const contentType = (res.headers.get('content-type') || '').toLowerCase();
+  if (!contentType.includes('text/event-stream') || !res.body) {
+    // Server elected to return plain JSON (feature flag off, or gateway didn't pass SSE through).
+    return (await res.json()) as AgentResponse;
+  }
+
+  // Consume the SSE stream.
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let done: AgentResponse | null = null;
+  let streamError: string | null = null;
+
+  try {
+    while (true) {
+      const { value, done: isDone } = await reader.read();
+      if (isDone) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const rawEvent = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        let eventName = 'message';
+        const dataLines: string[] = [];
+        for (const line of rawEvent.split('\n')) {
+          if (line.startsWith('event:')) eventName = line.slice(6).trim();
+          else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+        }
+        const dataStr = dataLines.join('\n');
+        if (eventName === 'text') {
+          try { onDelta(JSON.parse(dataStr) as string); } catch { /* skip malformed delta */ }
+        } else if (eventName === 'tool') {
+          try {
+            const evt = JSON.parse(dataStr) as { name?: string };
+            if (evt.name) onTool(evt.name);
+          } catch { /* skip malformed tool event */ }
+        } else if (eventName === 'done') {
+          try { done = JSON.parse(dataStr) as AgentResponse; } catch { streamError = 'malformed done event'; }
+        } else if (eventName === 'error') {
+          try {
+            const errPayload = JSON.parse(dataStr) as { error?: string };
+            streamError = errPayload.error || 'stream error';
+          } catch { streamError = 'stream error'; }
+        }
+      }
+    }
+  } catch (e) {
+    streamError = e instanceof Error ? e.message : 'stream interrupted';
+  }
+
+  if (streamError && !done) {
+    // Mid-stream failure with no terminal event — retry once against the non-streaming endpoint.
+    return fallback();
+  }
+  if (!done) {
+    // Stream closed without a done event — also fall back.
+    return fallback();
+  }
+  return done;
+};
+
 export const Chat = () => {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMessage[]>(loadPersistedMessages);
@@ -87,6 +257,7 @@ export const Chat = () => {
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>(loadPersistedSuggestions);
   const [showCheckout, setShowCheckout] = useState(false);
+  const [openModal, setOpenModal] = useState<OpenModal>(null);
   const [visionEnabled, setVisionEnabled] = useState(false);
   const [pendingImages, setPendingImages] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -188,6 +359,14 @@ export const Chat = () => {
     const images = pendingImages;
     if ((!content && images.length === 0) || loading) return;
 
+    // Hard-route checkout intent: don't depend on the LLM emitting ui_action.
+    if (images.length === 0 && isCheckoutIntent(content)) {
+      setInput('');
+      sessionStorage.setItem('thinkshop_from_chat', 'true');
+      navigate('/checkout');
+      return;
+    }
+
     // Local display text — note image attachment(s) so the user sees them in the transcript.
     const imageNote = images.length > 1
       ? `[${images.length} images attached]`
@@ -223,33 +402,65 @@ export const Chat = () => {
       });
 
       const OCC_BASE = import.meta.env.VITE_API_URL || '/occ/v2/electronics';
-      const res = await fetch(`${OCC_BASE}/agent/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          messages: wireMessages,
-          cartCode: getStoredCartCode() || undefined,
-        }),
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      };
+      const payload = JSON.stringify({
+        messages: wireMessages,
+        cartCode: getStoredCartCode() || undefined,
       });
 
-      if (res.status === 401) {
-        auth.logout();
-        throw new Error('Session expired. Please log in again.');
-      }
+      // Try the streaming endpoint first. On any failure (server flag off, gateway strips
+      // SSE, network hiccup mid-stream) we transparently fall back to /agent/chat.
+      const data = await fetchAgentResponse(
+        OCC_BASE,
+        headers,
+        payload,
+        (delta) => {
+          // Append this delta to the in-progress assistant bubble. We seed the bubble on
+          // first delta so we don't render an empty bubble before any text arrives. Once
+          // text starts arriving we drop any tool-status line — it served its purpose.
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === 'assistant' && last.streaming) {
+              const updated: ChatMessage = {
+                ...last,
+                content: last.content + delta,
+                toolStatus: undefined,
+              };
+              return [...prev.slice(0, -1), updated];
+            }
+            return [...prev, { role: 'assistant', content: delta, streaming: true }];
+          });
+        },
+        (toolName) => {
+          // Render a transient status line on the in-progress bubble (or seed one if there
+          // isn't a streaming bubble yet). Cleared when text starts streaming.
+          const status = TOOL_STATUS_LABEL[toolName] ?? 'Working on it…';
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === 'assistant' && last.streaming) {
+              return [...prev.slice(0, -1), { ...last, toolStatus: status }];
+            }
+            return [...prev, { role: 'assistant', content: '', streaming: true, toolStatus: status }];
+          });
+        },
+      );
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Request failed');
-      }
-
-      const data = await res.json();
       const { clean, suggestions: parsed } = parseSuggestions(data.reply);
 
-      const assistantMsg: ChatMessage = { role: 'assistant', content: clean };
-      setMessages([...updatedMessages, assistantMsg]);
+      const entityRefs = Array.isArray(data.entityRefs) ? (data.entityRefs as EntityRef[]) : undefined;
+      // Replace any in-progress streaming bubble with the final cleaned reply (strips the
+      // SUGGESTIONS:[...] tail). If we never streamed (fallback path), append normally.
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        const finalMsg: ChatMessage = { role: 'assistant', content: clean, entityRefs };
+        if (last && last.role === 'assistant' && (last as { streaming?: boolean }).streaming) {
+          return [...prev.slice(0, -1), finalMsg];
+        }
+        return [...prev, finalMsg];
+      });
 
       // Update suggestions — use agent suggestions or contextual defaults
       if (parsed.length > 0) {
@@ -391,17 +602,84 @@ export const Chat = () => {
             {messages.map((msg, idx) => (
               <div
                 key={idx}
-                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
               >
                 <div
-                  className={`max-w-[80%] px-4 py-3 rounded-lg whitespace-pre-wrap ${
+                  className={`max-w-[80%] px-4 py-3 rounded-lg ${
                     msg.role === 'user'
-                      ? 'bg-blue-600 dark:bg-blue-500 text-white'
+                      ? 'bg-blue-600 dark:bg-blue-500 text-white whitespace-pre-wrap'
                       : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
                   }`}
                 >
-                  {msg.content}
+                  {msg.role === 'user' ? (
+                    msg.content
+                  ) : (
+                    <>
+                    {msg.content && (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[[rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }]]}
+                      components={{
+                        a: ({ node, ...props }) => (
+                          <a
+                            {...props}
+                            className="text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-700 dark:hover:text-blue-300"
+                          />
+                        ),
+                        p: ({ node, ...props }) => <p {...props} className="mb-2 last:mb-0" />,
+                        ul: ({ node, ...props }) => <ul {...props} className="list-disc pl-5 mb-2 last:mb-0" />,
+                        ol: ({ node, ...props }) => <ol {...props} className="list-decimal pl-5 mb-2 last:mb-0" />,
+                        table: ({ node, ...props }) => (
+                          <table {...props} className="border-collapse my-2 text-sm" />
+                        ),
+                        th: ({ node, ...props }) => (
+                          <th {...props} className="border border-gray-300 dark:border-gray-600 px-2 py-1 text-left font-semibold" />
+                        ),
+                        td: ({ node, ...props }) => (
+                          <td {...props} className="border border-gray-300 dark:border-gray-600 px-2 py-1" />
+                        ),
+                        code: ({ node, ...props }) => (
+                          <code {...props} className="bg-gray-200 dark:bg-gray-800 rounded px-1 py-0.5 text-sm" />
+                        ),
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                    )}
+                    {msg.streaming && msg.toolStatus && (
+                      <div className={`flex items-center gap-2 text-sm italic text-gray-500 dark:text-gray-400 ${msg.content ? 'mt-2' : ''}`}>
+                        <span className="inline-block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                        {msg.toolStatus}
+                      </div>
+                    )}
+                    </>
+                  )}
                 </div>
+                {msg.role === 'assistant' && msg.entityRefs && msg.entityRefs.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2 max-w-[80%]">
+                    {msg.entityRefs.map((ref, i) => {
+                      const onClick = () => {
+                        if (ref.type === 'order' && ref.code) setOpenModal({ kind: 'order', orderId: ref.code });
+                        else if (ref.type === 'product' && ref.code) setOpenModal({ kind: 'product', code: ref.code });
+                        else if (ref.type === 'orderHistory') setOpenModal({ kind: 'orderHistory' });
+                      };
+                      const label =
+                        ref.type === 'order' ? `🧾 Order #${ref.code}` :
+                        ref.type === 'product' ? `📦 ${ref.code}` :
+                        '📋 All orders';
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={onClick}
+                          className="text-sm px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-pointer"
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             ))}
 
@@ -518,6 +796,19 @@ export const Chat = () => {
           </div>
         </div>
       </div>
+
+      {openModal?.kind === 'order' && (
+        <OrderModal orderId={openModal.orderId} onClose={() => setOpenModal(null)} />
+      )}
+      {openModal?.kind === 'product' && (
+        <ProductModal code={openModal.code} onClose={() => setOpenModal(null)} />
+      )}
+      {openModal?.kind === 'orderHistory' && (
+        <OrderHistoryModal
+          onClose={() => setOpenModal(null)}
+          onOpenOrder={(orderId) => setOpenModal({ kind: 'order', orderId })}
+        />
+      )}
     </div>
   );
 };

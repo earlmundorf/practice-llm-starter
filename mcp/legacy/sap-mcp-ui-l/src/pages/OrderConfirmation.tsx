@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams, Link, useLocation, useNavigate } from 'react-router-dom';
+import { useSearchParams, useParams, Link, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import type { Order, OrderItem, Product } from '../types';
 
 export const OrderConfirmation = () => {
   const [searchParams] = useSearchParams();
+  const { orderId: orderIdFromPath } = useParams<{ orderId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const orderId = searchParams.get('orderId');
+  const orderId = orderIdFromPath ?? searchParams.get('orderId');
   const isNew = searchParams.get('new') === '1';
   const fromChat = sessionStorage.getItem('thinkshop_from_chat') === 'true';
   const [order, setOrder] = useState<Order | null>(location.state?.order || null);

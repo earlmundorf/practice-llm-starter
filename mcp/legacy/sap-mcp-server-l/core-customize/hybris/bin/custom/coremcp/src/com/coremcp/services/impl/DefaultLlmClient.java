@@ -8,6 +8,7 @@ import de.hybris.platform.util.Config;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * Routes chat completion requests to the provider selected by {@code coremcp.llm.provider}
@@ -31,6 +32,14 @@ public class DefaultLlmClient implements LlmClient
 		final String modelOverride)
 	{
 		return getProvider().chatCompletion(messages, tools, modelOverride);
+	}
+
+	@Override
+	public Map<String, Object> chatCompletionStream(final List<Map<String, Object>> messages,
+		final List<Map<String, Object>> tools,
+		final Consumer<String> textDeltaConsumer)
+	{
+		return getProvider().chatCompletionStream(messages, tools, null, textDeltaConsumer);
 	}
 
 	public void setProviders(final List<LlmProvider> providerList)

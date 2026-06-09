@@ -14,6 +14,15 @@
     <context:annotation-config/>
 
     <!-- ===================================================================
+         Deep Link Builder — produces storefront URLs for products, orders,
+         and categories using the configurable coremcp.storefront.baseUrl.
+         =================================================================== -->
+
+    <alias name="defaultDeepLinkBuilder" alias="deepLinkBuilder"/>
+    <bean id="defaultDeepLinkBuilder"
+          class="com.coremcp.services.DeepLinkBuilder"/>
+
+    <!-- ===================================================================
          Tool Handlers
          =================================================================== -->
 
@@ -21,12 +30,14 @@
     <bean id="defaultProductSearchToolHandler"
           class="com.coremcp.tools.impl.ProductSearchToolHandler">
         <property name="productSearchFacade" ref="productSearchFacade"/>
+        <property name="deepLinkBuilder" ref="deepLinkBuilder"/>
     </bean>
 
     <alias name="defaultProductGetToolHandler" alias="productGetToolHandler"/>
     <bean id="defaultProductGetToolHandler"
           class="com.coremcp.tools.impl.ProductGetToolHandler">
         <property name="productFacade" ref="productFacade"/>
+        <property name="deepLinkBuilder" ref="deepLinkBuilder"/>
     </bean>
 
     <alias name="defaultCartGetToolHandler" alias="cartGetToolHandler"/>
@@ -69,12 +80,14 @@
     <bean id="defaultOrderGetToolHandler"
           class="com.coremcp.tools.impl.OrderGetToolHandler">
         <property name="orderFacade" ref="orderFacade"/>
+        <property name="deepLinkBuilder" ref="deepLinkBuilder"/>
     </bean>
 
     <alias name="defaultOrderHistoryToolHandler" alias="orderHistoryToolHandler"/>
     <bean id="defaultOrderHistoryToolHandler"
           class="com.coremcp.tools.impl.OrderHistoryToolHandler">
         <property name="orderFacade" ref="orderFacade"/>
+        <property name="deepLinkBuilder" ref="deepLinkBuilder"/>
     </bean>
 
     <alias name="defaultCustomerGetToolHandler" alias="customerGetToolHandler"/>

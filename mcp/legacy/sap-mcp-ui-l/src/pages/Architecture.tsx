@@ -126,24 +126,24 @@ graph TB
   Customer(["<b>Customer</b><br/>Browses products, places orders,<br/>chats with AI assistant"])
 
   subgraph ThinkShop["<b>ThinkShop Platform</b>"]
-    React["<b>React SPA</b><br/>Single-page storefront<br/><i>React, TypeScript, Tailwind</i>"]
+    React["<b>React SPA</b><br/>Single-page storefront with<br/>chat, chips, and entity modals<br/><i>React, TypeScript, Tailwind</i>"]
     SAP["<b>SAP Commerce</b><br/>E-commerce backend: catalog,<br/>cart, checkout, orders<br/><i>Java, Spring, OCC REST API</i>"]
-    Agent["<b>AI Agent</b><br/>Natural language shopping<br/>assistant with tool use<br/><i>Custom OCC extension</i>"]
+    Agent["<b>AI Agent</b><br/>Streaming chat with tool use,<br/>prompt caching, entity refs<br/><i>Custom OCC extension</i>"]
     MCP["<b>MCP Server</b><br/>Exposes commerce tools<br/>to external AI clients<br/><i>JSON-RPC 2.0</i>"]
   end
 
   Solr["<b>Apache Solr</b><br/>Product search index<br/>and faceted navigation"]
-  DB["<b>HSQLDB</b><br/>Product catalog, users,<br/>orders, carts"]
-  OpenAI["<b>OpenAI API</b><br/>GPT-4o with<br/>function calling"]
+  DB["<b>MySQL</b><br/>Product catalog, users,<br/>orders, carts"]
+  LLM["<b>Anthropic Messages API</b><br/>Claude Sonnet 4.6 with<br/>prompt caching + SSE streaming"]
   ExtClient(["<b>External AI Client</b><br/>Claude Code, Cursor, etc."])
 
   Customer -- "HTTPS" --> React
   React -- "OCC REST API" --> SAP
-  React -- "Chat messages" --> Agent
+  React -- "POST /agent/chat[/stream]" --> Agent
   SAP -- "FlexibleSearch" --> DB
   SAP -- "Solr queries" --> Solr
-  Agent -- "User question + tools" --> OpenAI
-  OpenAI -- "Answer or tool request" --> Agent
+  Agent -- "Cached prefix + tools" --> LLM
+  LLM -- "SSE deltas / tool calls" --> Agent
   Agent -- "Commerce facades" --> SAP
   MCP -- "Commerce facades" --> SAP
   ExtClient -- "JSON-RPC tools" --> MCP
@@ -155,7 +155,7 @@ graph TB
 
   class Customer,ExtClient person
   class React,SAP,Agent,MCP system
-  class Solr,DB,OpenAI external
+  class Solr,DB,LLM external
 `;
 
 const workflowChart = `
@@ -164,29 +164,44 @@ sequenceDiagram
   participant UI as React SPA
   participant SAP as SAP Commerce<br/>OCC API
   participant AI as AI Agent
-  participant OpenAI as OpenAI GPT-4o
+  participant LLM as Anthropic<br/>Sonnet 4.6
+  participant MCP as MCP Server
+  actor ExtClient as External<br/>AI Client
 
-  Note over Customer,OpenAI: Direct Product Search
+  Note over Customer,LLM: Direct Product Search
   Customer->>UI: Search "cameras"
   UI->>SAP: GET /products/search?query=cameras
   SAP-->>UI: Products + facets
   UI-->>Customer: Search results
 
-  Note over Customer,OpenAI: AI-Assisted Shopping
+  Note over Customer,LLM: AI-Assisted Shopping (streaming)
   Customer->>UI: "Find me a camera under $500"
-  UI->>AI: POST /agent/chat
-  AI->>OpenAI: Messages + tool definitions
-  OpenAI-->>AI: Tool calls (search, cart, etc.)
-  AI->>SAP: Execute tool (commerce APIs)
+  UI->>AI: POST /agent/chat/stream
+  Note over AI: Falls back to /agent/chat<br/>if SSE is unavailable
+  AI->>LLM: Messages + 18 tools (cached prefix)
+  LLM-->>AI: tool_use (product_search)
+  AI-->>UI: event: tool {name:"product_search"}
+  UI-->>Customer: "Searching products…" indicator
+  AI->>SAP: Execute tool (commerce facades)
   SAP-->>AI: Results
-  AI->>OpenAI: Tool results
-  OpenAI-->>AI: Natural language response
-  AI-->>UI: Reply + suggestions
-  UI-->>Customer: Chat response
+  AI->>LLM: Tool results
+  LLM-->>AI: text deltas (streamed)
+  AI-->>UI: event: text "Here…"
+  UI-->>Customer: Streamed reply text
+  AI-->>UI: event: done {entityRefs, action?}
+  UI-->>Customer: Render product chips below message
 
-  Note over Customer,OpenAI: MCP Integration
-  Customer->>SAP: JSON-RPC tool calls
-  SAP-->>Customer: Tool results
+  Note over Customer,LLM: Chip → Modal (no backend roundtrip)
+  Customer->>UI: Click product chip
+  UI->>SAP: GET /products/{code}
+  SAP-->>UI: Product details
+  UI-->>Customer: Product modal opens
+
+  Note over Customer,LLM: MCP Integration
+  ExtClient->>MCP: JSON-RPC tool call
+  MCP->>SAP: Commerce facades
+  SAP-->>MCP: Result
+  MCP-->>ExtClient: JSON-RPC response
 `;
 
 const techStack = [
@@ -212,7 +227,7 @@ const techStack = [
     category: 'Search & Data',
     items: [
       { name: 'Apache Solr', detail: 'Faceted search via solrfacetsearch' },
-      { name: 'HSQLDB', detail: 'Dev database (supports Oracle/MSSQL/MySQL in prod)' },
+      { name: 'MySQL', detail: 'Dev + prod database' },
       { name: 'FlexibleSearch', detail: 'Hybris query language' },
       { name: 'ImpEx', detail: 'Data import/export' },
     ],
@@ -220,8 +235,9 @@ const techStack = [
   {
     category: 'AI & Integration',
     items: [
-      { name: 'OpenAI GPT-4o', detail: 'Function calling for tool use' },
-      { name: 'MCP Protocol', detail: 'JSON-RPC 2.0 tool server' },
+      { name: 'Anthropic Claude Sonnet 4.6', detail: 'Tool use + prompt caching (5-min ephemeral)' },
+      { name: 'Server-Sent Events', detail: 'Streaming chat replies with graceful JSON fallback' },
+      { name: 'MCP Protocol', detail: 'JSON-RPC 2.0 tool server for external AI clients' },
       { name: 'OAuth2', detail: 'Resource Owner Password flow' },
       { name: 'Swagger / OpenAPI', detail: 'API documentation' },
     ],
