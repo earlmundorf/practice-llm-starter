@@ -11,6 +11,8 @@ allowed-tools: [Read, Grep, Glob, Bash(find *), Bash(ant *)]
 
 You are an expert SAP Commerce Cloud (Hybris) developer. You understand the full platform stack — from the type system and persistence layer through services and facades to OCC REST endpoints and Spartacus storefronts.
 
+**This repository's CLAUDE.md is authoritative.** Where this skill's generic guidance differs from the project's rules — build commands (`yclean` is mandatory; `yupdatesystem` runs with the server stopped), test scoping (`testCustomExtensions` / direct ant, never gradle `-D` passthrough), config editing (`dev-config/`, never the generated `hybris/config/`), ImpEx naming (numeric prefixes) — follow CLAUDE.md.
+
 ## When to Use Reference Files
 
 This skill bundles detailed reference docs. Read the relevant ones based on what the user needs:
@@ -86,7 +88,7 @@ my-extension/
 This is the most common task. The full flow is:
 
 1. **items.xml** — Define the attribute on the item type
-2. **ant build** — Regenerate models (`ant clean all`)
+2. **Build** — Regenerate models (`./gradlew yclean ybuild`)
 3. **-beans.xml** — Add matching field to the DTO bean (if exposing via facade)
 4. **Populator** — Write a populator to copy Model→DTO
 5. **-spring.xml** — Register the populator bean and wire it into the converter
@@ -99,21 +101,20 @@ This is the most common task. The full flow is:
 All commands run from `core-customize/` using `./gradlew`.
 
 ```bash
-# Full rebuild (after items.xml changes)
-./gradlew yclean yall
+# Build + restart after code changes (yclean is mandatory — incremental
+# compile silently skips recompiles in this project)
+./gradlew yclean ybuild stopServer startServer
 
-# Initialize (reset DB + load data)
+# After items.xml changes — yupdatesystem runs with the server STOPPED
+./gradlew yclean ybuild stopServer yupdatesystem startServer
+
+# Initialize (reset DB + load data — destroys existing data)
 ./gradlew yinitialize
 
-# Update system (apply changes without data loss)
-./gradlew yupdatesystem
-
-# Incremental build + restart
-./gradlew ybuild stopServer startServer
-
-# Run tests
-./gradlew yunittests -Dtestclasses.extensions=coremcp
-./gradlew yintegrationtests -Dtestclasses.extensions=coremcp
+# Run tests (never the gradle yunittests/yintegrationtests passthrough
+# with -D flags — the plugin drops them and runs the whole platform suite)
+./gradlew testCustomExtensions    # unit tests, all custom extensions
+cd hybris/bin/platform && . ./setantenv.sh && ant integrationtests -Dtestclasses.extensions=coremcp
 
 # HAC console commands
 ./gradlew impex -Pfile=<path>
@@ -124,7 +125,8 @@ All commands run from `core-customize/` using `./gradlew`.
 ### Common Pitfalls
 
 - **Editing gensrc/** — Never. These files are regenerated on every build.
-- **Skipping `ant clean all`** after items.xml changes — Models won't match the type system.
+- **Skipping `yclean`** before `ybuild` — stale `.class` files deploy silently; after items.xml changes the models won't match the type system.
+- **Editing `hybris/config/`** — it's generated; edit `core-customize/dev-config/` and re-run `setupConfig`.
 - **Injecting DAOs into controllers** — Always go through Service→Facade layers.
 - **Using Jalo layer** — The Jalo layer is deprecated. Use the ServiceLayer (Models, Services, DAOs).
 - **Hardcoding catalog versions** — Use `catalogVersion(catalog(id),version)` in ImpEx and parameterized queries in Java.
@@ -153,16 +155,16 @@ All commands run from `core-customize/` using `./gradlew`.
 
 Documentation is split across two locations:
 
-- **`docs/`** (project root) — Generic patterns: extension setup, architecture diagrams, new feature walkthrough and checklist
-- **`bin/custom/<extension>/docs/`** — Extension-specific feature flows
+- **`docs/`** (project root) — Generic guides, `extending/` checklists, `adr/` (decision records), `review/` (architecture review + improvement plan)
+- **`bin/custom/<extension>/docs/`** — README index + feature-flow directories + `reference/` for cross-cutting flat docs (tools, endpoints, solr, llm-providers)
 
-Each feature flow subdirectory contains three files:
+Each feature flow subdirectory contains exactly three files:
 
 - **`context.md`** — What the flow does, when it's used, key decisions
 - **`components.md`** — The files that implement it and what each one does
 - **`diagram.md`** — Mermaid diagrams with descriptive context
 
-**Before working on a feature,** read its flow directory. **When adding a new feature,** create a new flow directory first (docs before code).
+**Before working on a feature,** read its flow directory. **When adding a new feature,** create a new flow directory first (docs before code). When changing tool schemas, endpoints, or config properties, update the matching `reference/` doc in the same commit.
 
 ### Source Files Quick Reference
 
@@ -170,10 +172,10 @@ Each feature flow subdirectory contains three files:
 
 | What | File | Why read it |
 |---|---|---|
-| Active extensions | `config/localextensions.xml` | Which extensions are loaded and their dependency order |
-| Runtime config | `config/local.properties` | Database, ports, CORS, logging, Solr settings |
+| Active extensions (editable source) | `core-customize/dev-config/localextensions.xml` | Which extensions are loaded and their dependency order |
+| Runtime config (editable source) | `core-customize/dev-config/local.properties` | Database, ports, CORS, logging, Solr settings. The copies under `hybris/config/` are generated — never edit them |
 | Extension metadata | `bin/custom/coremcp/extensioninfo.xml` | How an extension declares its name, dependencies, and modules |
-| Extension properties | `bin/custom/coremcp/project.properties` | Spring context loading and web module registration |
+| Extension properties + tunables | `bin/custom/coremcp/project.properties` | Spring context loading, web module registration, and all `coremcp.*` operational defaults |
 
 ### Type System & Data Model
 
@@ -187,7 +189,7 @@ Each feature flow subdirectory contains three files:
 | What | File | Why read it |
 |---|---|---|
 | Core Spring beans | `bin/custom/coremcp/resources/coremcp-spring.xml` | Service/facade bean definitions with alias pattern |
-| Web Spring context | `bin/custom/coremcp/resources/occ/v2/coremcpocc/web/spring/coremcp-web-spring.xml` | Controller component scanning |
+| Web Spring context | `bin/custom/coremcp/resources/commercewebservices/v2/additional-web-spring-context.xml` | Controller component scanning via the OCC v2 servlet's classpath hook |
 
 When adding new beans, use the alias pattern: `<alias name="defaultMyService" alias="myService"/>`.
 
@@ -200,13 +202,13 @@ Each layer has a working example in the `coremcp` extension:
 
 **Service Layer** (business logic, session management, dispatching)
 - Interface: `bin/custom/coremcp/src/com/coremcp/services/McpSessionService.java`
-- Implementation: `bin/custom/coremcp/src/com/coremcp/services/impl/DefaultMcpSessionService.java`
+- Implementations: `impl/PersistedMcpSessionService.java` (DB-backed default), `impl/DefaultMcpSessionService.java` (in-memory), selected by `impl/DelegatingMcpSessionService.java` via `coremcp.session.store`
 - Interface: `bin/custom/coremcp/src/com/coremcp/services/McpDispatcherService.java`
 - Implementation: `bin/custom/coremcp/src/com/coremcp/services/impl/DefaultMcpDispatcherService.java`
 
 **Strategy Pattern** (tool handlers as pluggable components)
 - Interface: `bin/custom/coremcp/src/com/coremcp/tools/McpToolHandler.java`
-- Implementations: `bin/custom/coremcp/src/com/coremcp/tools/impl/` (15 tool handlers)
+- Implementations: `bin/custom/coremcp/src/com/coremcp/tools/impl/` (20 tool handlers)
 
 **Data Access** (FlexibleSearch queries)
 - Interface: `bin/custom/coremcp/src/com/coremcp/services/PromotionQueryService.java`

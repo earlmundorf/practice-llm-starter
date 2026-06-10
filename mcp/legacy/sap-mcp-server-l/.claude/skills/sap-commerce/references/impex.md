@@ -369,6 +369,13 @@ INSERT_UPDATE MyType ; code[unique=true] ; name
 
 ## Common Patterns
 
+**This project's naming convention:** data files carry numeric load-order
+prefixes — `essentialdata-NN-*.impex`, `projectdata-NN-*.impex` (e.g.
+`essentialdata-00-infrastructure.impex`, `projectdata-40-categories.impex`) —
+because the platform imports alphabetically and order matters. Follow it for
+new files (ADR 0006). Remember `projectdata-*` loads on **initialize only**;
+to load a new file onto an existing database use `./gradlew impex -Pfile=...`.
+
 ### Essential data (runs on initialize AND updatesystem)
 
 File: `resources/impex/essentialdata-myextension.impex`

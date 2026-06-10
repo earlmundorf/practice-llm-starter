@@ -273,11 +273,13 @@ Use sparingly — relations are preferred over collection types for item referen
 
 ## Code Generation
 
-After modifying items.xml, always run:
+After modifying items.xml, always run (from `core-customize/`):
 
 ```bash
-ant clean all
+./gradlew yclean ybuild
 ```
+
+(then `stopServer yupdatesystem startServer` to apply the schema change — see CLAUDE.md)
 
 This generates in `gensrc/`:
 - `GeneratedToolProductModel.java` — Base class with getters/setters
@@ -330,4 +332,4 @@ modelService.save(tool);
 - **`autocreate` vs `generate`**: `autocreate` controls DB type creation; `generate` controls Java code generation. For extending existing types, both should be `false`.
 - **Removing attributes is hard.** The platform doesn't drop columns automatically. You need manual DB migration or a full reinitialize.
 - **Collection types stored in a single column** — Don't use for large collections or queryable data. Use relations instead.
-- **Always run `ant clean all`** after items.xml changes. Incremental builds won't pick up type system changes.
+- **Always run `./gradlew yclean ybuild`** after items.xml changes — incremental builds won't pick up type system changes, and apply the schema with `yupdatesystem` (server stopped).

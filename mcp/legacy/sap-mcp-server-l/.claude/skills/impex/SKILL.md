@@ -105,7 +105,7 @@ Parentheses navigate into related types. `unit(code)` = "find the Unit whose cod
 
 Product, Category, Media, PriceRow, TaxRow, DiscountRow, MediaContainer, Keyword, CMS types
 
-These exist per catalog version (Staged/Online). Always import to **Staged**, sync to Online.
+These exist per catalog version (Staged/Online). Generic best practice: import to **Staged**, sync to Online. (This project's sample data deliberately dual-imports both versions at bootstrap — see "File Conventions" below and ADR 0006.)
 
 ### Global Types (NO catalogVersion)
 
@@ -152,6 +152,21 @@ Read the `references/impex.md` file in the sap-commerce skill for the full depen
 | `essentialdata-*.impex` | initialize AND updatesystem | Enums, essential config, always needed |
 | `projectdata-*.impex` | initialize only | Sample data, site config, loaded once |
 | Custom via `@SystemSetup` | Programmatic control | Complex loading with ordering logic |
+
+**This project's conventions (override generic guidance — see ADR 0006):**
+- Filenames carry **numeric load-order prefixes**: `essentialdata-NN-*.impex`,
+  `projectdata-NN-*.impex` (the platform imports alphabetically and order
+  matters: infrastructure → Solr configs; products → media → categories).
+  Follow the convention for new files.
+- Because `projectdata-*` loads on initialize only, loading a new file onto an
+  existing database requires an explicit import:
+  `./gradlew impex -Pfile=<path>` (asks HAC; same confirmation rule as below).
+- **Catalog versions:** generic best practice is "import to Staged, sync to
+  Online" — this project deliberately **dual-imports both versions** at
+  bootstrap for deterministic ordering (demo orders reference Online products
+  in the same pass) and provides a `CatalogVersionSyncJob`
+  (Staged → Online) for ongoing authoring. Match the dual-import pattern in
+  sample-data files; use the sync job for editorial changes.
 
 ## Common Errors and Fixes
 

@@ -142,7 +142,7 @@ The `*-beans.xml` file defines data transfer objects (DTOs). These are **not Spr
 </beans>
 ```
 
-After `ant build`, these generate plain Java classes with getters/setters.
+After a build (`./gradlew yclean ybuild` in this project), these generate plain Java classes with getters/setters.
 
 ## Converters and Populators
 

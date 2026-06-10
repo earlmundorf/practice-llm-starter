@@ -55,7 +55,9 @@ When loading full models, select `{pk}` only — the platform's model loading ha
 
 ## DTOs and beans.xml
 
-DTOs are generated from `*-beans.xml` — never hand-write them as Java classes. Define `*Data` classes for the facade layer and separate `*WsDTO` classes for REST responses. These are two different concerns: Data DTOs carry internal API data, WsDTO classes shape the external REST contract. DTOs carry data only — no business logic, no methods beyond getters and setters.
+OCC-facing DTOs are generated from `*-beans.xml` — never hand-write those. Define `*Data` classes for the facade layer and separate `*WsDTO` classes for REST responses: Data DTOs carry internal API data, WsDTO classes shape the external REST contract. DTOs carry data only — no business logic, no methods beyond getters and setters.
+
+One sanctioned exception in this codebase (ADR 0005): payloads that never cross the OCC data-mapping pipeline — JSON-RPC protocol messages and LLM request/response shapes (`com.coremcp.dto.*`) — are deliberately plain hand-written Jackson classes. Don't flag those as violations; do flag hand-written DTOs that *should* be in beans.xml because they cross the OCC boundary.
 
 ## OCC Controllers
 
@@ -82,8 +84,10 @@ Enable FlexibleSearch caching where the data is relatively static and queries ar
 These files in `coremcp` demonstrate the principles above — read them to calibrate your review expectations:
 
 - **`McpController.java`** — Controller that delegates to dispatcher service via `@Resource` injection. JSON-RPC protocol handling with proper error responses. No business logic in the controller layer.
-- **`DefaultMcpSessionService.java`** — Service with interface + `Default*` implementation in `impl/` subpackage. `ConcurrentHashMap` for thread-safe session storage, `@Required` setter injection, SLF4J logging.
+- **`PersistedMcpSessionService.java`** — DB-backed service behind the `McpSessionService` interface: ModelService + parameterized FlexibleSearch, lazy TTL eviction, `@Required` setter injection. Its sibling `DelegatingMcpSessionService` shows boot-time strategy selection via an injected property; the in-memory `DefaultMcpSessionService` remains for tests.
 - **`DefaultPromotionQueryService.java`** — Data access using FlexibleSearch with parameterized queries, batch operations to avoid N+1, graceful degradation with LOG.warn() on failures.
+- **`AbstractHttpLlmProvider.java`** — Shared base owning HTTP resilience (timeouts, bounded retry with backoff) so providers inherit identical behavior; wired via an abstract Spring parent bean.
+- **`DefaultAgentService.java` + `DefaultAgentToolInvoker.java`** — An orchestrator decomposed from a former monolith: tool invocation, state snapshot, and entity-ref collection live behind their own alias-wired interfaces.
 - **`McpToolHandler.java`** — Strategy pattern interface with `Map.of()` for immutable collections. Narrow contract with a default method for derived behavior.
 - **`coremcp-spring.xml`** — Alias pattern done right: `defaultMcpSessionService` aliased to `mcpSessionService`. List-based tool handler registration with setter injection.
 

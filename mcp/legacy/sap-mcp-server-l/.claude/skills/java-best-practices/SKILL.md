@@ -94,9 +94,11 @@ This project runs on Java 17. Use `var` where the type is obvious from context. 
 These files demonstrate the principles above well — read them to calibrate your review expectations for this project:
 
 - **`McpToolHandler.java`** — Interface with a default method using `Map.of()` for immutable collections. Narrow contract: four methods, each with a clear purpose. Shows how to define an extension point without over-engineering.
-- **`DefaultMcpSessionService.java`** — Good concurrency patterns: `ConcurrentHashMap` for thread-safe session storage, named constants instead of magic numbers, SLF4J parameterized logging, specific exception handling in `getIntConfig`. The lazy TTL eviction is a pragmatic design choice worth understanding.
+- **`DefaultMcpSessionService.java`** — Good concurrency patterns: `ConcurrentHashMap` for thread-safe session storage, lazy TTL eviction as a pragmatic design choice, SLF4J parameterized logging.
+- **`AbstractHttpLlmProvider.java`** — Resilience as a reusable base: bounded retry with exponential backoff + jitter, lazy thread-safe initialization (volatile double-check), package-private seams (`computeBackoffMillis`, `isRetryableStatus`) that make the policy unit-testable without HTTP.
 - **`DefaultPromotionQueryService.java`** — Clean data access with FlexibleSearch, batch queries to avoid N+1, `@Required` setter injection, graceful degradation with LOG.warn() on failures.
-- **`DefaultAgentService.java`** — `@PostConstruct` initialization with `Collectors.toMap()`, pre-built tool definitions, SLF4J logging throughout, streams with immutable `Set.of()` for filtering.
+- **`DefaultAgentService.java`** — A decomposed orchestrator: single-responsibility collaborators (`AgentToolInvoker`, `AgentStateSnapshotBuilder`, `EntityRefCollector`), typed parsing at the boundary (`LlmChatResponse.parse()` replaces cast chains), `@PostConstruct` initialization, per-request `AgentTurnContext` instead of shared mutable state.
+- **`LlmChatResponse.java`** — Validation-at-the-boundary: one `parse()` method does all shape checking with clear failure messages; immutable result; `@SuppressWarnings` scoped to a single private cast helper.
 
 ## How to Review
 

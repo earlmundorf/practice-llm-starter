@@ -29,9 +29,9 @@ hybris/
 │   │   └── ext/           # Platform extensions (core, impex, catalog, etc.)
 │   ├── modules/           # SAP-provided module bundles
 │   └── custom/            # YOUR custom extensions go here
-├── config/
-│   ├── local.properties          # Runtime config overrides
-│   └── localextensions.xml       # Which extensions are active
+├── config/                # GENERATED in this project — edit core-customize/dev-config/ instead
+│   ├── local.properties          # Runtime config (generated from dev-config)
+│   └── localextensions.xml       # Active extensions (generated from dev-config)
 ├── data/                  # Database files, media storage
 ├── log/                   # Runtime logs
 └── temp/                  # Compiled artifacts, Tomcat
@@ -160,43 +160,29 @@ HTTP Request
 
 ## Build System
 
-### Ant (per-extension)
+**In this project, all build operations go through the Gradle wrapper from
+`core-customize/` — never raw ant.** The table below maps concepts; CLAUDE.md
+has the authoritative command sequences (notably: `yclean` is mandatory before
+`ybuild`, and `yupdatesystem` runs with the server stopped).
 
-```bash
-# Set environment
-cd ${HYBRIS_HOME}/bin/platform
-. ./setantenv.sh
+| Operation | This project | Underlying ant target |
+|---|---|---|
+| Full rebuild | `./gradlew yclean yall` | `ant clean all` |
+| Build + restart | `./gradlew yclean ybuild stopServer startServer` | `ant build` |
+| Reset DB + data (DESTRUCTIVE) | `./gradlew yinitialize` | `ant initialize` |
+| Apply type changes | `./gradlew yclean ybuild stopServer yupdatesystem startServer` | `ant updatesystem` |
+| Unit tests | `./gradlew testCustomExtensions` | `ant unittests -Dtestclasses.extensions=...` |
+| Integration tests | `cd hybris/bin/platform && . ./setantenv.sh && ant integrationtests -Dtestclasses.extensions=...` | (no scoped gradle task — the gradle passthrough drops `-D`) |
 
-# Core build commands
-ant clean all              # Full rebuild (required after items.xml changes)
-ant build                  # Incremental compile
-ant initialize             # Reset DB + run all ImpEx (DESTRUCTIVE)
-ant updatesystem           # Apply model changes without data loss
-ant server                 # Start embedded Tomcat
+Generic SAP Commerce installs also offer `ant extgen` (generate a new extension
+from template) and `ant modulegen`; run those via `setantenv.sh` in
+`hybris/bin/platform` when needed.
 
-# Testing
-ant unittests
-ant integrationtests
-ant alltests
+### Gradle Installer (not used in this project)
 
-# Code generation
-ant extgen                 # Generate new extension from template
-
-# Utilities
-ant modulegen              # Generate a module
-ant clearlock              # Clear platform lock file
-```
-
-### Gradle Installer (top-level orchestration)
-
-```bash
-./install.sh -r cx setup          # Configure for B2C recipe
-./install.sh -r cx buildSystem    # Compile all
-./install.sh -r cx initialize     # Init DB
-./install.sh -r cx start          # Start server
-```
-
-Recipes (`cx`, `cx_china`, etc.) define which extensions to include and how to configure them.
+Stock SAP Commerce distributions ship a top-level `./install.sh` recipe
+installer (`cx`, `cx_china`, ...). This CCv2 project does not use it — the
+equivalent lifecycle is `./gradlew bootstrapPlatform` + the commands above.
 
 ## Configuration Hierarchy
 
