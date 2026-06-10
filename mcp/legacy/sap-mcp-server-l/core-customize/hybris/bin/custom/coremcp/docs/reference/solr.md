@@ -132,7 +132,7 @@ Both are inactive by default. Activate via HAC or ImpEx as needed.
 | File | Purpose |
 |------|---------|
 | `resources/impex/essentialdata-solr-coremcp.impex` | Solr config (auto-loaded on init/update) |
-| `docs/solr.md` | This documentation |
+| `docs/reference/solr.md` | This documentation |
 
 The Solr ImpEx is named `essentialdata-solr-coremcp.impex` so it sorts alphabetically after
 `essentialdata-coremcp.impex` (`s` > `m`), ensuring Currency and Catalog exist first.

@@ -28,10 +28,10 @@ Each directory contains:
 
 | File | Contents |
 |------|----------|
-| [solr.md](solr.md) | Solr index configuration, facets, sort definitions |
-| [tools.md](tools.md) | Complete MCP tool definitions with input schemas |
-| [endpoints.md](endpoints.md) | HTTP endpoint specs and response examples |
-| [llm-providers.md](llm-providers.md) | LLM provider configuration: models, base URLs, timeouts, retry |
+| [reference/solr.md](reference/solr.md) | Solr index configuration, facets, sort definitions |
+| [reference/tools.md](reference/tools.md) | Complete MCP tool definitions with input schemas |
+| [reference/endpoints.md](reference/endpoints.md) | HTTP endpoint specs and response examples |
+| [reference/llm-providers.md](reference/llm-providers.md) | LLM provider configuration: models, base URLs, timeouts, retry |
 
 Operational tunables (session TTL/store, rate limits, retry, vision model, size caps)
 are defined with commented defaults in [`project.properties`](../project.properties)
@@ -71,7 +71,7 @@ are defined with commented defaults in [`project.properties`](../project.propert
 MCP and agent endpoints require an OAuth2 Bearer token (`ROLE_CUSTOMERGROUP` or
 `ROLE_TRUSTED_CLIENT`); `/info/**` additionally allows anonymous access. Agent
 endpoints enforce a per-user rate limit (`coremcp.agent.rateLimit.perMinute`,
-default 20) — see [endpoints.md](endpoints.md) for the 429/400 contracts.
+default 20) — see [reference/endpoints.md](reference/endpoints.md) for the 429/400 contracts.
 
 ## Quick Start
 

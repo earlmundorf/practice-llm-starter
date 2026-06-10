@@ -13,8 +13,8 @@
 | File | Change |
 |------|--------|
 | `resources/coremcp-spring.xml` | Add `defaultVisualSearchService` bean + `visualSearchService` alias, wired to existing `llmClient` and `productSearchFacade` |
-| `docs/endpoints.md` | Document the new visual-search endpoint |
-| `docs/tools.md` | (Optional) Add visual-search as an MCP tool if we expose it through MCP later |
+| `docs/reference/endpoints.md` | Document the new visual-search endpoint |
+| `docs/reference/tools.md` | (Optional) Add visual-search as an MCP tool if we expose it through MCP later |
 
 ## Existing Files Used (no changes)
 

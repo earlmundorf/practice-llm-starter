@@ -12,7 +12,7 @@ Users upload, paste, or photograph a product image. The system sends it to GPT-4
 
 ## Key Decisions
 
-1. **Reuses the shared `LlmClient`** — GPT-4o Vision uses the same `/chat/completions` endpoint. The vision message format uses a `List` for the `content` field instead of a `String`, which Jackson serializes correctly. Visual search runs through the same `DefaultLlmClient` → provider pipeline used by agent chat (see `coremcp/docs/llm-providers.md`).
+1. **Reuses the shared `LlmClient`** — GPT-4o Vision uses the same `/chat/completions` endpoint. The vision message format uses a `List` for the `content` field instead of a `String`, which Jackson serializes correctly. Visual search runs through the same `DefaultLlmClient` → provider pipeline used by agent chat (see `coremcp/docs/reference/llm-providers.md`).
 
 2. **3-tier search strategy** — maximizes recall while ranking by confidence:
    - **Tier 1 (Best Match):** brand + product name from vision → Solr free-text (up to 3 results, confidence 0.95; falls back to searchTerms at 0.9)

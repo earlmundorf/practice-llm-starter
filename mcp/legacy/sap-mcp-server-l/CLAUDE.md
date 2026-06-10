@@ -163,7 +163,7 @@ After an `*-items.xml` change, the junit tenant must be re-initialized once
 7. **After `*-beans.xml` changes**: `./gradlew ybuild stopServer startServer`
 8. **After Java source changes**: `./gradlew ybuild stopServer startServer`
 9. **Register new extensions** in `core-customize/hybris/config/localextensions.xml` before building
-10. **Keep reference docs in sync** — when changing tool schemas, endpoints, or configuration properties, update the matching reference doc (`coremcp/docs/tools.md`, `endpoints.md`, `llm-providers.md`) in the same commit
+10. **Keep reference docs in sync** — when changing tool schemas, endpoints, or configuration properties, update the matching reference doc under `coremcp/docs/reference/` (`tools.md`, `endpoints.md`, `llm-providers.md`, `solr.md`) in the same commit
 
 ## Extension: coremcp
 
@@ -186,15 +186,27 @@ See `core-customize/hybris/bin/custom/coremcp/docs/` for architecture, endpoints
 
 ## Documentation Convention
 
-Each feature flow has a dedicated directory with three files:
+Each extension's `docs/` directory has exactly three kinds of content:
 
-| File | Purpose |
-|------|---------|
-| `context.md` | What the flow does, when it's used, key decisions |
-| `components.md` | The files that implement it and what each one does |
-| `diagram.md` | Mermaid diagrams with descriptive context |
+```
+<extension>/docs/
+├── README.md            # Index: lists every flow and reference doc
+├── <feature-flow>/      # One directory per feature flow (three files, no more)
+│   ├── context.md       # What the flow does, when it's used, key decisions
+│   ├── components.md    # The files that implement it and what each one does
+│   └── diagram.md       # Mermaid diagrams with descriptive context
+└── reference/           # Cross-cutting reference docs (flat .md files)
+```
 
-**Before working on a feature**, read its flow directory. **When adding a new feature**, create the flow directory first — docs before code.
+Current flows — coremcp: `mcp-protocol/`, `agent-chat/`, `visual-search/`,
+`knowledge-base/`; sampledatamcp: `sample-data/`, `store-infrastructure/`,
+`promotions-setup/`. coremcp's `reference/` holds `tools.md`, `endpoints.md`,
+`solr.md`, `llm-providers.md`.
+
+**Before working on a feature**, read its flow directory. **When adding a new
+feature**, create the flow directory first — docs before code. Flat markdown
+files belong in `reference/`, never loose in `docs/` (README.md is the only
+exception).
 
 ## Access Points
 
