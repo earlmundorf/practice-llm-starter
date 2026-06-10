@@ -42,7 +42,7 @@ The `manifest.json` declares the Commerce version and references config files. T
 |-------|----------|---------|
 | **CLAUDE.md** (this file) | Project root | Commands, rules, paths — everything Claude needs to operate |
 | **Skills** | `.claude/skills/` | Domain expertise that activates contextually (SAP Commerce dev, code review) |
-| **Project docs** | `docs/` | Generic patterns: extension setup, new feature walkthrough, checklists |
+| **Project docs** | `docs/` | Setup + data guides, extension patterns, `extending/` checklists, `adr/` decisions, `review/` architecture review |
 | **Extension docs** | `<extension>/docs/` in `coremcp` and `sampledatamcp` | Per-feature flows + `reference/` (see Documentation Convention below) |
 | **Gradle tasks** | `core-customize/gradlew` | Server lifecycle, HAC console, and build operations (see Commands below) |
 

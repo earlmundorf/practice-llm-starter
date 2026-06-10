@@ -15,9 +15,11 @@ Generic patterns and conventions for building OCC extensions on SAP Commerce (Hy
 
 ## Extension-Specific Docs
 
-Each custom extension has its own `docs/` directory with feature flow documentation (context/components/diagram):
+Each custom extension has its own `docs/` directory: a README index, one
+directory per feature flow (context/components/diagram), and `reference/` for
+cross-cutting flat docs (see the Documentation Convention in the root CLAUDE.md):
 
-| Extension | Path | Features |
+| Extension | Path | Flows |
 |---|---|---|
-| coremcp | `bin/custom/coremcp/docs/` | MCP protocol, agent chat, visual search |
+| coremcp | `bin/custom/coremcp/docs/` | MCP protocol, agent chat, visual search, knowledge base (+ `reference/`: tools, endpoints, solr, llm-providers) |
 | sampledatamcp | `bin/custom/sampledatamcp/docs/` | Store infrastructure, sample data, promotions |
