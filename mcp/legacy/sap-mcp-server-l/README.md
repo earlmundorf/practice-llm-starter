@@ -15,7 +15,7 @@ An SAP Commerce (Hybris) 22.11 extension that implements a [Model Context Protoc
 
 ## Prerequisites
 
-- **Java 17** (SAP Commerce 22.11 requirement) — managed via `gradle.properties`
+- **Java 17** (SAP Commerce 22.11 requirement) — pinned in `core-customize/.sdkmanrc` (SDKMAN resolves it to `JAVA_HOME`)
 - **MySQL 8.0** running locally (or Docker)
 - **SAP Commerce 2211 ZIP** + Integration Extension Pack placed in `core-customize/dependencies/`
   - Rename to Maven convention: `hybris-commerce-suite-<version>.zip` and `hybris-commerce-integrations-<version>.zip`
@@ -57,7 +57,7 @@ sap-mcp-server-l/
 ├── core-customize/
 │   ├── build.gradle                  # Gradle build config (all tasks defined here)
 │   ├── settings.gradle
-│   ├── gradle.properties             # Java 17 path (SDKMAN)
+│   ├── .sdkmanrc                     # Pinned JDK (SDKMAN → JAVA_HOME)
 │   ├── gradlew / gradlew.bat        # Gradle wrapper
 │   ├── manifest.json                 # CCv2 build configuration
 │   ├── dev-config/                   # Project config (overlaid onto hybris/config)

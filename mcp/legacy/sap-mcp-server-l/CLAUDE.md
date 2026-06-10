@@ -5,8 +5,8 @@ This is the root configuration file for [Claude Code](https://claude.ai/code) in
 ## What This Project Is
 
 An SAP Commerce MCP (Model Context Protocol) server extension, structured for CCv2 (Commerce Cloud v2) deployment. The Commerce Suite version is defined in `core-customize/manifest.json` (`commerceSuiteVersion`).
-- **Backend:** Custom OCC extension (`coremcp`) providing an MCP server for AI agent integration
-- **Data:** Solr-indexed product catalog, OAuth2 auth, sample customers and orders
+- **Backend:** Custom OCC extension (`coremcp`) providing an MCP server, LLM agent, and visual search for AI agent integration
+- **Data:** Solr-indexed product catalog and knowledge base, OAuth2 auth, sample customers and orders (`sampledatamcp`)
 - **Layout:** CCv2-compliant repository structure with `core-customize/` root
 
 ## CCv2 Repository Structure
@@ -17,17 +17,20 @@ This project follows the SAP Commerce Cloud v2 mandatory layout:
 sap-mcp-server-l/
 ├── core-customize/                    # CCv2 root — cloud builds start here
 │   ├── manifest.json                  # Build/deployment configuration
+│   ├── dev-config/                    # Tracked config sources (overlaid onto hybris/config by setupConfig)
+│   │   ├── local.properties           #   ← edit config HERE, not in hybris/config/
+│   │   ├── local-{dev,stg,prod}.properties  # CCv2 persona overrides
+│   │   └── localextensions.xml
+│   ├── scripts/                       # HAC helpers, Solr indexing, promotions, smoke-test.sh
 │   └── hybris/
 │       ├── bin/custom/
 │       │   ├── coremcp/               # MCP server extension
-│       │   └── sampledatamcp/         # Sample data extension
-│       └── config/
-│           ├── localextensions.xml    # Active extension declarations
-│           ├── local.properties       # Runtime configuration
-│           └── solr/                  # Solr server configuration
-├── docs/                              # Development guides
+│       │   └── sampledatamcp/         # Sample data extension (excluded in production)
+│       └── config/                    # GENERATED at setup — gitignored, do not edit
+├── docs/                              # Development guides + adr/ + review/
 ├── .claude/skills/                    # Claude Code domain skills
 ├── CLAUDE.md                          # This file
+├── SECURITY.md                        # Secrets policy + production deployment checklist
 └── README.md
 ```
 
@@ -40,18 +43,19 @@ The `manifest.json` declares the Commerce version and references config files. T
 | **CLAUDE.md** (this file) | Project root | Commands, rules, paths — everything Claude needs to operate |
 | **Skills** | `.claude/skills/` | Domain expertise that activates contextually (SAP Commerce dev, code review) |
 | **Project docs** | `docs/` | Generic patterns: extension setup, new feature walkthrough, checklists |
-| **Extension docs** | `core-customize/hybris/bin/custom/coremcp/docs/` | MCP server architecture, endpoints, tools, protocol |
+| **Extension docs** | `<extension>/docs/` in `coremcp` and `sampledatamcp` | Per-feature flows + `reference/` (see Documentation Convention below) |
 | **Gradle tasks** | `core-customize/gradlew` | Server lifecycle, HAC console, and build operations (see Commands below) |
 
 ## Commands
 
-All commands run from `core-customize/` using `./gradlew`.
+All commands run from `core-customize/` using `./gradlew` (the one exception —
+scoped integration tests via ant — is called out in Testing).
 
 ### First-Time Setup
 
 See `docs/getting-started.md` for the full walkthrough. Summary:
 
-1. **Install Java 17** (SDKMAN: `sdk install java 17.0.12-oracle`)
+1. **Install Java 17** (any distribution; e.g. SDKMAN: `sdk install java 17.0.19-sapmchn`)
 2. **Start MySQL** (Docker or native — see getting-started.md)
 3. **Download SAP Commerce ZIPs** from SAP Software Download Center and place in `core-customize/dependencies/`:
    - `hybris-commerce-suite-<version>.zip` (SAP Commerce Suite)
@@ -68,6 +72,7 @@ See `docs/getting-started.md` for the full walkthrough. Summary:
    ./scripts/index-solr.sh         # Index Solr (required for product search)
    ./scripts/setup-promotions.sh   # Create promotions
    ./gradlew groovy -Pfile=scripts/publish-promotions.groovy -Pcommit=true  # Publish to Drools
+   ./scripts/smoke-test.sh         # Verify end to end (21 checks)
    ```
 
 ### Server Lifecycle
@@ -101,17 +106,20 @@ guarantee your edits actually deploy.
 ### Testing
 
 ```bash
-./gradlew yunittests -Dtestclasses.extensions=coremcp        # Unit tests
-./gradlew yintegrationtests -Dtestclasses.extensions=coremcp  # Integration tests
+./gradlew testCustomExtensions   # Unit tests for all custom extensions (preferred)
+
+# Integration tests — run ant directly; see note below
+cd hybris/bin/platform && . ./setantenv.sh && ant integrationtests -Dtestclasses.extensions=coremcp
 ```
 
-**Test scope rule (important):** Always restrict test runs to **custom extensions**.
-Prefer `./gradlew testCustomExtensions` (runs all custom-extension tests, that's the
-intended scope). Or use `./gradlew yunittests -Dtestclasses.extensions=<ext1>,<ext2>`
-to scope further. Never run `yunittests` or `yintegrationtests` unscoped — the
-platform's own tests are slow and not what we are verifying. Comma-separate when
-more than one custom extension is involved (e.g. `-Dtestclasses.extensions=coremcp,sampledatamcp`).
-Only run the full platform suite when the user explicitly asks for it.
+**Test scope rule (important):** Always restrict test runs to **custom extensions** —
+the platform's own tests are slow and not what we are verifying. `testCustomExtensions`
+wraps `ant unittests -Dtestclasses.extensions=<all custom>`; to scope to specific
+extensions, use the ant form directly with a comma-separated list
+(e.g. `-Dtestclasses.extensions=coremcp,sampledatamcp`). **Do not use the gradle
+passthrough tasks (`./gradlew yunittests` / `yintegrationtests`) with `-D` flags —
+the plugin drops them and runs the entire platform suite.** Only run the full
+platform suite when the user explicitly asks for it.
 
 **Stop the server before CLI test runs:** The test framework boots a junit tenant that
 binds Solr on the same port (8983) as the live server's Solr, and shuts that Solr
@@ -129,16 +137,13 @@ Solr **dead** until the next `stopServer/startServer`. Before any
 (IDE-driven JUnit runs for `@UnitTest` classes don't boot the platform and don't
 have this problem.)
 
-**Integration tests:** there is no scoped gradle task — run ant directly so the
-extension filter actually applies (the gradle passthrough drops `-D` args and
-runs the whole platform suite):
+**After an `*-items.xml` change**, the junit tenant must be re-initialized once
+(`ant yunitinit` from `hybris/bin/platform`) or integration tests fail with
+`type code '...' invalid`.
 
-```bash
-cd hybris/bin/platform && . ./setantenv.sh && ant integrationtests -Dtestclasses.extensions=coremcp
-```
-
-After an `*-items.xml` change, the junit tenant must be re-initialized once
-(`ant yunitinit`) or integration tests fail with `type code '...' invalid`.
+**End-to-end verification:** `./scripts/smoke-test.sh` (from `core-customize/`,
+server running) runs 21 live checks — OAuth, MCP handshake/tools, search,
+cart flow, agent guards, and a real LLM round-trip.
 
 ## Key Paths
 
@@ -146,9 +151,12 @@ After an `*-items.xml` change, the junit tenant must be re-initialized once
 |------|---------|
 | `core-customize/manifest.json` | CCv2 build configuration |
 | `core-customize/hybris/bin/custom/coremcp/` | MCP server extension |
-| `core-customize/hybris/config/localextensions.xml` | Active extension declarations |
-| `core-customize/hybris/config/local.properties` | Local configuration overrides |
-| `docs/` | Generic development guides and patterns |
+| `core-customize/hybris/bin/custom/coremcp/project.properties` | All `coremcp.*` tunables with commented defaults |
+| `core-customize/dev-config/local.properties` | **Editable** config source — `setupConfig` copies it into the gitignored `hybris/config/` |
+| `core-customize/dev-config/localextensions.xml` | Active extension declarations (source) |
+| `core-customize/scripts/smoke-test.sh` | 21-check end-to-end suite against the live server |
+| `docs/` | Generic development guides, `adr/` (decisions), `review/` (architecture review + plan) |
+| `SECURITY.md` | Secrets policy + CCv2 production deployment checklist |
 | `core-customize/gradlew` | Gradle wrapper — all build/server/HAC commands |
 | `.claude/skills/` | Claude Code skills for SAP Commerce |
 
@@ -158,11 +166,11 @@ After an `*-items.xml` change, the junit tenant must be re-initialized once
 2. **Never modify platform or modules** — they are downloaded by CCv2; override behavior in custom extensions
 3. **Use the alias pattern** for Spring beans: define `defaultMyBean`, alias to `myBean`
 4. **Define interfaces** for services, facades, DAOs — implementations in `impl/` subpackage with `Default*` prefix
-5. **DTOs are generated** from `*-beans.xml` — never hand-write these classes
-6. **After `*-items.xml` changes**: `./gradlew ybuild stopServer startServer yupdatesystem`
-7. **After `*-beans.xml` changes**: `./gradlew ybuild stopServer startServer`
-8. **After Java source changes**: `./gradlew ybuild stopServer startServer`
-9. **Register new extensions** in `core-customize/hybris/config/localextensions.xml` before building
+5. **OCC Data/WsDTO classes are generated** from `*-beans.xml` — never hand-write those. Internal protocol/LLM payload DTOs (`com.coremcp.dto.*`) are deliberately plain Jackson classes instead — see ADR 0005
+6. **After `*-items.xml` changes**: `./gradlew yclean ybuild stopServer yupdatesystem startServer`
+7. **After `*-beans.xml` changes**: `./gradlew yclean ybuild stopServer startServer`
+8. **After Java source changes**: `./gradlew yclean ybuild stopServer startServer`
+9. **Register new extensions** in `core-customize/dev-config/localextensions.xml` (the tracked source) before building — `setupConfig` copies it into the generated `hybris/config/`
 10. **Keep reference docs in sync** — when changing tool schemas, endpoints, or configuration properties, update the matching reference doc under `coremcp/docs/reference/` (`tools.md`, `endpoints.md`, `llm-providers.md`, `solr.md`) in the same commit
 
 ## Extension: coremcp
@@ -214,5 +222,9 @@ exception).
 |-----|---------|-------------|
 | http://localhost:9001/hac | Admin Console | admin / nimda |
 | http://localhost:9001/backoffice | Backoffice Admin UI | admin / nimda |
-| http://localhost:9001/occ/v2/ | OCC REST API | OAuth token |
-| http://localhost:9001/occ/v2/swagger-ui.html | Swagger API Docs | — |
+| https://localhost:9002/occ/v2/ | OCC REST API (incl. `/mcp`, `/agent/*`, `/info/*`) | OAuth token |
+| https://localhost:9002/authorizationserver/oauth/token | OAuth2 token endpoint | demo clients — see SECURITY.md |
+| https://localhost:9002/occ/v2/swagger-ui.html | Swagger API Docs | — |
+
+OAuth and OCC calls must use HTTPS (9002, self-signed — use `curl -k`); the
+token endpoint answers plain-HTTP requests on 9001 with a 302 redirect.

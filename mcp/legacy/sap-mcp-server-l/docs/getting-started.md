@@ -6,7 +6,7 @@ This guide walks you through setting up a local SAP Commerce development environ
 
 ### Java 17
 
-SAP Commerce 22.11 requires Java 17. The project uses SDKMAN to manage the JDK — the path is configured in `core-customize/gradle.properties`.
+SAP Commerce 22.11 requires Java 17. The project pins the JDK in `core-customize/.sdkmanrc` — SDKMAN resolves it to `JAVA_HOME`, which Gradle uses (there is deliberately no `gradle.properties` with a per-machine `org.gradle.java.home` path).
 
 **Check your version:**
 ```bash
@@ -15,13 +15,13 @@ java -version
 
 **Install via SDKMAN:**
 ```bash
-sdk install java 17.0.12-oracle
+sdk install java 17.0.19-sapmchn
 ```
 
-If you use a different Java 17 distribution, update the path in `core-customize/gradle.properties`:
-```properties
-org.gradle.java.home=/path/to/java/17
-```
+Enable SDKMAN auto-env (`sdkman_auto_env=true` via `sdk config`) and the right
+JDK activates automatically when you `cd` into `core-customize/`. To use a
+different Java 17 distribution, update `core-customize/.sdkmanrc` (or export
+`JAVA_HOME` yourself before running `./gradlew`).
 
 ### MySQL 8.0
 
@@ -232,7 +232,7 @@ Run `./gradlew bootstrapPlatform` — it downloads the MySQL driver automaticall
 
 ### Wrong Java version
 
-Update `core-customize/gradle.properties` to point to your Java 17 installation.
+Make sure `JAVA_HOME` points at a Java 17 installation — `cd core-customize` with SDKMAN auto-env enabled (reads `.sdkmanrc`), or export `JAVA_HOME` manually.
 
 ### macOS: Backoffice fails with SafeZipEntry errors
 
