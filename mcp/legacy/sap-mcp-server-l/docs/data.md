@@ -84,7 +84,7 @@ with numeric prefixes that control alphabetical load order (see ADR 0006):
 initialize/update) and `projectdata-NN-*.impex` (products, media, categories,
 customers, orders, knowledge — **initialize only**; import new files onto an
 existing DB via `./gradlew impex -Pfile=...`). The per-file inventory is in
-`sampledatamcp/docs/sampledatamcp/sample-data/components.md`.
+`sampledatamcp/docs/sample-data/components.md`.
 
 ## Media Files
 

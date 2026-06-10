@@ -11,7 +11,7 @@
 | `DefaultAgentStateSnapshotBuilder.java` | `src/com/coremcp/services/impl/` | Builds the per-turn "CURRENT STATE" system message (customer + cart snapshot) from `CustomerFacade`/`CartFacade`; best-effort, degrades to a smaller snapshot on facade errors. |
 | `DefaultEntityRefCollector.java` | `src/com/coremcp/services/impl/` | Extracts product/order entity refs from tool args + results onto the turn context (capped at 5 per call). |
 | `LlmClient.java` | `src/com/coremcp/services/` | Provider-neutral interface: `chatCompletion()` (with optional model override) and `chatCompletionStream()` (with text delta consumer). |
-| `DefaultLlmClient.java` | `src/com/coremcp/services/impl/` | Routes to the configured provider based on `coremcp.llm.provider` (default `openai`; production default `anthropic`). See `coremcp/docs/llm/README.md`. |
+| `DefaultLlmClient.java` | `src/com/coremcp/services/impl/` | Routes to the configured provider based on `coremcp.llm.provider` (default `openai`; production default `anthropic`). See `coremcp/docs/llm-providers.md`. |
 | `LlmProvider.java` | `src/com/coremcp/services/` | Strategy interface — one implementation per vendor (`OpenAiLlmProvider`, `AnthropicLlmProvider`, `OpenAiCompatibleLlmProvider`). The default `chatCompletionStream` calls `chatCompletion` and emits the full reply as one chunk, so vendors that can't stream still satisfy the contract. |
 | `AnthropicLlmProvider.java` | `src/com/coremcp/services/impl/` | Anthropic-specific provider. Sends system as an array of content blocks with `cache_control: ephemeral` on the persona block; tags the last tool definition with `cache_control: ephemeral`. Implements true SSE consumption for `chatCompletionStream`, with auto-fallback to non-streaming when the gateway returns non-`text/event-stream` content. Logs `cache_creation_input_tokens` / `cache_read_input_tokens` for observability. |
 | `AbstractHttpLlmProvider.java` | `src/com/coremcp/services/impl/` | Base for all HTTP providers: shared HttpClient, request timeouts (`coremcp.llm.timeout.seconds`, `coremcp.llm.stream.timeout.seconds`), and bounded retry with exponential backoff for 429/500/502/503 and connection errors (`coremcp.llm.retry.maxAttempts`, `coremcp.llm.retry.baseDelayMillis`). Streaming responses are never retried after the first delta. |
@@ -60,10 +60,17 @@ Refs are deduplicated and capped per turn to keep the chip row sane. Other tools
 ## Spring Bean Wiring (coremcp-spring.xml)
 
 ```xml
-<!-- LLM providers + router -->
-<bean id="openAiLlmProvider"           class="com.coremcp.services.impl.OpenAiLlmProvider"/>
-<bean id="anthropicLlmProvider"        class="com.coremcp.services.impl.AnthropicLlmProvider"/>
-<bean id="openAiCompatibleLlmProvider" class="com.coremcp.services.impl.OpenAiCompatibleLlmProvider"/>
+<!-- Shared HTTP resilience defaults inherited by every provider -->
+<bean id="abstractHttpLlmProvider" abstract="true">
+    <property name="retryMaxAttempts" value="${coremcp.llm.retry.maxAttempts}"/>
+    <property name="retryBaseDelayMillis" value="${coremcp.llm.retry.baseDelayMillis}"/>
+</bean>
+
+<!-- LLM providers (alias pattern — overridable downstream) + router -->
+<alias name="defaultOpenAiLlmProvider" alias="openAiLlmProvider"/>
+<bean id="defaultOpenAiLlmProvider" parent="abstractHttpLlmProvider"
+      class="com.coremcp.services.impl.OpenAiLlmProvider"/>
+<!-- anthropic + openai-compatible follow the same pattern -->
 
 <alias name="defaultLlmClient" alias="llmClient"/>
 <bean id="defaultLlmClient" class="com.coremcp.services.impl.DefaultLlmClient">
@@ -76,49 +83,61 @@ Refs are deduplicated and capped per turn to keep the chip row sane. Other tools
     </property>
 </bean>
 
-<!-- Agent Service -->
+<!-- Agent collaborators -->
+<alias name="defaultAgentStateSnapshotBuilder" alias="agentStateSnapshotBuilder"/>
+<bean id="defaultAgentStateSnapshotBuilder"
+      class="com.coremcp.services.impl.DefaultAgentStateSnapshotBuilder">
+    <property name="cartFacade" ref="cartFacade"/>
+    <property name="customerFacade" ref="customerFacade"/>
+</bean>
+
+<alias name="defaultEntityRefCollector" alias="entityRefCollector"/>
+<bean id="defaultEntityRefCollector"
+      class="com.coremcp.services.impl.DefaultEntityRefCollector"/>
+
+<alias name="defaultAgentToolInvoker" alias="agentToolInvoker"/>
+<bean id="defaultAgentToolInvoker"
+      class="com.coremcp.services.impl.DefaultAgentToolInvoker">
+    <property name="entityRefCollector" ref="entityRefCollector"/>
+    <property name="toolHandlers"><list><!-- all 20 handlers --></list></property>
+</bean>
+
+<!-- Agent Service (orchestrator) -->
 <alias name="defaultAgentService" alias="agentService"/>
 <bean id="defaultAgentService"
       class="com.coremcp.services.impl.DefaultAgentService">
+    <property name="maxToolIterations" value="${coremcp.agent.maxToolIterations}"/>
+    <property name="toolResultSummaryThreshold" value="${coremcp.agent.toolResult.summaryThreshold}"/>
+    <property name="toolResultSummarySnippet" value="${coremcp.agent.toolResult.summarySnippet}"/>
     <property name="llmClient" ref="llmClient"/>
-    <property name="cartFacade" ref="cartFacade"/>
-    <property name="customerFacade" ref="customerFacade"/>
-    <property name="toolHandlers">
-        <list>
-            <ref bean="productSearchToolHandler"/>
-            <ref bean="productGetToolHandler"/>
-            <ref bean="cartGetToolHandler"/>
-            <ref bean="cartAddProductToolHandler"/>
-            <ref bean="cartUpdateEntryToolHandler"/>
-            <ref bean="cartRemoveEntryToolHandler"/>
-            <ref bean="cartApplyVoucherToolHandler"/>
-            <ref bean="cartRemoveVoucherToolHandler"/>
-            <ref bean="orderGetToolHandler"/>
-            <ref bean="orderHistoryToolHandler"/>
-            <ref bean="customerGetToolHandler"/>
-            <ref bean="customerLookupToolHandler"/>
-            <ref bean="checkoutSetDeliveryAddressToolHandler"/>
-            <ref bean="checkoutSetDeliveryModeToolHandler"/>
-            <ref bean="checkoutSetPaymentToolHandler"/>
-            <ref bean="orderPlaceToolHandler"/>
-            <ref bean="promotionsGetToolHandler"/>
-            <ref bean="uiActionToolHandler"/>
-        </list>
-    </property>
+    <property name="stateSnapshotBuilder" ref="agentStateSnapshotBuilder"/>
+    <property name="toolInvoker" ref="agentToolInvoker"/>
+    <property name="toolHandlers"><list><!-- all 20 handlers (tool definitions) --></list></property>
 </bean>
 ```
 
-`AgentController` is discovered via component-scan in `coremcp-web-spring.xml` and injects `agentService`, `mcpCartSessionService`, and `llmClient` via `@Resource`.
+`AgentController` is discovered via component-scan and injects `agentService`,
+`mcpCartSessionService`, `llmClient`, `agentRateLimiter`, and `userService` via
+`@Resource`. The per-user rate limiter (`defaultAgentRateLimiter`, alias
+`agentRateLimiter`) guards all `/agent/*` endpoints.
 
 ## Configuration Properties
 
 | Property | Default | Effect |
 |----------|---------|--------|
 | `coremcp.llm.provider` | `openai` | Selects which `LlmProvider` to use. Production sets this to `anthropic`. |
-| `coremcp.llm.timeout.seconds` | `60` | Read timeout on the upstream LLM HTTP request. |
+| `coremcp.llm.timeout.seconds` / `coremcp.llm.stream.timeout.seconds` | `60` / `120` | Per-request timeouts on the upstream LLM HTTP request. |
+| `coremcp.llm.retry.maxAttempts` / `coremcp.llm.retry.baseDelayMillis` | `3` / `500` | Retry policy for transient LLM failures (never after the first stream delta). |
 | `coremcp.agent.streaming.enabled` | `true` | Master kill-switch for the SSE endpoint. When `false`, `/agent/chat/stream` returns plain JSON in the same shape as `/agent/chat`. |
+| `coremcp.agent.maxToolIterations` | `10` | Tool-loop bound per turn. |
+| `coremcp.agent.toolResult.summaryThreshold` / `.summarySnippet` | `300` / `200` | Tool-result truncation on echo-back (chars). |
+| `coremcp.agent.rateLimit.perMinute` | `20` | Per-user request budget across `/agent/*` (0 disables; 429 when exceeded). |
+| `coremcp.agent.maxMessagesPerRequest` | `50` | Max conversation messages accepted per request (400 when exceeded). |
 | `coremcp.anthropic.model` | `claude-3-5-sonnet-latest` | Main Anthropic chat model (production override: `claude-sonnet-4-6`). |
+| `coremcp.anthropic.maxTokens` | `1024` | Anthropic `max_tokens` per response. |
 | `coremcp.anthropic.version` | `2023-06-01` | `anthropic-version` header value. |
+
+Full reference with commented defaults: [`project.properties`](../../project.properties).
 
 ## Existing Files Used (no changes)
 
@@ -134,21 +153,22 @@ Refs are deduplicated and capped per turn to keep the chip row sane. Other tools
 
 ```
 AgentController
-  ├─ @Resource agentService
+  ├─ @Resource agentService (DefaultAgentService — orchestrator)
   │    ├─ llmClient (DefaultLlmClient → routes to selected LlmProvider)
   │    │    └─ Anthropic / OpenAI / OpenAI-compatible HTTP API
-  │    │       (streaming variant for SSE; default fallback for non-streaming)
-  │    ├─ cartFacade  (state snapshot)
-  │    ├─ customerFacade  (state snapshot)
-  │    └─ toolHandlers (18 McpToolHandler instances)
-  │         ├─ productSearchFacade (Solr)
-  │         ├─ productFacade
-  │         ├─ cartFacade
-  │         ├─ orderFacade
-  │         ├─ checkoutFacade
-  │         ├─ customerFacade
-  │         ├─ voucherFacade
-  │         └─ promotionQueryService
+  │    │       (AbstractHttpLlmProvider: timeouts + retry; SSE with fallback)
+  │    ├─ stateSnapshotBuilder (cartFacade + customerFacade snapshots)
+  │    ├─ toolInvoker (DefaultAgentToolInvoker)
+  │    │    ├─ toolHandlers (20 McpToolHandler instances)
+  │    │    │    ├─ productSearchFacade (Solr)
+  │    │    │    ├─ productFacade / cartFacade / orderFacade
+  │    │    │    ├─ checkoutFacade / customerFacade / voucherFacade
+  │    │    │    ├─ promotionQueryService
+  │    │    │    └─ knowledgeSearchService (Solr knowledgeIndex)
+  │    │    └─ entityRefCollector
+  │    └─ toolHandlers (same 20 — tool definitions for the LLM)
   ├─ @Resource mcpCartSessionService
+  ├─ @Resource agentRateLimiter (per-user 429 guard)
+  ├─ @Resource userService (rate-limit key)
   └─ @Resource llmClient (capabilities endpoint)
 ```

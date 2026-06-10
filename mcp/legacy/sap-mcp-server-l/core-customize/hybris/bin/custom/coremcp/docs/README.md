@@ -17,6 +17,7 @@ Each feature has a dedicated flow directory with context, components, and diagra
 | [mcp-protocol/](mcp-protocol/) | JSON-RPC 2.0 MCP server — session lifecycle (persistent store), tool registry, 19 tool handlers |
 | [agent-chat/](agent-chat/) | AI shopping assistant — tool loop, streaming, entity refs, multi-provider LLM integration |
 | [visual-search/](visual-search/) | Image-based product search — vision model, 3-tier Solr search (OCC endpoint, not MCP) |
+| [knowledge-base/](knowledge-base/) | Shopper-facing content (policies, events, how-tos) — KnowledgeEntry type, knowledgeIndex, /info endpoints + info_* tools |
 
 Each directory contains:
 - `context.md` — what it does, when it's used, key decisions
@@ -31,7 +32,6 @@ Each directory contains:
 | [tools.md](tools.md) | Complete MCP tool definitions with input schemas |
 | [endpoints.md](endpoints.md) | HTTP endpoint specs and response examples |
 | [llm-providers.md](llm-providers.md) | LLM provider configuration: models, base URLs, timeouts, retry |
-| [llm/README.md](llm/README.md) | LLM client architecture and provider selection |
 
 Operational tunables (session TTL/store, rate limits, retry, vision model, size caps)
 are defined with commented defaults in [`project.properties`](../project.properties)

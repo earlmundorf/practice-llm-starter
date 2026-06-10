@@ -32,7 +32,7 @@ The alphabetical sort matters: `infrastructure` < `solr`, so catalog and currenc
 When you add a new feature, create a new subdirectory here with three files:
 
 ```
-docs/sampledatamcp/my-new-feature/
+docs/my-new-feature/
 ├── context.md       # What this flow does, when it's used, key decisions
 ├── components.md    # The files that implement it and what each one does
 └── diagram.md       # How the pieces connect (Mermaid diagrams with context)

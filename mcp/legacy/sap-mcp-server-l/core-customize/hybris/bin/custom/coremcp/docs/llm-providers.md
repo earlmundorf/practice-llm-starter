@@ -1,10 +1,30 @@
-# LLM provider configuration
+# LLM providers — architecture and configuration
 
 The agent and visual search run against a runtime-selectable LLM backend behind
 the `LlmClient` abstraction. Three providers ship with the extension; all extend
 `AbstractHttpLlmProvider`, which owns the shared HTTP client, timeouts, and the
 transient-failure retry policy. Defaults for every property below live (with
 comments) in [`project.properties`](../project.properties).
+
+## Architecture
+
+```
+DefaultAgentService          ──┐
+DefaultVisualSearchService   ──┤───►  LlmClient  ──►  DefaultLlmClient  ──►  LlmProvider (selected by id)
+                                                                              │
+                                                                              ├──►  OpenAiLlmProvider
+                                                                              ├──►  AnthropicLlmProvider
+                                                                              └──►  OpenAiCompatibleLlmProvider
+                                                                                    (Azure / OpenRouter / Kong /
+                                                                                     vLLM / LocalAI / Together / ...)
+```
+
+- `LlmClient` (interface): the provider-neutral API consumed by agent + visual search services.
+- `DefaultLlmClient`: reads `coremcp.llm.provider` and dispatches to the matching `LlmProvider`.
+- `LlmProvider` (interface): one implementation per vendor; the default `chatCompletionStream` falls back to non-streaming and emits one chunk, so vendors that can't stream still satisfy the contract.
+- `AbstractHttpLlmProvider`: base for all providers — shared HttpClient, request timeouts, and bounded retry with exponential backoff for transient failures (429/5xx, connection errors). Streaming is never retried after the first delta.
+- `AbstractOpenAiCompatibleLlmProvider`: shared JSON plumbing for any provider speaking the OpenAI `/v1/chat/completions` protocol. Extended by `OpenAiLlmProvider` and `OpenAiCompatibleLlmProvider`.
+- `AnthropicLlmProvider`: adapts Anthropic's content-block format to the OpenAI-style `choices[].message` shape the agent loop expects; true SSE streaming with non-streaming fallback; tags the persona system block and tool definitions with `cache_control: ephemeral` for Anthropic's prompt cache.
 
 ## Provider selection
 
@@ -84,7 +104,31 @@ All three providers are registered with the SAP alias pattern
 extension can substitute a custom provider by redefining the alias.
 `DefaultLlmClient` (alias `llmClient`) routes by `coremcp.llm.provider`.
 
-To add a vendor: extend `AbstractOpenAiCompatibleLlmProvider` if it speaks the
-OpenAI protocol (override the abstract getters), or `AbstractHttpLlmProvider`
-for a custom wire format; define the bean with `parent="abstractHttpLlmProvider"`
-(inherits the retry policy wiring) plus a `default*` id and alias.
+## Adding a fourth provider
+
+1. Create `MyVendorLlmProvider.java` in `src/com/coremcp/services/impl/`. Either:
+   - extend `AbstractOpenAiCompatibleLlmProvider` if the vendor speaks the OpenAI
+     protocol (override the abstract getters — `Config.getString(...)` for
+     non-secrets, `System.getenv(...)` for the API key), or
+   - extend `AbstractHttpLlmProvider` directly for a different wire format, and
+     adapt the response to `{ choices: [{ message: { content, tool_calls? },
+     finish_reason }] }` — use `AnthropicLlmProvider` as the reference.
+2. Pick a unique `providerId` (e.g. `mistral`) — the value users set in
+   `coremcp.llm.provider`.
+3. Register it in `coremcp-spring.xml` with the alias pattern and the shared
+   parent: `<bean id="defaultMyVendorLlmProvider" parent="abstractHttpLlmProvider"
+   class="..."/>` + `<alias .../>`, and add a `<ref/>` to the
+   `defaultLlmClient.providers` list.
+4. Document the env var + properties at the top of the provider class and in
+   this file.
+
+## Notes
+
+- Secrets are read via `System.getenv(...)` only. Non-secret reads use static
+  `Config.getString(...)` / `Config.getInt(...)` at request time, except values
+  wired through `${...}` placeholders in `coremcp-spring.xml` (retry policy,
+  tunables) — those resolve from platform properties at boot.
+- The `openai-compatible` provider throws `IllegalStateException` on first use
+  if `coremcp.openai-compatible.baseurl` is unset.
+- All non-secret defaults are also baked into the Java code as fallbacks, so the
+  providers work in tests with no properties file wired.

@@ -12,14 +12,20 @@ could fix the format.
 
 ## Decision
 
-Keep the date attributes **out of the Solr index** and apply the validity-window
-filter in `DefaultKnowledgeSearchService` after the Solr query returns. The
-exclusion is documented with a comment at the site in the Solr config ImpEx.
+Keep the date attributes **out of the Solr index**. The exclusion is documented
+with a comment at the site in the Solr config ImpEx.
+
+**Honest current state (corrected 2026-06-10):** the validity window is also
+not enforced at query time — `DefaultKnowledgeSearchService` performs no date
+filtering, so `validFrom`/`validTo` are editorial bookkeeping only. Expired
+promo/event entries remain findable until unpublished or removed. This is
+acceptable for a small curated demo corpus.
 
 ## Consequences
 
-- Simple and correct today at knowledge-base scale (dozens of entries): the
-  post-filter cost is negligible.
-- Pages can under-fill (Solr returns N, Java filters some out). If the knowledge
-  base grows to thousands of time-bound entries, revisit with a custom
-  ISO-8601 value provider and a Solr range filter.
+- Simple today at knowledge-base scale (dozens of curated entries).
+- Upgrade paths, in order of effort: (a) a post-query date filter in
+  `DefaultKnowledgeSearchService` (pages can then under-fill), or (b) a custom
+  ISO-8601 value provider plus a Solr range filter for index-side enforcement —
+  the right answer if the knowledge base grows to thousands of time-bound
+  entries.
