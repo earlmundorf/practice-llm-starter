@@ -1,14 +1,17 @@
 ---
 name: storefront-qrspi
 description: >
-  QRSPI workflow for the React storefront in Claude Code — Ticket/Questions, Research,
-  Design, Structure, Plan, Implement, Validate. Use when a developer wants to work a
-  Jira ticket against this React/TypeScript/Vite storefront with structured stages:
+  QRSPI workflow for storefront projects in Claude Code — Ticket/Questions, Research,
+  Design, Structure, Plan, Implement, Validate. Framework-neutral: the research layers
+  and verification commands come from working-docs/config.json, so the same skill
+  serves a React/Vite storefront or an Angular SAP Composable Storefront with only a
+  different config. Use when a developer wants to work a Jira ticket against this
+  storefront with structured stages:
   decompose a ticket into research questions; run blind layered codebase research;
   align on design, assumptions, and success criteria; break work into vertical slices;
-  produce a tactical plan; implement manually or via Claude with npm-script
+  produce a tactical plan; implement manually or via Claude with toolchain
   verification; validate against success criteria. Triggers on QRSPI, "work this
-  ticket", components, pages, contexts, hooks, OCC API client, Tailwind, React Router
+  ticket", components, pages, state management, OCC API client, styling, routing
   combined with research/plan/implement intent.
 ---
 
@@ -18,9 +21,11 @@ You orchestrate a 7-stage workflow. **Each stage runs in a fresh context window,
 its declared input artifacts, stays under 40 instructions, and ends by printing the exact
 next command.** Never merge stages. Never skip a developer gate.
 
-This is the React-storefront variant of commerce-qrspi (which lives in the
-`sap-mcp-server-l` backend repo). Same architecture; the research layers, ground
-rules, and verb table are frontend-specific.
+This is the storefront sibling of commerce-qrspi (which lives in the
+`sap-mcp-server-l` backend repo). Same architecture; the research layers and verb
+table live in `working-docs/config.json`, which is what makes this skill portable
+across frontend stacks (React/Vite today; Angular Composable Storefront with a
+different config).
 
 ## Entry point — one command, four tiers
 
@@ -54,11 +59,10 @@ Structure exposes a flawed design → re-run 3. Implementation hits a fundamenta
 
 ## Storefront ground rules (apply in every stage)
 
-- **The repo's CLAUDE.md is authoritative** — functional components with named exports,
-  components under the line limit, all backend calls through `src/services/api.ts`
-  (never `fetch()` in components), typed responses from `src/types/index.ts`,
-  `showToast()` feedback, `formatPrice/formatDate` helpers, Tailwind class ordering
-  with `dark:` variants, loading + error states on every async operation.
+- **The repo's CLAUDE.md is authoritative** for component/state patterns, the
+  designated API boundary layer (no direct fetch/HTTP in components), typed responses,
+  user feedback and formatting helpers, styling conventions, and loading + error
+  states on every async operation.
 - Never edit `node_modules/` or `dist/`; never commit `.env`.
 - **Stages never hardcode build commands.** They reference verification VERBS, resolved
   through the build adapter in `working-docs/config.json` (see below).
@@ -70,9 +74,12 @@ Structure exposes a flawed design → re-run 3. Implementation hits a fundamenta
 
 On first run (any stage), if `working-docs/config.json` is missing:
 
-1. **Detect stack:** `package.json` scripts + lockfile (npm/pnpm/yarn), Vite vs other
-   bundler, TypeScript (`tsconfig.json`), test runner (vitest/jest — may be absent),
-   router/styling libs from dependencies.
+1. **Detect stack:** `package.json` scripts + lockfile (npm/pnpm/yarn), bundler/CLI
+   (Vite, Angular CLI, ...), TypeScript (`tsconfig.json`), test runner (vitest/jest/
+   karma — may be absent), router/styling libs from dependencies. Derive
+   `researchLayers` for the stack (React: routing/pages → components → state →
+   API/types → build; Angular Composable Storefront: CMS components/feature modules →
+   facades/connectors/adapters → state → OCC config → build) and confirm.
 2. **Detect Jira mode** (`jira.mode`: `mcp` | `manual` | `none`) exactly as in
    commerce-qrspi: MCP tools respond → `mcp`; Jira exists but unreachable → `manual`
    (developer pastes ticket in; outbound updates written paste-ready to

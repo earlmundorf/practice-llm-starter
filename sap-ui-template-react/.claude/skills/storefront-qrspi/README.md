@@ -1,10 +1,15 @@
 # storefront-qrspi
 
 QRSPI workflow (Ticket/Questions → Research → Design → Structure → Plan → Implement →
-Validate) adapted for this React/TypeScript/Vite storefront. The React-frontend sibling
-of `commerce-qrspi` in the `sap-mcp-server-l` backend repo — same architecture (small
-stages in fresh contexts, blind research, two short review gates, tiered ceremony,
-verb-resolved verification), with frontend research layers and an npm build adapter.
+Validate) for storefront projects — the frontend sibling of `commerce-qrspi` in the
+`sap-mcp-server-l` backend repo. Same architecture (small stages in fresh contexts,
+blind research, two short review gates, tiered ceremony, verb-resolved verification).
+
+**Framework-neutral by design:** the research layers AND the verification verbs live in
+`working-docs/config.json`, so this exact skill folder serves a React/Vite storefront
+(this repo's config) or an Angular SAP Composable Storefront (copy the folder, seed an
+Angular config: `ng build`/`ng test` verbs; CMS-component/feature-module/facade layers).
+One skill definition, one config per repo — no per-framework forks to keep in sync.
 
 ## Usage
 

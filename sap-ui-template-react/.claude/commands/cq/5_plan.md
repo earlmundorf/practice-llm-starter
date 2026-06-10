@@ -12,11 +12,10 @@ developer only spot-checks this document.
    - Specific change description (props interfaces, api.ts signatures, route entries — not prose essays)
    - Verification: the slice checkpoint's verbs resolved to concrete commands from
      `working-docs/config.json` (or `MANUAL:` instructions where so configured)
-2. Respect the repo's CLAUDE.md conventions — they are authoritative over this list:
-   functional components with named exports, components under the line limit, all
-   backend calls through `src/services/api.ts` with typed responses, loading + error
-   states, `showToast()` feedback, format helpers, Tailwind ordering with `dark:`
-   variants, never touch `node_modules/`/`dist/`.
+2. Respect the repo's CLAUDE.md conventions — they are authoritative: component and
+   state patterns, the designated API boundary layer (no direct fetch/HTTP in
+   components), typed responses, loading + error states, user feedback and formatting
+   helpers, styling conventions, never touch `node_modules/`/`dist/`.
 3. Final task is always **Documentation**: distill research into permanent flow docs
    (`context.md`, `components.md`, `diagram.md`).
 4. Jira handling per `jira.mode` in config — never create Epics, Stories, or sub-tasks;

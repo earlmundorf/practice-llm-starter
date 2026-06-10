@@ -11,13 +11,11 @@ facts with `file:line` references, no opinions, no recommendations.
    (layout, build system, verb table) and confirm with the developer before proceeding.
    Note any missing tooling (e.g., no test runner) in the config.
 3. Dispatch one subagent per layer, fresh context each, scoped to its questions:
-   - Layer 0 Routing & pages: `App.tsx` routes, `src/pages/`, navigation patterns
-   - Layer 1 Components: `src/components/`, composition, props contracts, Tailwind usage
-   - Layer 2 State: `src/contexts/`, custom hooks, URL-driven state, window events
-     (`cartUpdated`, `authChanged`, `authExpired`)
-   - Layer 3 API & types: `src/services/api.ts` methods, `src/types/index.ts` shapes,
-     OCC endpoint contracts, auth/cart lifecycle (`ensureCart`, token handling)
-   - Layer 4 Build & config: `vite.config.ts` (proxy, aliases), env vars, eslint/tsconfig
+   The layer list comes from `researchLayers` in `working-docs/config.json` — one
+   subagent per layer, scoped to that layer's questions and scan targets. (This keeps
+   the skill framework-neutral: a React repo researches routing/components/state/API;
+   an Angular Composable Storefront repo researches CMS components/feature modules/
+   facades-connectors — each defined in its own config.)
    Each subagent returns answers with file:line; you keep only the answers, not raw scans.
 4. Assemble `research.md`: each question, its factual answer, file:line evidence,
    existing patterns observed (as facts: "X is done via Y in three places: …").

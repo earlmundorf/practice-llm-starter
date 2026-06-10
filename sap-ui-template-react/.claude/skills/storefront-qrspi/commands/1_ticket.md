@@ -18,9 +18,8 @@ to paste, never block the workflow.
    codebase area the ticket could touch. Questions describe what to find, never what to
    build. Bad: "How should we add the new discount type?" Good: "How are discount types
    defined, registered, and evaluated today? (file:line)"
-4. Cover the storefront areas explicitly where relevant: routing/pages, components,
-   contexts/state, services/API client (`src/services/api.ts`), types
-   (`src/types/index.ts`), styling/Tailwind, build/env configuration.
+4. Cover every storefront area in `researchLayers` (from `working-docs/config.json`)
+   explicitly where relevant, plus styling and build/env configuration.
 5. If the ticket is trivial (<3 files, one sentence), say so and recommend skipping QRSPI.
 6. Show the developer both files. Ask only: "Any questions to add or remove?"
 7. End by printing: `Next: /cq:2_research working-docs/<TICKET-KEY>/ — run in a FRESH session.`
