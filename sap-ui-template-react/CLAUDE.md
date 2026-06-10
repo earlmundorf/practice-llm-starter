@@ -75,6 +75,20 @@ SAP-UI-Template/
 | `src/components/Layout.tsx` | Wraps all routes with Header + Toast container |
 | `src/components/Toast.tsx` | Toast notifications via `showToast('success', 'Added to cart')` |
 
+## Skills & Workflow
+
+| Skill (`.claude/skills/`) | Use it for |
+|---|---|
+| `react-typescript` | Development how-to: stack, npm toolchain, add-a-page/context/API-method recipes |
+| `commerce-storefront` | Backend integration: OCC contracts, auth/cart lifecycle, the coremcp agent/knowledge/visual-search endpoints |
+| `react-ecommerce` | Code review against this repo's conventions |
+| `storefront-qrspi` | Structured ticket workflow — `/cq:go <TICKET> [tier]` (trivial/simple/full/comprehensive) |
+
+QRSPI verification verbs resolve from `working-docs/config.json` (committed; the rest
+of `working-docs/` is gitignored per-ticket scratch). Note: `UNIT_TEST` is `MANUAL:`
+until a test runner is added — verify with `npx tsc --noEmit && npm run lint` plus a
+dev-server check.
+
 ## Documentation Convention
 
 Each feature flow has a dedicated directory under `docs/` with three files:
