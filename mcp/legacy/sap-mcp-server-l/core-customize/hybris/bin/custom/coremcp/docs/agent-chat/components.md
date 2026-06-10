@@ -6,16 +6,20 @@
 |------|----------|---------|
 | `AgentController.java` | `src/com/coremcp/controllers/` | REST endpoints `POST /{baseSiteId}/agent/chat` (JSON) and `POST /{baseSiteId}/agent/chat/stream` (SSE). Parses request body, loads cart into Hybris session, delegates to `AgentService`, attaches the session cart code, writes either a JSON response or SSE events depending on the route + `coremcp.agent.streaming.enabled`. Secured to `ROLE_CUSTOMERGROUP` and `ROLE_TRUSTED_CLIENT`. |
 | `AgentService.java` | `src/com/coremcp/services/` | Interface with two methods: `chat(messages)` (non-streaming) and `chatStream(messages, textDeltaConsumer, toolEventConsumer)`. |
-| `DefaultAgentService.java` | `src/com/coremcp/services/impl/` | Core orchestration. On `@PostConstruct`, builds a tool handler lookup map and the full tool definition list. On each turn: prepends persona prompt + state snapshot, runs the LLM tool loop (up to 10 iterations), captures `ui_action` calls, collects `entityRefs` from product/order tool calls, returns `{reply, messages, action?, entityRefs?}`. Both `chat()` and `chatStream()` share `runChat()`; the streaming path simply threads the consumers through to `LlmClient.chatCompletionStream`. |
+| `DefaultAgentService.java` | `src/com/coremcp/services/impl/` | Orchestration only. On `@PostConstruct`, builds the tool definition list. On each turn: prepends persona prompt + state snapshot (from `AgentStateSnapshotBuilder`), runs the LLM tool loop (up to `coremcp.agent.maxToolIterations`, default 10), delegates each tool call to `AgentToolInvoker`, returns `{reply, messages, action?, entityRefs?}`. Both `chat()` and `chatStream()` share `runChat()`; the streaming path threads the consumers through to `LlmClient.chatCompletionStream`. LLM responses are parsed once into typed `LlmChatResponse`/`LlmToolCall` (`dto/llm/`). |
+| `DefaultAgentToolInvoker.java` | `src/com/coremcp/services/impl/` | Executes one tool call: duplicate detection (per-turn `AgentTurnContext`), `ui_action` capture, handler dispatch, entity-ref collection, error containment ("Tool error: …" result, never a failed turn). |
+| `DefaultAgentStateSnapshotBuilder.java` | `src/com/coremcp/services/impl/` | Builds the per-turn "CURRENT STATE" system message (customer + cart snapshot) from `CustomerFacade`/`CartFacade`; best-effort, degrades to a smaller snapshot on facade errors. |
+| `DefaultEntityRefCollector.java` | `src/com/coremcp/services/impl/` | Extracts product/order entity refs from tool args + results onto the turn context (capped at 5 per call). |
 | `LlmClient.java` | `src/com/coremcp/services/` | Provider-neutral interface: `chatCompletion()` (with optional model override) and `chatCompletionStream()` (with text delta consumer). |
 | `DefaultLlmClient.java` | `src/com/coremcp/services/impl/` | Routes to the configured provider based on `coremcp.llm.provider` (default `openai`; production default `anthropic`). See `coremcp/docs/llm/README.md`. |
 | `LlmProvider.java` | `src/com/coremcp/services/` | Strategy interface — one implementation per vendor (`OpenAiLlmProvider`, `AnthropicLlmProvider`, `OpenAiCompatibleLlmProvider`). The default `chatCompletionStream` calls `chatCompletion` and emits the full reply as one chunk, so vendors that can't stream still satisfy the contract. |
 | `AnthropicLlmProvider.java` | `src/com/coremcp/services/impl/` | Anthropic-specific provider. Sends system as an array of content blocks with `cache_control: ephemeral` on the persona block; tags the last tool definition with `cache_control: ephemeral`. Implements true SSE consumption for `chatCompletionStream`, with auto-fallback to non-streaming when the gateway returns non-`text/event-stream` content. Logs `cache_creation_input_tokens` / `cache_read_input_tokens` for observability. |
-| `AbstractOpenAiCompatibleLlmProvider.java` | `src/com/coremcp/services/impl/` | Shared HTTP + JSON plumbing for OpenAI-flavored providers. Reads `coremcp.llm.timeout.seconds`. |
+| `AbstractHttpLlmProvider.java` | `src/com/coremcp/services/impl/` | Base for all HTTP providers: shared HttpClient, request timeouts (`coremcp.llm.timeout.seconds`, `coremcp.llm.stream.timeout.seconds`), and bounded retry with exponential backoff for 429/500/502/503 and connection errors (`coremcp.llm.retry.maxAttempts`, `coremcp.llm.retry.baseDelayMillis`). Streaming responses are never retried after the first delta. |
+| `AbstractOpenAiCompatibleLlmProvider.java` | `src/com/coremcp/services/impl/` | Shared JSON plumbing for OpenAI-flavored providers, on top of `AbstractHttpLlmProvider`. |
 
 ## Tool Handlers Injected into AgentService
 
-The `agentService` bean receives all 18 tool handlers via Spring XML. The full set is sent to the LLM on every turn (no per-intent filtering).
+The `agentService` bean receives all 20 tool handlers via Spring XML. The full set is sent to the LLM on every turn (no per-intent filtering).
 
 | # | Bean Name | Tool Name | Purpose |
 |---|-----------|-----------|---------|
@@ -36,11 +40,13 @@ The `agentService` bean receives all 18 tool handlers via Spring XML. The full s
 | 15 | `checkoutSetPaymentToolHandler` | `checkout_set_payment` | Set payment info on cart |
 | 16 | `orderPlaceToolHandler` | `order_place` | Place the order |
 | 17 | `promotionsGetToolHandler` | `promotions_get` | Query active promotions and coupon redemption data |
-| 18 | `uiActionToolHandler` | `ui_action` | Trigger UI-side navigation (e.g., go to checkout page) |
+| 18 | `infoGetToolHandler` | `info_get` | Get a knowledge entry by uid (policies, events, how-tos) |
+| 19 | `infoSearchToolHandler` | `info_search` | Free-text knowledge base search via Solr knowledgeIndex |
+| 20 | `uiActionToolHandler` | `ui_action` | Trigger UI-side navigation (e.g., go to checkout page) |
 
 ## Entity Reference Collection
 
-`DefaultAgentService.collectEntityRefs()` runs after each tool execution and pulls user-visible identifiers out of the tool result so the chat UI can render clickable chips:
+`DefaultEntityRefCollector` (invoked by `DefaultAgentToolInvoker` after each tool execution) pulls user-visible identifiers out of the tool result so the chat UI can render clickable chips:
 
 | Tool | Refs emitted |
 |------|--------------|
@@ -121,7 +127,7 @@ Refs are deduplicated and capped per turn to keep the chip row sane. Other tools
 | `coremcp-web-spring.xml` | Component-scans `com.coremcp.controllers`, picks up `AgentController` automatically |
 | `McpToolHandler.java` | Interface implemented by all tool handlers — `getName()`, `getDescription()`, `getInputSchema()`, `execute()` |
 | `McpToolResult.java` | Return type from `handler.execute()` — wraps content string |
-| All 18 tool handler implementations | Each called by the agent during the tool loop via the handler map |
+| All 20 tool handler implementations | Each called by the agent during the tool loop via the handler map |
 | `McpCartSessionService` | Loads a cart into the Hybris session by code or `"current"` |
 
 ## Dependency Chain

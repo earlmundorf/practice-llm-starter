@@ -81,6 +81,15 @@ The version numbers must match:
 - **Suite version** → `commerceSuiteVersion` in `manifest.json`
 - **Integration pack version** → `intExtPackVersion` in `build.gradle`
 
+> **How sample data loads:** all demo data lives in `sampledatamcp/resources/impex/`.
+> Files matching `essentialdata-*.impex` import on every initialize/update;
+> `projectdata-*.impex` import **only during initialize** — to load a new
+> projectdata file on an existing database, import it explicitly with
+> `./gradlew impex -Pfile=...`. Filenames carry numeric prefixes
+> (`essentialdata-00-…`, `projectdata-10-…`) because the platform imports them
+> alphabetically and order matters (infrastructure → Solr configs; products →
+> media → category assignments). Keep the convention for new files (ADR 0006).
+
 > **Version pin (June 2026):** `manifest.json` is deliberately pinned to **2211.38**
 > to match the suite ZIP used for local development, so local and CCv2 cloud builds
 > compile against the same patch. When upgrading, bump `manifest.json` and the local

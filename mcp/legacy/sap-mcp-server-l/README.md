@@ -4,12 +4,14 @@ An SAP Commerce (Hybris) 22.11 extension that implements a [Model Context Protoc
 
 ## Features
 
-- **MCP Protocol:** Full JSON-RPC implementation with tool registration and session management
-- **Commerce Tools:** Product search, cart management, checkout flow, order history, customer lookup
-- **Agent Service:** OpenAI-powered agent with MCP tool access for autonomous commerce operations
-- **Sample Data:** Complete electronics catalog with 10 products, pricing, stock, customers, and orders
-- **Solr Search:** Full-text product search with facets, price ranges, and sort options
+- **MCP Protocol:** Full JSON-RPC 2.0 implementation — 19 commerce tools, DB-persisted cluster-safe sessions (survive restarts and multi-node routing), tool registration
+- **Commerce Tools:** Product search (keyword + category facets), cart and voucher management, checkout flow, order history, customer lookup, promotions, knowledge base
+- **Agent Service:** Multi-provider LLM agent (OpenAI / Anthropic / OpenAI-compatible) with tool calling, SSE streaming, transient-failure retry, and per-user rate limiting
+- **Visual Search:** Vision-model image analysis with 3-tier catalog matching
+- **Sample Data:** Electronics + merch catalog (21 products incl. an out-of-stock edge case), categories, pricing, stock, images, customers, orders, knowledge base, promotions
+- **Solr Search:** Full-text product + knowledge search with category/price/stock facets and sort options
 - **Gradle Build:** Full lifecycle management via the SAP Commerce Gradle Plugin (no `ant` or `setantenv.sh` needed)
+- **Governance:** [SECURITY.md](SECURITY.md) (secrets policy + production checklist), [docs/adr/](docs/adr/) (architecture decisions), [docs/review/](docs/review/) (architecture review + improvement plan), end-to-end smoke test (`scripts/smoke-test.sh`)
 
 ## Prerequisites
 
@@ -43,6 +45,9 @@ cd core-customize
 # 6. Set up promotions
 ./scripts/setup-promotions.sh
 ./gradlew groovy -Pfile=scripts/publish-promotions.groovy -Pcommit=true
+
+# 7. Verify everything end to end (21 checks: OAuth, MCP, search, cart, agent)
+./scripts/smoke-test.sh
 ```
 
 ## Repository Structure
@@ -72,8 +77,9 @@ sap-mcp-server-l/
 │   │   ├── index-solr.groovy
 │   │   ├── setup-promotions.sh      # Create promotions
 │   │   ├── publish-promotions.groovy # Publish promotions to Drools
-│   │   ├── mcp-stdio-bridge.py
-│   │   └── test-mcp-e2e.py
+│   │   ├── mcp-stdio-bridge.py      # Stdio↔HTTP bridge for MCP clients (.mcp.json)
+│   │   ├── smoke-test.sh            # 21-check end-to-end suite vs live server
+│   │   └── test-mcp-e2e.py          # Protocol-level MCP e2e (incl. session DELETE)
 │   └── hybris/
 │       ├── bin/custom/               # Custom extensions (checked in)
 │       └── config/                   # Generated — do not check in

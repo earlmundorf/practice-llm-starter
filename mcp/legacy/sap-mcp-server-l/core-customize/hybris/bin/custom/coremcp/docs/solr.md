@@ -2,7 +2,7 @@
 
 ## Overview
 
-The coremcp extension configures Solr faceted search for the 10 ThinkShop electronics products. This enables full-text search, price range faceting, stock status faceting, and multiple sort options via the OCC `/products/search` endpoint.
+Solr faceted search for the ThinkShop catalog (21 products: electronics + merch + an out-of-stock edge case). Enables full-text search, category/price-range/stock-status faceting, and multiple sort options via the OCC `/products/search` endpoint. The index configuration ImpEx lives in `sampledatamcp/resources/impex/essentialdata-10-solr.impex` (+ `-30-solr-product-category.impex` for the category facet); a second index, `knowledgeIndex` (`essentialdata-20-solr-knowledge.impex`), serves the knowledge base.
 
 ## Architecture
 
@@ -29,6 +29,10 @@ OCC /products/search → ProductSearchFacade → SolrProductSearchFacade
 | priceValue | double (currency) | no | MultiSelectOr (ranges) | yes |
 | inStockFlag | boolean | no | MultiSelectOr | no |
 | stockLevelStatus | string | no | MultiSelectOr | no |
+| category | string (supercategory codes) | no | MultiSelectOr | no |
+
+Category facet values: `computing`, `mobile`, `audio`, `accessories` (electronics)
+and `swag`, `swag-apparel`, `swag-drinkware`, `swag-accessories` (merch).
 
 ## Price Range Facets (USD)
 

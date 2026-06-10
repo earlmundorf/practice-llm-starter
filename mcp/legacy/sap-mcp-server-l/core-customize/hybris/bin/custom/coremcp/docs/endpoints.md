@@ -426,7 +426,20 @@ Authorization: Bearer <token>
 | Status | Condition | Body |
 |--------|-----------|------|
 | 400 | Missing `image` field | `{"error": "image (base64) is required"}` |
-| 400 | Unsupported MIME type | `{"error": "Unsupported image type: ..."}` |
+| 400 | Unsupported MIME type | `{"error": "Unsupported image type: <type>. Allowed: [image/jpeg, image/png, image/webp, image/gif]"}` |
+| 400 | Payload is not valid base64 | `{"error": "image is not valid base64 data"}` |
 | 401 | Missing/invalid OAuth token | `{"errors": [{"message": "Access is denied"}]}` |
-| 413 | Image exceeds 10MB | `{"error": "Image exceeds maximum size of 10MB"}` |
+| 413 | Image exceeds size cap (`coremcp.visualsearch.maxImageBytes`, default 10,000,000 base64 bytes) | `{"error": "Image exceeds maximum size of <n> bytes (base64)"}` |
+| 429 | Per-user rate limit exceeded (`coremcp.agent.rateLimit.perMinute`, default 20, shared across all `/agent/*` endpoints) | `{"error": "Too many requests — please wait a moment and try again"}` |
 | 500 | Server error | `{"error": "<message>"}` |
+
+## Agent Chat Endpoints
+
+`POST /{baseSiteId}/agent/chat` and `/agent/chat/stream` are specified in
+[agent-chat/context.md](agent-chat/context.md). Shared request guards:
+
+| Status | Condition | Body |
+|--------|-----------|------|
+| 400 | Missing/empty `messages` | `{"error": "messages array is required"}` |
+| 400 | More than `coremcp.agent.maxMessagesPerRequest` (default 50) messages | `{"error": "messages array exceeds maximum of <n> entries"}` |
+| 429 | Per-user rate limit exceeded (`coremcp.agent.rateLimit.perMinute`, default 20) | `{"error": "Too many requests — please wait a moment and try again"}` |

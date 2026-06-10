@@ -15,6 +15,7 @@
 | [05 — Data & Search](05-data-and-search.md) | Architects, functional consultants | Catalog, sample data, knowledge base, Solr index design, promotions |
 | [06 — Strategic Alignment](06-strategic-alignment.md) | Leadership, SAP product stakeholders | How this maps to SAP's announced roadmap (Storefront MCP, Joule) and the industry MCP wave |
 | [07 — Improvement Plan](07-improvement-plan.md) | Delivery teams | Phased, executable plan: every task with files, verification commands, and acceptance criteria |
+| [08 — Documentation Audit](08-documentation-audit.md) | Maintainers | Post-Phase-4 staleness audit: wrong claims, gaps, script/skill/planning remnants, and false alarms |
 
 ## Verdict in one paragraph
 

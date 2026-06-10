@@ -16,4 +16,4 @@ Step-by-step guide for adding a new feature to an OCC extension. Each new featur
    </bean>
    ```
 6. **Create Controller** — `@Controller`, `@Secured`, `@Operation`, inject facade via `@Resource`
-7. **Build** — `./gradlew ybuild` (or `./gradlew ybuild stopServer startServer yupdatesystem` if `items.xml` changed)
+7. **Build** — `./gradlew yclean ybuild stopServer startServer` (or `./gradlew yclean ybuild stopServer yupdatesystem startServer` if `items.xml` changed — run `yupdatesystem` with the server stopped)

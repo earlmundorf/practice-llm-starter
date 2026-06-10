@@ -163,16 +163,24 @@ After an `*-items.xml` change, the junit tenant must be re-initialized once
 7. **After `*-beans.xml` changes**: `./gradlew ybuild stopServer startServer`
 8. **After Java source changes**: `./gradlew ybuild stopServer startServer`
 9. **Register new extensions** in `core-customize/hybris/config/localextensions.xml` before building
+10. **Keep reference docs in sync** — when changing tool schemas, endpoints, or configuration properties, update the matching reference doc (`coremcp/docs/tools.md`, `endpoints.md`, `llm-providers.md`) in the same commit
 
 ## Extension: coremcp
 
 The `coremcp` extension provides:
-- **MCP server:** JSON-RPC protocol implementation for AI agent integration
-- **Tool handlers:** Product search, cart management, checkout, order history, customer lookup
-- **Agent service:** OpenAI-powered agent with MCP tool access
-- **ImpEx data:** OAuth clients, catalog, products, pricing, stock, customers, orders, delivery/payment modes, base store/site
-- **Visual search:** GPT-4o Vision image analysis with 3-tier catalog search (POST /{baseSiteId}/agent/visual-search)
-- **Solr configuration:** `thinkshopIndex` with indexed properties, price range facets, sort definitions
+- **MCP server:** JSON-RPC 2.0 protocol with 19 tools and a DB-persisted, cluster-safe session store (`McpSessionEntry`; `coremcp.session.store=persistent|memory`)
+- **Tool handlers:** Product search (keyword + categories), cart/vouchers, checkout, orders, customer lookup, promotions, knowledge base
+- **Agent service:** Multi-provider LLM agent (OpenAI/Anthropic/OpenAI-compatible) with tool calling, SSE streaming, transient-failure retry, and per-user rate limiting (`coremcp.agent.rateLimit.perMinute`)
+- **Visual search:** Vision-model image analysis with 3-tier catalog search (POST /{baseSiteId}/agent/visual-search)
+- **Solr configuration:** `thinkshopIndex` (products: category/price/stock facets) and `knowledgeIndex` (knowledge base)
+
+Operational tunables are defined with commented defaults in
+`core-customize/hybris/bin/custom/coremcp/project.properties`.
+Sample data lives entirely in `sampledatamcp` (excluded from production builds);
+its ImpEx files carry numeric load-order prefixes (`essentialdata-NN-*`,
+`projectdata-NN-*`) — keep that convention for new data files. Note that
+`projectdata-*` only loads on initialize; on an existing DB import new files via
+`./gradlew impex -Pfile=...`.
 
 See `core-customize/hybris/bin/custom/coremcp/docs/` for architecture, endpoints, and protocol documentation.
 

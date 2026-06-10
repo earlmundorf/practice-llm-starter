@@ -15,7 +15,7 @@ Search the product catalog by keyword with optional pagination.
 ```json
 {
   "name": "product_search",
-  "description": "Search products by keyword, with optional category filter and pagination. Returns matching products with prices, images, and pagination metadata.",
+  "description": "Search the ThinkShop catalog by keyword, with optional category filter and pagination. [...] Known category codes — Electronics: 'computing' (laptops, monitors), 'mobile' (smartphones, tablets, smartwatches), 'audio' (headphones, speakers), 'accessories' (keyboards, mice, webcams). Merch: 'swag', 'swag-apparel', 'swag-drinkware', 'swag-accessories'. [...] Some products may be out of stock (stockLevelStatus 'outOfStock') — say so honestly and suggest an in-stock alternative.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -34,18 +34,22 @@ Search the product catalog by keyword with optional pagination.
       },
       "pageSize": {
         "type": "integer",
-        "description": "Number of results per page (max 100)",
-        "default": 20
+        "description": "Number of results per page (max 100). Default is small to keep the conversation light.",
+        "default": 5
       },
       "sort": {
         "type": "string",
-        "description": "Sort code (e.g., 'relevance', 'topRated', 'name-asc', 'name-desc', 'price-asc', 'price-desc')"
+        "description": "Sort code (e.g., 'relevance', 'name-asc', 'price-asc')"
       }
     },
     "required": ["query"]
   }
 }
 ```
+
+The full agent-facing description (category guidance, keyword-vs-category usage,
+out-of-stock handling) lives in `ProductSearchToolHandler.getDescription()` —
+the source string is authoritative; the JSON above abridges it with `[...]`.
 
 **Example response content:**
 

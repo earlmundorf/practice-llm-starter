@@ -76,9 +76,19 @@ The path is controlled by the platform's `HYBRIS_DATA_DIR` property, which defau
 ./gradlew yinitialize       # Initialize database + load sample data
 ```
 
+## Sample Data Layout
+
+All demo data lives in `hybris/bin/custom/sampledatamcp/resources/impex/`, named
+with numeric prefixes that control alphabetical load order (see ADR 0006):
+`essentialdata-NN-*.impex` (infrastructure, Solr configs — re-imported on every
+initialize/update) and `projectdata-NN-*.impex` (products, media, categories,
+customers, orders, knowledge — **initialize only**; import new files onto an
+existing DB via `./gradlew impex -Pfile=...`). The per-file inventory is in
+`sampledatamcp/docs/sampledatamcp/sample-data/components.md`.
+
 ## Media Files
 
-Product images and documents are stored in `hybris/data/media/sys_master/`. They are loaded during initialization from ImpEx scripts in the `sampledatamcp` extension.
+Product images and documents are stored in `hybris/data/media/sys_master/`. They are loaded during initialization from `projectdata-30-product-media.impex` in the `sampledatamcp` extension.
 
 Configured in platform defaults:
 ```properties

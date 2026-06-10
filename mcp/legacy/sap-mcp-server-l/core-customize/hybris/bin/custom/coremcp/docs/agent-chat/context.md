@@ -25,7 +25,7 @@ The streaming endpoint is gated by `coremcp.agent.streaming.enabled` (default `t
 
 ## Key Decisions
 
-1. **No intent classifier — full tool set every turn.** An earlier design ran a Haiku call before the main agent to classify intent (browse/cart/checkout) and filter tools accordingly. Profiling showed that classifier added 1.3–2.3 s per turn AND caused the Anthropic prompt cache to thrash whenever the user shifted intents. We removed it. Sonnet picks tools fine from all 18 definitions; with prompt caching the marginal token cost of the extra tools is negligible.
+1. **No intent classifier — full tool set every turn.** An earlier design ran a Haiku call before the main agent to classify intent (browse/cart/checkout) and filter tools accordingly. Profiling showed that classifier added 1.3–2.3 s per turn AND caused the Anthropic prompt cache to thrash whenever the user shifted intents. We removed it. Sonnet picks tools fine from all 20 definitions; with prompt caching the marginal token cost of the extra tools is negligible.
 
 2. **Anthropic prompt caching on persona + tools.** The system prompt is sent as an array of content blocks: block 0 (the stable persona) gets `cache_control: {type: "ephemeral"}`; block 1 (the per-turn state snapshot) is uncached. The last tool definition also gets `cache_control: ephemeral`. Two breakpoints out of Anthropic's four; cached prefix is ~4400 input tokens once warm. First turn writes to cache, subsequent turns within ~5 minutes read from it.
 

@@ -28,7 +28,7 @@ sequenceDiagram
         Controller->>Agent: chat(messages)
     end
 
-    Note over Agent: All 18 tool definitions sent every turn —<br/>no classifier, no per-intent filtering.<br/>Anthropic prompt caching makes this cheap.
+    Note over Agent: All 20 tool definitions sent every turn —<br/>no classifier, no per-intent filtering.<br/>Anthropic prompt caching makes this cheap.
 
     loop Tool loop (max 10 iterations)
         Agent->>LLM: chatCompletion[Stream](messages, tools)<br/>system = [persona (cached), state snapshot]<br/>tools[last] has cache_control: ephemeral

@@ -4,7 +4,7 @@
 
 The coremcp extension implements a JSON-RPC 2.0 server that speaks the Model Context Protocol (MCP, spec version 2025-11-25) over Streamable HTTP transport. AI agents (Claude Code, React apps, curl) connect to a single OCC endpoint, open a session, discover available tools, and invoke them to interact with SAP Commerce — searching products, managing carts, completing checkout, viewing orders, and looking up customer data.
 
-The server exposes 16 tool handlers covering product catalog, shopping cart, checkout, orders, customer profile, promotions, and UI navigation. All tool handlers delegate to existing Commerce facades, so no new business logic is introduced.
+The server exposes 19 tools covering product catalog, shopping cart, vouchers, checkout, orders, customer profile, promotions, and the knowledge base (the agent service additionally has `ui_action` — 20 handlers total). All tool handlers delegate to existing Commerce facades, so no new business logic is introduced.
 
 ## When It's Used
 
@@ -36,31 +36,32 @@ The controller parses the JSON-RPC envelope, then routes by `method`:
 
 ## Session Lifecycle
 
-1. **Create** — Client sends `initialize` with optional `clientInfo` and `protocolVersion`. `DefaultMcpSessionService` generates a `sess_` + 12-char UUID ID, stores an `McpSession` in a `ConcurrentHashMap`, and returns the ID in the `MCP-Session-Id` response header.
+1. **Create** — Client sends `initialize` with optional `clientInfo` and `protocolVersion`. The session service generates a `sess_` + 12-char UUID ID, stores the session, and returns the ID in the `MCP-Session-Id` response header. The backing store is selected at boot by `coremcp.session.store`: **`persistent`** (default — `McpSessionEntry` items in the DB via `PersistedMcpSessionService`; cluster-safe, survives restarts) or `memory` (in-process `ConcurrentHashMap`, single-node; for tests and pre-`yupdatesystem` bootstraps). `DelegatingMcpSessionService` does the selection.
 
-2. **Active** — Every subsequent request must include the `MCP-Session-Id` header. `getSession()` calls `touch()` to update `lastAccessedAt`. The controller loads the session's cart (if any) via `cartLoaderStrategy` before dispatching, and saves the cart code back to the session after dispatch.
+2. **Active** — Every subsequent request must include the `MCP-Session-Id` header. Reads refresh `lastAccessedAt` (TTL: `coremcp.session.ttl.minutes`, default 30). The controller loads the session's cart (if any) via `cartLoaderStrategy` before dispatching, and persists the cart code back through `McpSessionService.updateCartCode()` after dispatch — never by mutating the returned DTO, which would be lost by the DB-backed store.
 
-3. **Terminated** — Client sends `DELETE` with the session header. `removeSession()` deletes it from the map. Any further requests with that ID get a -32600 error.
+3. **Terminated** — Client sends `DELETE` with the session header; `removeSession()` deletes it. Expired sessions are evicted lazily on access, and the `mcpSessionCleanupCronJob` sweeps abandoned ones every 30 minutes. Any further requests with a removed/expired ID get a -32600 error.
 
 ## Tool Registry
 
 `DefaultMcpDispatcherService` receives a `List<McpToolHandler>` via Spring injection. On `@PostConstruct`, it builds a `Map<String, McpToolHandler>` keyed by `getName()`. The tool list is static (`listChanged: false` in capabilities).
 
-### Registered Tools (16)
+### Registered Tools (20)
 
 **Product** (2): `product_search`, `product_get`
-**Cart** (4): `cart_get`, `cart_add_product`, `cart_update_entry`, `cart_remove_entry`
+**Cart** (6): `cart_get`, `cart_add_product`, `cart_update_entry`, `cart_remove_entry`, `cart_apply_voucher`, `cart_remove_voucher`
 **Checkout** (3): `checkout_set_delivery_address`, `checkout_set_delivery_mode`, `checkout_set_payment`
 **Order** (3): `order_get`, `order_history`, `order_place`
 **Customer** (2): `customer_get`, `customer_lookup`
 **Promotions** (1): `promotions_get`
+**Knowledge** (2): `info_get`, `info_search`
 **UI Actions** (1): `ui_action`
 
-Note: `ui_action` is registered on the AgentService's tool list but NOT on the MCP dispatcher's tool list. The MCP dispatcher has 15 tools; the agent service has all 16.
+Note: `ui_action` is registered on the AgentService's tool list but NOT on the MCP dispatcher's tool list. The MCP dispatcher has 19 tools; the agent service has all 20.
 
 ## Key Decisions
 
-1. **In-memory sessions** — `ConcurrentHashMap` storage is simple and fast. Trade-off: sessions are lost on restart and not shared across cluster nodes. Upgrade path: persist `McpSession` as a Hybris type via `coremcp-items.xml`.
+1. **Persistent sessions by default** — MCP clients identify sessions via the `MCP-Session-Id` header (not cookies), so CCv2's cookie-based sticky routing cannot keep a conversation on one node. Sessions are therefore persisted as `McpSessionEntry` items (DB-backed, cluster-safe, survive rolling deploys); the original in-memory store remains available via `coremcp.session.store=memory` for tests and local bootstraps. See [ADR 0002](../../../../../../docs/adr/0002-persisted-mcp-session-store.md).
 
 2. **Strategy pattern for tools** — Each tool is a separate `McpToolHandler` implementation. Tools are independently testable, new tools are added by implementing the interface and registering a bean, and the dispatcher has no knowledge of individual tool logic. Tools can be overridden via the SAP Commerce alias pattern.
 
