@@ -83,6 +83,7 @@ SAP-UI-Template/
 | `commerce-storefront` | Backend integration: OCC contracts, auth/cart lifecycle, the coremcp agent/knowledge/visual-search endpoints |
 | `react-ecommerce` | Code review against this repo's conventions |
 | `storefront-qrspi` | Structured ticket workflow — `/cq:go <TICKET> [tier]` (trivial/simple/full/comprehensive) |
+| `spartacus-storefront` | **Explicitly chosen Angular path** — SAP Composable Storefront (Spartacus 6.x) knowledge with 9 topic references. Never applies to this repo's React code; moves to the Composable Storefront repo when it exists |
 
 QRSPI verification verbs resolve from `working-docs/config.json` (committed; the rest
 of `working-docs/` is gitignored per-ticket scratch). Note: `UNIT_TEST` is `MANUAL:`
