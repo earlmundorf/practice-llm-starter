@@ -101,6 +101,22 @@ if `working-docs/config.json` is missing:
 Present detection as one paragraph for confirmation; the developer can override any
 command. Config is versioned in git, so the team sets it up once per repo.
 
+## Combined repos (core-customize/ + js-storefront/)
+
+When the storefront lives in the same repo (common for Composable Commerce), this is
+still **one workflow — do not also install storefront-qrspi** (the /cq commands would
+collide, and cross-stack tickets want vertical slices spanning both sides). Instead:
+- Add a frontend verb namespace to the config (`FE_INSTALL`, `FE_BUILD`, `FE_TEST`,
+  `FE_LINT` — each prefixed `cd js-storefront/<app> && ...`) and map
+  `js-storefront ts|scss|html` change types to them.
+- Research Layer 3 (Storefront) activates because `js-storefront/` exists; scope it to
+  the storefront app's structure (for Spartacus: CMS components, feature modules,
+  facades/connectors, OCC config).
+- Stage-4 slices should cut vertically across the stack: backend type/endpoint in one
+  slice checkpoint (BE verbs), the consuming storefront piece in the next (FE verbs).
+- Pair with the `spartacus-storefront` knowledge skill (explicit opt-in) for Composable
+  Storefront specifics.
+
 ## What this skill does NOT do
 
 Deploy, push without consent, modify OOTB code, write design.md before the stage-3 Q&A,

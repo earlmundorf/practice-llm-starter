@@ -11,6 +11,12 @@ blind research, two short review gates, tiered ceremony, verb-resolved verificat
 Angular config: `ng build`/`ng test` verbs; CMS-component/feature-module/facade layers).
 One skill definition, one config per repo — no per-framework forks to keep in sync.
 
+**Combined CCv2 repos:** if your storefront lives inside the backend repo
+(`js-storefront/` beside `core-customize/`), don't install this variant there — use
+`commerce-qrspi` alone with a frontend verb namespace (`FE_BUILD`, `FE_TEST`, ...) in
+its config; its storefront research layer activates automatically. One repo, one
+workflow, vertical slices across the stack.
+
 ## Usage
 
 ```
