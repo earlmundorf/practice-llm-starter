@@ -47,3 +47,7 @@ core-customize/.gradle/
 # OS
 .DS_Store
 Thumbs.db
+
+# QRSPI per-ticket working artifacts — only the shared build-adapter config is tracked
+working-docs/*
+!working-docs/config.json

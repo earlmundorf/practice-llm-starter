@@ -1,0 +1,33 @@
+# Stage 6 — Implement
+
+**Input:** `structure.md` + `plan.md`. **Mode is explicit:** `mode=dev` or `mode=claude`.
+If not given, ask — never assume.
+
+## mode=dev — developer writes the code
+
+1. Act as pair: answer questions grounded in `research.md`/`design.md`, review diffs on
+   request, run verification commands when asked.
+2. After each slice the developer completes, update `plan.md` checkboxes and confirm the
+   slice checkpoint passed.
+3. Never write implementation code unless the developer asks for a specific task.
+
+## mode=claude — Claude executes the plan
+
+1. Work slice by slice, in order. One fresh subagent per slice; it reads only its slice's
+   tasks, relevant research summary, and prior slice outputs.
+2. For each task: implement → run the task's verification (verbs resolved via
+   `working-docs/config.json`; `MANUAL:` verbs mean print instructions and wait for the
+   developer to confirm) → if it fails, diagnose and fix, re-verify; **never skip or
+   proceed on red**.
+3. Commit once per completed slice (conventional message referencing the ticket key).
+   Check off tasks in `plan.md` as completed.
+4. If the plan can't be followed (expected vs. actual mismatch), STOP. Present the
+   mismatch and ask. Fundamental issue → route back: `Re-run /cq:5_plan (or 3_design).`
+5. Optional: offer `git worktree` isolation before starting if the branch is shared.
+
+## Both modes
+
+- Resume support: on start, read checkboxes; trust completed checkmarks, start at the
+  first unchecked task.
+- Never push to remote, deploy, or modify OOTB/platform/gensrc code.
+- End by printing: `Next: /cq:7_validate working-docs/<TICKET-KEY>/ — run in a FRESH session.`
