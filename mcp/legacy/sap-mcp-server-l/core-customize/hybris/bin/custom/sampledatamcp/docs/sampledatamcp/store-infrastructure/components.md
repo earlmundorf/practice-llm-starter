@@ -2,9 +2,9 @@
 
 Two ImpEx files create the complete store infrastructure. Both use the `essentialdata-*` pattern (loaded on initialize and updatesystem).
 
-## essentialdata-infrastructure.impex
+## essentialdata-00-infrastructure.impex
 
-**File:** `resources/impex/essentialdata-infrastructure.impex`
+**File:** `resources/impex/essentialdata-00-infrastructure.impex`
 
 ### OAuth
 
@@ -80,9 +80,9 @@ Key ImpEx patterns:
 
 ---
 
-## essentialdata-solr.impex
+## essentialdata-10-solr.impex
 
-**File:** `resources/impex/essentialdata-solr.impex`
+**File:** `resources/impex/essentialdata-10-solr.impex`
 
 Sorts after infrastructure (`s` > `i`) so Catalog, Currency, and CatalogVersion already exist.
 

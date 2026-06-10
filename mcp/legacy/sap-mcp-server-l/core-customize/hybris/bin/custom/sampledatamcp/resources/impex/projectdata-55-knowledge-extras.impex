@@ -11,7 +11,7 @@
 #   - 1 charity tie-in for June.
 #
 # Load via:
-#   ./gradlew impex -Pfile=hybris/bin/custom/sampledatamcp/resources/impex/projectdata-knowledge-extras.impex
+#   ./gradlew impex -Pfile=hybris/bin/custom/sampledatamcp/resources/impex/projectdata-55-knowledge-extras.impex
 #
 # After import, re-trigger the full knowledgeIndex Solr index.
 # ---------------------------------------------------------------------------

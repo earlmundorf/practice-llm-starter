@@ -70,7 +70,10 @@ public class InfoToolHandlersTest
 	@Test
 	public void testInfoGetReturnsEntryAsJson()
 	{
-		when(search.getByUid("returns-policy")).thenReturn(Optional.of(stubDoc("returns-policy", "Returns & refunds")));
+		// Stub docs are created BEFORE when(...) — creating mocks inside thenReturn args
+		// nests stubbing and corrupts Mockito's in-progress state.
+		final var returnsPolicy = stubDoc("returns-policy", "Returns & refunds");
+		when(search.getByUid("returns-policy")).thenReturn(Optional.of(returnsPolicy));
 
 		final McpToolResult result = getHandler.execute(Map.of("uid", "returns-policy"));
 
@@ -122,8 +125,10 @@ public class InfoToolHandlersTest
 	@Test
 	public void testInfoSearchReturnsResultsArray()
 	{
+		final var returnsPolicy = stubDoc("returns-policy", "Returns");
+		final var shippingInfo = stubDoc("shipping-info", "Shipping");
 		when(search.search(eq("policy"), eq(null), anyInt()))
-			.thenReturn(List.of(stubDoc("returns-policy", "Returns"), stubDoc("shipping-info", "Shipping")));
+			.thenReturn(List.of(returnsPolicy, shippingInfo));
 
 		final McpToolResult result = searchHandler.execute(Map.of("query", "policy"));
 

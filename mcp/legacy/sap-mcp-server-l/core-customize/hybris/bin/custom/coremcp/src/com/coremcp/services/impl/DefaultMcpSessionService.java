@@ -17,13 +17,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * the map size crosses {@link #SWEEP_THRESHOLD} on a new session creation.
  * No background threads, no external dependencies.
  *
- * Single-node only — multi-node CCv2 deployments need either sticky sessions
- * at the load balancer or a persistent session store (TODO in coremcp-items.xml).
+ * Single-node only — multi-node CCv2 deployments use {@link PersistedMcpSessionService}
+ * instead (selected via the coremcp.session.store property).
  */
 public class DefaultMcpSessionService implements McpSessionService
 {
-	private static final Duration SESSION_TTL = Duration.ofMinutes(30);
 	private static final int SWEEP_THRESHOLD = 10_000;
+
+	private int ttlMinutes = 30;
 
 	private final ConcurrentHashMap<String, McpSession> sessions = new ConcurrentHashMap<>();
 
@@ -69,14 +70,34 @@ public class DefaultMcpSessionService implements McpSessionService
 		}
 	}
 
+	@Override
+	public void updateCartCode(final String sessionId, final String cartCode)
+	{
+		final McpSession session = getSession(sessionId);
+		if (session != null)
+		{
+			session.setCartCode(cartCode);
+		}
+	}
+
 	private boolean isExpired(final McpSession session)
 	{
-		return session.getLastAccessedAt().plus(SESSION_TTL).isBefore(Instant.now());
+		return session.getLastAccessedAt().plus(sessionTtl()).isBefore(Instant.now());
 	}
 
 	private void sweepExpired()
 	{
-		final Instant cutoff = Instant.now().minus(SESSION_TTL);
+		final Instant cutoff = Instant.now().minus(sessionTtl());
 		sessions.values().removeIf(s -> s.getLastAccessedAt().isBefore(cutoff));
+	}
+
+	private Duration sessionTtl()
+	{
+		return Duration.ofMinutes(ttlMinutes);
+	}
+
+	public void setTtlMinutes(final int ttlMinutes)
+	{
+		this.ttlMinutes = ttlMinutes;
 	}
 }

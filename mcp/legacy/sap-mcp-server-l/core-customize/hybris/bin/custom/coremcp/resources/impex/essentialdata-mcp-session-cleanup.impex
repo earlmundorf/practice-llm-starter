@@ -1,0 +1,15 @@
+# ---------------------------------------------------------------------------
+# MCP session cleanup — removes expired McpSessionEntry rows left behind by
+# abandoned agent conversations (the persistent session store evicts lazily on
+# access; this job sweeps sessions that are never touched again).
+# Runs every 30 minutes.
+# ---------------------------------------------------------------------------
+
+INSERT_UPDATE ServicelayerJob; code[unique = true]; springId
+; mcpSessionCleanupJob ; mcpSessionCleanupJob
+
+INSERT_UPDATE CronJob; code[unique = true]; job(code); sessionLanguage(isocode)[default = en]
+; mcpSessionCleanupCronJob ; mcpSessionCleanupJob
+
+INSERT_UPDATE Trigger; cronJob(code)[unique = true]; cronExpression
+; mcpSessionCleanupCronJob ; 0 0/30 * * * ?

@@ -12,7 +12,7 @@
 #   bin/custom/sampledatamcp/resources/sampledatamcp/import/images/products/
 #
 # Load via:
-#   ./gradlew impex -Pfile=hybris/bin/custom/sampledatamcp/resources/impex/projectdata-product-media.impex
+#   ./gradlew impex -Pfile=hybris/bin/custom/sampledatamcp/resources/impex/projectdata-30-product-media.impex
 # ---------------------------------------------------------------------------
 
 $productCatalog        = electronicsProductCatalog

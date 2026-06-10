@@ -5,7 +5,7 @@
 # catalog regardless of categoryCode.
 #
 # Loaded automatically via essentialdata-*.impex pattern; load order is
-# 'p' > 's' so it lands after essentialdata-solr.impex (which creates the
+# 'p' > 's' so it lands after essentialdata-10-solr.impex (which creates the
 # thinkshopProductType IndexedType this references).
 # ---------------------------------------------------------------------------
 

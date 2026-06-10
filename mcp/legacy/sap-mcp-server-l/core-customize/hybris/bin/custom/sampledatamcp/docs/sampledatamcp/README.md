@@ -20,9 +20,9 @@ SAP Commerce loads ImpEx files by filename pattern, then alphabetically within e
 
 | Order | File | Pattern | When |
 |---|---|---|---|
-| 1 | `essentialdata-infrastructure.impex` | `essentialdata-*` | initialize + updatesystem |
-| 2 | `essentialdata-solr.impex` | `essentialdata-*` | initialize + updatesystem |
-| 3 | `projectdata-sampledatamcp.impex` | `projectdata-*` | initialize only |
+| 1 | `essentialdata-00-infrastructure.impex` | `essentialdata-*` | initialize + updatesystem |
+| 2 | `essentialdata-10-solr.impex` | `essentialdata-*` | initialize + updatesystem |
+| 3 | `projectdata-10-products.impex` | `projectdata-*` | initialize only |
 | 4 | `setup-promotions.groovy` | (manual) | HAC Groovy console |
 
 The alphabetical sort matters: `infrastructure` < `solr`, so catalog and currency exist before Solr config references them. Project data loads after all essential data, so the store, warehouse, and delivery modes are in place before products and orders are created.

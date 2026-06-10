@@ -1,16 +1,13 @@
 package com.coremcp.services.impl;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.coremcp.dto.llm.LlmChatResponse;
+import com.coremcp.dto.llm.LlmToolCall;
 import com.coremcp.services.AgentService;
+import com.coremcp.services.AgentStateSnapshotBuilder;
+import com.coremcp.services.AgentToolInvoker;
+import com.coremcp.services.AgentTurnContext;
 import com.coremcp.services.LlmClient;
 import com.coremcp.tools.McpToolHandler;
-import com.coremcp.tools.McpToolResult;
-
-import de.hybris.platform.commercefacades.order.CartFacade;
-import de.hybris.platform.commercefacades.order.data.CartData;
-import de.hybris.platform.commercefacades.order.data.OrderEntryData;
-import de.hybris.platform.commercefacades.customer.CustomerFacade;
-import de.hybris.platform.commercefacades.user.data.CustomerData;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,24 +16,31 @@ import org.springframework.beans.factory.annotation.Required;
 import javax.annotation.PostConstruct;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+/**
+ * Orchestrates the agent turn: message assembly (persona prompt + state snapshot +
+ * history), the bounded LLM/tool loop, and result shaping for the client. Tool
+ * execution lives in {@link AgentToolInvoker}; the state snapshot in
+ * {@link AgentStateSnapshotBuilder}.
+ */
 public class DefaultAgentService implements AgentService
 {
 	private static final Logger LOG = LoggerFactory.getLogger(DefaultAgentService.class);
-	private static final int MAX_TOOL_ITERATIONS = 10;
+
+	// Defaults for the tunables below live in project.properties (coremcp.agent.*) and are
+	// injected via coremcp-spring.xml.
+	private int maxToolIterations = 10;
 
 	// Above this size, tool result payloads are replaced with a short snippet before being
 	// returned to the client (and thus echoed back on the next turn). Keeps long conversations
 	// from ballooning over time. The agent's own in-progress tool loop still sees full payloads.
-	private static final int TOOL_RESULT_SUMMARY_THRESHOLD = 300;
-	private static final int TOOL_RESULT_SUMMARY_SNIPPET = 200;
+	private int toolResultSummaryThreshold = 300;
+	private int toolResultSummarySnippet = 200;
 
 	private static final String SYSTEM_PROMPT =
 		"You are a knowledgeable friend who happens to know the ThinkShop electronics catalog (powered by " +
@@ -87,19 +91,14 @@ public class DefaultAgentService implements AgentService
 
 	private List<McpToolHandler> toolHandlers;
 	private LlmClient llmClient;
-	private CartFacade cartFacade;
-	private CustomerFacade customerFacade;
-	private final ObjectMapper objectMapper = new ObjectMapper();
+	private AgentStateSnapshotBuilder stateSnapshotBuilder;
+	private AgentToolInvoker toolInvoker;
 
-	private Map<String, McpToolHandler> toolHandlerMap;
 	private List<Map<String, Object>> openAiToolDefinitions;
 
 	@PostConstruct
 	public void init()
 	{
-		toolHandlerMap = toolHandlers.stream()
-			.collect(Collectors.toMap(McpToolHandler::getName, h -> h));
-
 		openAiToolDefinitions = toolHandlers.stream()
 			.map(this::buildToolDefinition)
 			.collect(Collectors.toList());
@@ -138,7 +137,6 @@ public class DefaultAgentService implements AgentService
 		return runChat(messages, textDeltaConsumer, toolEventConsumer);
 	}
 
-	@SuppressWarnings("unchecked")
 	private Map<String, Object> runChat(final List<Map<String, Object>> messages,
 		final Consumer<String> textDeltaConsumer,
 		final Consumer<String> toolEventConsumer)
@@ -164,16 +162,13 @@ public class DefaultAgentService implements AgentService
 		// customer_get.
 		final List<Map<String, Object>> fullMessages = new ArrayList<>();
 		fullMessages.add(Map.of("role", "system", "content", SYSTEM_PROMPT));
-		fullMessages.add(Map.of("role", "system", "content", buildStateSnapshotMessage()));
+		fullMessages.add(Map.of("role", "system", "content", stateSnapshotBuilder.buildStateSnapshotMessage()));
 		fullMessages.addAll(incoming);
 
-		String uiAction = null;
-		final Set<String> seenInvocations = new HashSet<>();
-		final List<Map<String, String>> entityRefs = new ArrayList<>();
-		final Set<String> entityRefKeys = new HashSet<>();
+		final AgentTurnContext context = new AgentTurnContext();
 
 		int iterations = 0;
-		while (iterations < MAX_TOOL_ITERATIONS)
+		while (iterations < maxToolIterations)
 		{
 			iterations++;
 			final long llmStartNs = System.nanoTime();
@@ -183,111 +178,30 @@ public class DefaultAgentService implements AgentService
 			LOG.info("[perf] llmRound iter={} streaming={} durationMs={}",
 				iterations, streaming, elapsedMs(llmStartNs));
 
-			final List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
-			if (choices == null || choices.isEmpty())
-			{
-				throw new RuntimeException("No choices in OpenAI response");
-			}
-
-			final Map<String, Object> choice = choices.get(0);
-			final Map<String, Object> assistantMessage = (Map<String, Object>) choice.get("message");
-			final String finishReason = (String) choice.get("finish_reason");
+			final LlmChatResponse parsed = LlmChatResponse.parse(response);
 
 			// Add assistant message to conversation
-			fullMessages.add(assistantMessage);
+			fullMessages.add(parsed.getAssistantMessage());
 
 			// If no tool calls, we're done
-			if (!"tool_calls".equals(finishReason) || !assistantMessage.containsKey("tool_calls"))
+			if (!parsed.hasToolCalls())
 			{
-				final String reply = (String) assistantMessage.getOrDefault("content", "");
-
-				// Return the result: the reply plus the full message history (minus system prompt)
-				final Map<String, Object> result = new LinkedHashMap<>();
-				result.put("reply", reply);
-				result.put("messages", summarizeHistoryForClient(pruneImageContent(fullMessages.subList(2, fullMessages.size()))));
-				if (uiAction != null)
-				{
-					result.put("action", uiAction);
-				}
-				if (!entityRefs.isEmpty())
-				{
-					result.put("entityRefs", entityRefs);
-				}
+				final Map<String, Object> result = buildResult(parsed.getContent(), fullMessages, context);
 				LOG.info("[perf] turn=complete iterations={} entityRefs={} durationMs={}",
-					iterations, entityRefs.size(), elapsedMs(turnStartNs));
+					iterations, context.getEntityRefs().size(), elapsedMs(turnStartNs));
 				return result;
 			}
 
 			// Process tool calls
-			final List<Map<String, Object>> toolCalls = (List<Map<String, Object>>) assistantMessage.get("tool_calls");
-			boolean allDuplicates = !toolCalls.isEmpty();
-			for (final Map<String, Object> toolCall : toolCalls)
+			boolean allDuplicates = !parsed.getToolCalls().isEmpty();
+			for (final LlmToolCall toolCall : parsed.getToolCalls())
 			{
-				final String toolCallId = (String) toolCall.get("id");
-				final Map<String, Object> function = (Map<String, Object>) toolCall.get("function");
-				final String toolName = (String) function.get("name");
-				final String argsJson = (String) function.get("arguments");
-
-				final String invocationKey = toolName + "|" + argsJson;
-				final boolean isDuplicate = !seenInvocations.add(invocationKey);
-
-				String toolResultContent;
-				if (isDuplicate)
-				{
-					LOG.info("Skipping duplicate tool invocation: {} {}", toolName, argsJson);
-					toolResultContent = "This tool was already called with the same arguments in this conversation. "
-						+ "Reuse the previous result instead of calling it again.";
-				}
-				else
+				final AgentToolInvoker.Outcome outcome = toolInvoker.invoke(toolCall, context, toolEventConsumer);
+				if (!outcome.isDuplicate())
 				{
 					allDuplicates = false;
-					LOG.info("Agent executing tool: {} with args: {}", toolName, argsJson);
-					// Notify the streaming caller that a tool is starting so the UI can render
-					// a transient "Looking up..." status while we wait for the round-trip. We
-					// suppress ui_action since it isn't user-visible work.
-					if (toolEventConsumer != null && !"ui_action".equals(toolName))
-					{
-						try { toolEventConsumer.accept(toolName); } catch (final Exception ignored) {}
-					}
-					try
-					{
-						final Map<String, Object> toolArgs = objectMapper.readValue(argsJson, Map.class);
-
-						// Capture UI actions
-						if ("ui_action".equals(toolName))
-						{
-							uiAction = (String) toolArgs.get("action");
-						}
-
-						final McpToolHandler handler = toolHandlerMap.get(toolName);
-
-						if (handler == null)
-						{
-							toolResultContent = "Unknown tool: " + toolName;
-						}
-						else
-						{
-							final long toolStartNs = System.nanoTime();
-							final McpToolResult toolResult = handler.execute(toolArgs);
-							toolResultContent = toolResult.getContent();
-							LOG.info("[perf] tool={} bytes={} durationMs={}",
-								toolName, toolResultContent == null ? 0 : toolResultContent.length(), elapsedMs(toolStartNs));
-							collectEntityRefs(toolName, toolArgs, toolResultContent, entityRefs, entityRefKeys);
-						}
-					}
-					catch (final Exception e)
-					{
-						LOG.error("Tool execution error for {}: {}", toolName, e.getMessage(), e);
-						toolResultContent = "Tool error: " + e.getMessage();
-					}
 				}
-
-				// Add tool result message
-				final Map<String, Object> toolResultMessage = new LinkedHashMap<>();
-				toolResultMessage.put("role", "tool");
-				toolResultMessage.put("tool_call_id", toolCallId);
-				toolResultMessage.put("content", toolResultContent);
-				fullMessages.add(toolResultMessage);
+				fullMessages.add(outcome.getToolResultMessage());
 			}
 
 			if (allDuplicates)
@@ -298,127 +212,32 @@ public class DefaultAgentService implements AgentService
 		}
 
 		// Max iterations reached, or all tool calls were duplicates
-		final Map<String, Object> result = new LinkedHashMap<>();
-		result.put("reply", "I apologize, but I'm having trouble completing your request. Could you try rephrasing it?");
-		result.put("messages", summarizeHistoryForClient(pruneImageContent(fullMessages.subList(2, fullMessages.size()))));
-		if (!entityRefs.isEmpty())
-		{
-			result.put("entityRefs", entityRefs);
-		}
+		final Map<String, Object> result = buildResult(
+			"I apologize, but I'm having trouble completing your request. Could you try rephrasing it?",
+			fullMessages, context);
+		result.remove("action"); // the fallback reply never carries a ui action
 		LOG.info("[perf] turn=maxIter iterations={} durationMs={}",
-			MAX_TOOL_ITERATIONS, elapsedMs(turnStartNs));
+			maxToolIterations, elapsedMs(turnStartNs));
 		return result;
 	}
 
-	private String buildStateSnapshotMessage()
+	/** Shape the client-facing result: reply + summarized history (minus the 2 system messages) + extras. */
+	private Map<String, Object> buildResult(final String reply, final List<Map<String, Object>> fullMessages,
+		final AgentTurnContext context)
 	{
-		final Map<String, Object> state = new LinkedHashMap<>();
-
-		try
+		final Map<String, Object> result = new LinkedHashMap<>();
+		result.put("reply", reply);
+		result.put("messages",
+			summarizeHistoryForClient(pruneImageContent(fullMessages.subList(2, fullMessages.size()))));
+		if (context.getUiAction() != null)
 		{
-			final CustomerData customer = customerFacade.getCurrentCustomer();
-			if (customer != null)
-			{
-				final Map<String, Object> customerData = new LinkedHashMap<>();
-				customerData.put("uid", customer.getUid());
-				customerData.put("name", customer.getName());
-				state.put("customer", customerData);
-			}
+			result.put("action", context.getUiAction());
 		}
-		catch (final Exception e)
+		if (!context.getEntityRefs().isEmpty())
 		{
-			LOG.debug("Could not build customer snapshot: {}", e.getMessage());
+			result.put("entityRefs", context.getEntityRefs());
 		}
-
-		try
-		{
-			if (cartFacade.hasSessionCart())
-			{
-				final CartData cart = cartFacade.getSessionCart();
-				final Map<String, Object> cartSnap = new LinkedHashMap<>();
-				cartSnap.put("code", cart.getCode());
-				cartSnap.put("totalItems", cart.getTotalItems());
-				if (cart.getSubTotal() != null)
-				{
-					cartSnap.put("subtotal", cart.getSubTotal().getValue());
-				}
-				if (cart.getTotalDiscounts() != null)
-				{
-					cartSnap.put("discounts", cart.getTotalDiscounts().getValue());
-				}
-				if (cart.getTotalPrice() != null)
-				{
-					cartSnap.put("total", cart.getTotalPrice().getValue());
-				}
-
-				final List<Map<String, Object>> entries = new ArrayList<>();
-				if (cart.getEntries() != null)
-				{
-					for (final OrderEntryData entry : cart.getEntries())
-					{
-						final Map<String, Object> e = new LinkedHashMap<>();
-						if (entry.getProduct() != null)
-						{
-							e.put("productCode", entry.getProduct().getCode());
-							e.put("name", entry.getProduct().getName());
-						}
-						e.put("qty", entry.getQuantity());
-						if (entry.getTotalPrice() != null)
-						{
-							e.put("lineTotal", entry.getTotalPrice().getValue());
-						}
-						entries.add(e);
-					}
-				}
-				cartSnap.put("entries", entries);
-
-				if (cart.getAppliedVouchers() != null && !cart.getAppliedVouchers().isEmpty())
-				{
-					cartSnap.put("appliedVouchers", cart.getAppliedVouchers());
-				}
-
-				state.put("cart", cartSnap);
-			}
-		}
-		catch (final Exception e)
-		{
-			LOG.debug("Could not build cart snapshot: {}", e.getMessage());
-		}
-
-		String stateJson;
-		try
-		{
-			stateJson = objectMapper.writeValueAsString(state);
-		}
-		catch (final Exception e)
-		{
-			LOG.warn("Could not serialize state snapshot, falling back to empty: {}", e.getMessage());
-			stateJson = "{}";
-		}
-
-		return "CURRENT STATE (refreshed each turn — use these values directly; do not call cart_get or "
-			+ "customer_get just to look up basics already provided here):\n" + stateJson;
-	}
-
-	@SuppressWarnings("unchecked")
-	private String extractTextContent(final Object content)
-	{
-		if (content == null) return "";
-		if (content instanceof String) return (String) content;
-		if (!(content instanceof List)) return "";
-
-		final StringBuilder sb = new StringBuilder();
-		for (final Object block : (List<Object>) content)
-		{
-			if (!(block instanceof Map)) continue;
-			final Map<String, Object> m = (Map<String, Object>) block;
-			if ("text".equals(m.get("type")) && m.get("text") instanceof String)
-			{
-				if (sb.length() > 0) sb.append(' ');
-				sb.append((String) m.get("text"));
-			}
-		}
-		return sb.toString();
+		return result;
 	}
 
 	/**
@@ -469,94 +288,6 @@ public class DefaultAgentService implements AgentService
 	private static final java.util.regex.Pattern URL_FIELD_PATTERN =
 		java.util.regex.Pattern.compile("\"url\"\\s*:\\s*\"([^\"]+)\"");
 
-	// Cap chips per turn so a wide search doesn't explode the chat with 50 chips.
-	private static final int MAX_PRODUCT_REFS_PER_CALL = 5;
-	private static final int MAX_ORDER_REFS_PER_CALL = 5;
-
-	/**
-	 * Inspect a tool call's args + result and append entity references the UI can render as
-	 * clickable chips. Each ref is a map with `type` (product, order, orderHistory) and an
-	 * optional `code`. Dedupes via {@code entityRefKeys} so repeated tools don't emit dupes.
-	 */
-	private void collectEntityRefs(
-		final String toolName,
-		final Map<String, Object> toolArgs,
-		final String toolResultJson,
-		final List<Map<String, String>> entityRefs,
-		final Set<String> entityRefKeys)
-	{
-		try
-		{
-			switch (toolName)
-			{
-				case "product_get":
-				{
-					final Object code = toolArgs.get("code");
-					if (code instanceof String s) addRef(entityRefs, entityRefKeys, "product", s);
-					break;
-				}
-				case "order_get":
-				{
-					final Object code = toolArgs.get("code");
-					if (code instanceof String s) addRef(entityRefs, entityRefKeys, "order", s);
-					break;
-				}
-				case "order_history":
-				{
-					addRef(entityRefs, entityRefKeys, "orderHistory", null);
-					final com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(toolResultJson);
-					final com.fasterxml.jackson.databind.JsonNode results = root.get("orders") != null
-						? root.get("orders") : root.get("results");
-					if (results != null && results.isArray())
-					{
-						int n = 0;
-						for (com.fasterxml.jackson.databind.JsonNode order : results)
-						{
-							if (n++ >= MAX_ORDER_REFS_PER_CALL) break;
-							if (order.has("code")) addRef(entityRefs, entityRefKeys, "order", order.get("code").asText());
-						}
-					}
-					break;
-				}
-				case "product_search":
-				{
-					final com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(toolResultJson);
-					final com.fasterxml.jackson.databind.JsonNode results = root.get("results");
-					if (results != null && results.isArray())
-					{
-						int n = 0;
-						for (com.fasterxml.jackson.databind.JsonNode product : results)
-						{
-							if (n++ >= MAX_PRODUCT_REFS_PER_CALL) break;
-							if (product.has("code")) addRef(entityRefs, entityRefKeys, "product", product.get("code").asText());
-						}
-					}
-					break;
-				}
-				default:
-					// Other tools (cart, checkout, customer, ui_action) don't produce chips.
-			}
-		}
-		catch (final Exception e)
-		{
-			LOG.debug("collectEntityRefs failed for {}: {}", toolName, e.getMessage());
-		}
-	}
-
-	private void addRef(
-		final List<Map<String, String>> refs,
-		final Set<String> keys,
-		final String type,
-		final String code)
-	{
-		final String key = type + "|" + (code == null ? "" : code);
-		if (!keys.add(key)) return;
-		final Map<String, String> ref = new LinkedHashMap<>();
-		ref.put("type", type);
-		if (code != null) ref.put("code", code);
-		refs.add(ref);
-	}
-
 	private List<Map<String, Object>> summarizeHistoryForClient(final List<Map<String, Object>> history)
 	{
 		final List<Map<String, Object>> out = new ArrayList<>(history.size());
@@ -568,14 +299,14 @@ public class DefaultAgentService implements AgentService
 				continue;
 			}
 			final String content = (String) message.getOrDefault("content", "");
-			if (content.length() <= TOOL_RESULT_SUMMARY_THRESHOLD)
+			if (content.length() <= toolResultSummaryThreshold)
 			{
 				out.add(message);
 				continue;
 			}
 			final Map<String, Object> summarized = new LinkedHashMap<>(message);
 			summarized.put("content", "[previous tool result summarized; " + content.length()
-				+ " chars omitted] " + content.substring(0, TOOL_RESULT_SUMMARY_SNIPPET) + "..."
+				+ " chars omitted] " + content.substring(0, toolResultSummarySnippet) + "..."
 				+ extractDeepLinks(content));
 			out.add(summarized);
 		}
@@ -594,10 +325,31 @@ public class DefaultAgentService implements AgentService
 		while (m.find())
 		{
 			final String url = m.group(1);
-			if (!urls.contains(url)) urls.add(url);
+			if (!urls.contains(url))
+			{
+				urls.add(url);
+			}
 		}
-		if (urls.isEmpty()) return "";
+		if (urls.isEmpty())
+		{
+			return "";
+		}
 		return " [preserved deep links: " + String.join(", ", urls) + "]";
+	}
+
+	public void setMaxToolIterations(final int maxToolIterations)
+	{
+		this.maxToolIterations = maxToolIterations;
+	}
+
+	public void setToolResultSummaryThreshold(final int toolResultSummaryThreshold)
+	{
+		this.toolResultSummaryThreshold = toolResultSummaryThreshold;
+	}
+
+	public void setToolResultSummarySnippet(final int toolResultSummarySnippet)
+	{
+		this.toolResultSummarySnippet = toolResultSummarySnippet;
 	}
 
 	@Required
@@ -613,14 +365,14 @@ public class DefaultAgentService implements AgentService
 	}
 
 	@Required
-	public void setCartFacade(final CartFacade cartFacade)
+	public void setStateSnapshotBuilder(final AgentStateSnapshotBuilder stateSnapshotBuilder)
 	{
-		this.cartFacade = cartFacade;
+		this.stateSnapshotBuilder = stateSnapshotBuilder;
 	}
 
 	@Required
-	public void setCustomerFacade(final CustomerFacade customerFacade)
+	public void setToolInvoker(final AgentToolInvoker toolInvoker)
 	{
-		this.customerFacade = customerFacade;
+		this.toolInvoker = toolInvoker;
 	}
 }

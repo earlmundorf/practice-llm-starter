@@ -80,7 +80,7 @@ Two essentialdata files load in alphabetical order. Within each file, ImpEx bloc
 ```mermaid
 %%{ init: { 'theme': 'neutral' } }%%
 graph LR
-    subgraph "essentialdata-infrastructure.impex"
+    subgraph "essentialdata-00-infrastructure.impex"
         A1["OAuth Clients"] --> A2["Language, Currency, Country, Unit"]
         A2 --> A3["Catalog + Versions"]
         A3 --> A4["Vendor + Warehouse"]
@@ -91,7 +91,7 @@ graph LR
         A8 --> A9["CustomerGroup"]
     end
 
-    subgraph "essentialdata-solr.impex"
+    subgraph "essentialdata-10-solr.impex"
         B1["SolrFacetSearchConfig"] --> B2["SolrIndexedType"]
         B2 --> B3["Value Ranges"]
         B3 --> B4["Indexed Properties"]

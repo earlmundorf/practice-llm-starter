@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------------------
+# Edge-case demo data: products that exercise the unhappy paths an honest
+# agent demo needs — here, an out-of-stock product so the agent can say
+# "that's sold out, here's an alternative" instead of always succeeding.
+#
+# Intentionally has no product image (also exercises the no-media path).
+# ---------------------------------------------------------------------------
+
+#% impex.setLocale(new java.util.Locale("en"));
+
+$productCatalog = electronicsProductCatalog
+$onlineVersion  = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Online'])[unique = true]
+$stagedVersion  = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Staged'])[unique = true]
+$taxGroup       = Europe1PriceFactory_PTG(code)[default = us-sales-tax-full]
+$currency       = USD
+$language       = en
+$warehouse      = electronics-warehouse
+$unit           = pieces
+
+
+# ==========================================================================
+# Product — sold-out limited edition (both catalog versions)
+# ==========================================================================
+
+INSERT_UPDATE Product ; code[unique = true]   ; name[lang = $language]              ; summary[lang = $language]                                       ; description[lang = $language]                                                                                                                                                  ; $stagedVersion ; unit(code)[default = '$unit'] ; approvalStatus(code)[default = 'approved'] ; $taxGroup
+                      ; KEYBOARD_LTD_ALUMINUM ; Limited Edition Aluminum Keyboard   ; CNC-milled aluminum 75% mechanical keyboard — limited run, sold out ; "Limited run of 500. CNC-milled 6063 aluminum case, gasket-mounted 75% layout, hot-swappable switches, screw-in stabilizers. This batch sold out — join the waitlist for the next run." ;                ;                               ;                                            ;
+
+INSERT_UPDATE Product ; code[unique = true]   ; name[lang = $language]              ; summary[lang = $language]                                       ; description[lang = $language]                                                                                                                                                  ; $onlineVersion ; unit(code)[default = '$unit'] ; approvalStatus(code)[default = 'approved'] ; $taxGroup
+                      ; KEYBOARD_LTD_ALUMINUM ; Limited Edition Aluminum Keyboard   ; CNC-milled aluminum 75% mechanical keyboard — limited run, sold out ; "Limited run of 500. CNC-milled 6063 aluminum case, gasket-mounted 75% layout, hot-swappable switches, screw-in stabilizers. This batch sold out — join the waitlist for the next run." ;                ;                               ;                                            ;
+
+
+# ==========================================================================
+# Price + zero stock (forced out of stock)
+# ==========================================================================
+
+INSERT_UPDATE PriceRow ; productId[unique = true] ; unit(code)[default = '$unit'] ; currency(isocode)[unique = true] ; price  ; minqtd ; net   ; $stagedVersion
+                       ; KEYBOARD_LTD_ALUMINUM    ;                               ; $currency                        ; 349.00 ; 1      ; false ;
+
+INSERT_UPDATE PriceRow ; productId[unique = true] ; unit(code)[default = '$unit'] ; currency(isocode)[unique = true] ; price  ; minqtd ; net   ; $onlineVersion
+                       ; KEYBOARD_LTD_ALUMINUM    ;                               ; $currency                        ; 349.00 ; 1      ; false ;
+
+INSERT_UPDATE StockLevel ; productCode[unique = true] ; warehouse(code)[unique = true] ; available ; inStockStatus(code)
+                         ; KEYBOARD_LTD_ALUMINUM      ; $warehouse                     ; 0         ; forceOutOfStock
+
+UPDATE Product ; code[unique = true]   ; $stagedVersion ; stockLevels(productCode, warehouse(code))[mode = append] ; supercategories(code, $stagedVersion)[mode = append]
+               ; KEYBOARD_LTD_ALUMINUM ;                ; KEYBOARD_LTD_ALUMINUM:$warehouse                         ; accessories
+
+UPDATE Product ; code[unique = true]   ; $onlineVersion ; stockLevels(productCode, warehouse(code))[mode = append] ; supercategories(code, $onlineVersion)[mode = append]
+               ; KEYBOARD_LTD_ALUMINUM ;                ; KEYBOARD_LTD_ALUMINUM:$warehouse                         ; accessories

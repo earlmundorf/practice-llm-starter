@@ -48,7 +48,7 @@ cd core-customize
 ## Repository Structure
 
 ```
-sap-mcp-server-g/
+sap-mcp-server-l/
 ├── core-customize/
 │   ├── build.gradle                  # Gradle build config (all tasks defined here)
 │   ├── settings.gradle

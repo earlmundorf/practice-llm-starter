@@ -1,0 +1,64 @@
+# ---------------------------------------------------------------------------
+# Electronics category hierarchy + product assignments.
+#
+# The swag line already carries its own hierarchy (swag → apparel/drinkware/
+# accessories, see projectdata-20-swag.impex); this file gives the 10 core
+# electronics products a browsable structure. The `category` Solr facet
+# (essentialdata-30-solr-product-category.impex) picks these up on the next
+# full index — run ./scripts/index-solr.sh after import.
+#
+# Loads after products (projectdata-10/20) by numeric prefix.
+# ---------------------------------------------------------------------------
+
+#% impex.setLocale(new java.util.Locale("en"));
+
+$productCatalog = electronicsProductCatalog
+$onlineVersion  = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Online'])[unique = true]
+$stagedVersion  = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Staged'])[unique = true]
+$language       = en
+
+
+# ==========================================================================
+# Top-level electronics categories (both catalog versions)
+# ==========================================================================
+
+INSERT_UPDATE Category ; code[unique = true] ; name[lang = $language] ; $stagedVersion
+                       ; computing           ; Computing              ;
+                       ; mobile              ; Mobile & Wearables     ;
+                       ; audio               ; Audio                  ;
+                       ; accessories         ; Accessories            ;
+
+INSERT_UPDATE Category ; code[unique = true] ; name[lang = $language] ; $onlineVersion
+                       ; computing           ; Computing              ;
+                       ; mobile              ; Mobile & Wearables     ;
+                       ; audio               ; Audio                  ;
+                       ; accessories         ; Accessories            ;
+
+
+# ==========================================================================
+# Product assignments (both catalog versions)
+# ==========================================================================
+
+UPDATE Product ; code[unique = true]   ; $stagedVersion ; supercategories(code, $stagedVersion)[mode = append]
+               ; LAPTOP_PRO_15         ;                ; computing
+               ; MONITOR_4K_27         ;                ; computing
+               ; SMARTPHONE_X          ;                ; mobile
+               ; TABLET_AIR            ;                ; mobile
+               ; SMART_WATCH_PRO       ;                ; mobile
+               ; WIRELESS_HEADPHONES   ;                ; audio
+               ; BLUETOOTH_SPEAKER     ;                ; audio
+               ; MECHANICAL_KEYBOARD   ;                ; accessories
+               ; WIRELESS_GAMING_MOUSE ;                ; accessories
+               ; HD_WEBCAM             ;                ; accessories
+
+UPDATE Product ; code[unique = true]   ; $onlineVersion ; supercategories(code, $onlineVersion)[mode = append]
+               ; LAPTOP_PRO_15         ;                ; computing
+               ; MONITOR_4K_27         ;                ; computing
+               ; SMARTPHONE_X          ;                ; mobile
+               ; TABLET_AIR            ;                ; mobile
+               ; SMART_WATCH_PRO       ;                ; mobile
+               ; WIRELESS_HEADPHONES   ;                ; audio
+               ; BLUETOOTH_SPEAKER     ;                ; audio
+               ; MECHANICAL_KEYBOARD   ;                ; accessories
+               ; WIRELESS_GAMING_MOUSE ;                ; accessories
+               ; HD_WEBCAM             ;                ; accessories

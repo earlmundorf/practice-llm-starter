@@ -4,7 +4,7 @@
 # Loaded automatically during "ant initialize" AND "ant updatesystem"
 # (filename matches essentialdata-*.impex)
 #
-# Sorts before essentialdata-solr.impex ('i' < 's') so catalog and currency
+# Sorts before essentialdata-10-solr.impex ('i' < 's') so catalog and currency
 # exist before Solr config references them.
 #
 # Creates: OAuth clients, currency, catalog, base store/site, delivery/payment modes
@@ -194,3 +194,14 @@ INSERT_UPDATE CMSSite ; uid[unique = true] ; stores(uid) ; defaultLanguage(isoco
 
 INSERT_UPDATE UserGroup ; uid[unique = true]
                         ; customergroup
+
+
+# ==========================================================================
+# Catalog synchronization — Staged → Online (see ADR 0006).
+# Bootstrap dual-imports both versions for deterministic ordering; this job
+# is the proper workflow for ongoing authoring: edit Staged, run the sync
+# (Backoffice > Catalog > sync, or via cronjob).
+# ==========================================================================
+
+INSERT_UPDATE CatalogVersionSyncJob ; code[unique = true]                          ; sourceVersion(catalog(id), version) ; targetVersion(catalog(id), version) ; createNewItems ; removeMissingItems
+                                    ; sync-electronicsProductCatalog-Staged-Online ; electronicsProductCatalog:Staged    ; electronicsProductCatalog:Online    ; true           ; true

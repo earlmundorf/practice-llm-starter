@@ -10,6 +10,8 @@ Generic patterns and conventions for building OCC extensions on SAP Commerce (Hy
 | [data.md](data.md) | Database configuration and data directory layout |
 | [extension-setup/](extension-setup/) | How OCC extensions are configured, loaded, and wired by the platform |
 | [extending/](extending/) | Step-by-step guide and checklist for adding new features |
+| [adr/](adr/) | Architecture Decision Records — significant decisions and their reasoning |
+| [review/](review/) | Full project review (June 2026): architecture, code, configuration, data, strategic alignment, and the phased improvement plan |
 
 ## Extension-Specific Docs
 

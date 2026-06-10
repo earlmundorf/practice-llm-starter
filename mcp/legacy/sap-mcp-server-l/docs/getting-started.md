@@ -81,6 +81,12 @@ The version numbers must match:
 - **Suite version** → `commerceSuiteVersion` in `manifest.json`
 - **Integration pack version** → `intExtPackVersion` in `build.gradle`
 
+> **Version pin (June 2026):** `manifest.json` is deliberately pinned to **2211.38**
+> to match the suite ZIP used for local development, so local and CCv2 cloud builds
+> compile against the same patch. When upgrading, bump `manifest.json` and the local
+> ZIP together. Note SAP's Java 21 framework update deadline (no new Java-17 builds
+> after 2026-08-31) — the next version bump should be to a `2211-jdk21` line.
+
 ## 3. Bootstrap, Build, and Initialize
 
 All commands run from the `core-customize/` directory.

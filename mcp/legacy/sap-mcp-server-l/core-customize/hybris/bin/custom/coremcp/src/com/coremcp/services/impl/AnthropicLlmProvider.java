@@ -1,8 +1,6 @@
 package com.coremcp.services.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.coremcp.services.LlmProvider;
 
 import de.hybris.platform.util.Config;
 
@@ -12,11 +10,9 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -38,17 +34,10 @@ import java.util.function.Consumer;
  *   coremcp.anthropic.version  — Anthropic API version header (default: 2023-06-01)
  *   coremcp.anthropic.baseurl  — full messages endpoint override (only used if ANTHROPIC_BASE_URL is unset)
  */
-public class AnthropicLlmProvider implements LlmProvider
+public class AnthropicLlmProvider extends AbstractHttpLlmProvider
 {
 	private static final Logger LOG = LoggerFactory.getLogger(AnthropicLlmProvider.class);
 	private static final String DEFAULT_API_URL = "https://api.anthropic.com/v1/messages";
-	private static final int DEFAULT_MAX_TOKENS = 1024;
-
-	private final HttpClient httpClient = HttpClient.newBuilder()
-		.connectTimeout(Duration.ofSeconds(10))
-		.build();
-
-	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	@Override
 	public String getProviderId()
@@ -68,18 +57,13 @@ public class AnthropicLlmProvider implements LlmProvider
 				.header("Content-Type", "application/json")
 				.header("x-api-key", requireApiKey())
 				.header("anthropic-version", Config.getString("coremcp.anthropic.version", "2023-06-01"))
-				.timeout(Duration.ofSeconds(Config.getInt("coremcp.llm.timeout.seconds", 60)))
+				.timeout(requestTimeout())
 				.POST(HttpRequest.BodyPublishers.ofString(
 					objectMapper.writeValueAsString(buildRequestBody(messages, tools, modelOverride))))
 				.build();
 
-			final HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-			if (response.statusCode() != 200)
-			{
-				LOG.error("Anthropic API error ({}): {}", response.statusCode(), response.body());
-				throw new RuntimeException("Anthropic API returned status " + response.statusCode() + ": "
-					+ response.body());
-			}
+			final HttpResponse<String> response = sendWithRetry(request);
+			requireOk(response);
 
 			final Map<String, Object> raw = objectMapper.readValue(response.body(),
 				new TypeReference<Map<String, Object>>() {});
@@ -117,12 +101,14 @@ public class AnthropicLlmProvider implements LlmProvider
 				.header("Accept", "text/event-stream")
 				.header("x-api-key", requireApiKey())
 				.header("anthropic-version", Config.getString("coremcp.anthropic.version", "2023-06-01"))
-				.timeout(Duration.ofSeconds(Config.getInt("coremcp.llm.timeout.seconds", 60)))
+				.timeout(streamRequestTimeout())
 				.POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
 				.build();
 
+			// Deliberately NOT sendWithRetry: once deltas may have flowed to the consumer a
+			// retry would duplicate output. Failures fall back to the (retried) non-streaming path.
 			final HttpResponse<java.io.InputStream> response =
-				httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+				httpClient().send(request, HttpResponse.BodyHandlers.ofInputStream());
 
 			final String contentType = response.headers().firstValue("content-type").orElse("").toLowerCase();
 			if (response.statusCode() != 200 || !contentType.contains("text/event-stream"))
@@ -178,8 +164,11 @@ public class AnthropicLlmProvider implements LlmProvider
 				}
 			}
 		}
-		catch (final Exception ignored)
+		catch (final Exception e)
 		{
+			// Best-effort text extraction for the streaming consumer; the caller still
+			// receives the full non-streaming result either way.
+			LOG.debug("Could not extract text from non-streaming fallback result: {}", e.getMessage());
 		}
 		return result;
 	}
@@ -327,7 +316,7 @@ public class AnthropicLlmProvider implements LlmProvider
 	{
 		final Map<String, Object> requestBody = new LinkedHashMap<>();
 		requestBody.put("model", resolveModel(modelOverride));
-		requestBody.put("max_tokens", DEFAULT_MAX_TOKENS);
+		requestBody.put("max_tokens", Config.getInt("coremcp.anthropic.maxTokens", 1024));
 
 		final List<String> systemTexts = new ArrayList<>();
 		final List<Map<String, Object>> anthropicMessages = new ArrayList<>();

@@ -3,7 +3,7 @@
 #
 # Loaded on "ant initialize" (filename matches projectdata-*.impex). To
 # refresh on a running instance use:
-#   ./gradlew impex -Pfile=hybris/bin/custom/sampledatamcp/resources/impex/projectdata-swag.impex
+#   ./gradlew impex -Pfile=hybris/bin/custom/sampledatamcp/resources/impex/projectdata-20-swag.impex
 #
 # After import, re-run the full Solr index for thinkshopIndex so swag
 # products appear in product_search results.

@@ -184,12 +184,38 @@
     </bean>
 
     <!-- ===================================================================
-         MCP Session Service
+         MCP Session Service — backing store selected at boot via
+         coremcp.session.store (persistent = DB-backed/cluster-safe, default;
+         memory = in-process/single-node).
          =================================================================== -->
+
+    <alias name="inMemoryMcpSessionService" alias="memoryMcpSessionService"/>
+    <bean id="inMemoryMcpSessionService"
+          class="com.coremcp.services.impl.DefaultMcpSessionService">
+        <property name="ttlMinutes" value="${coremcp.session.ttl.minutes}"/>
+    </bean>
+
+    <alias name="persistedMcpSessionService" alias="persistentMcpSessionService"/>
+    <bean id="persistedMcpSessionService"
+          class="com.coremcp.services.impl.PersistedMcpSessionService">
+        <property name="modelService" ref="modelService"/>
+        <property name="flexibleSearchService" ref="flexibleSearchService"/>
+        <property name="ttlMinutes" value="${coremcp.session.ttl.minutes}"/>
+    </bean>
 
     <alias name="defaultMcpSessionService" alias="mcpSessionService"/>
     <bean id="defaultMcpSessionService"
-          class="com.coremcp.services.impl.DefaultMcpSessionService"/>
+          class="com.coremcp.services.impl.DelegatingMcpSessionService">
+        <property name="store" value="${coremcp.session.store}"/>
+        <property name="memoryStore" ref="memoryMcpSessionService"/>
+        <property name="persistentStore" ref="persistentMcpSessionService"/>
+    </bean>
+
+    <!-- Sweeps abandoned expired sessions from the persistent store (see
+         essentialdata-mcp-session-cleanup.impex for the CronJob/Trigger). -->
+    <bean id="mcpSessionCleanupJob"
+          class="com.coremcp.jobs.McpSessionCleanupJob"
+          parent="abstractJobPerformable"/>
 
     <!-- ===================================================================
          MCP Dispatcher Service
@@ -233,19 +259,30 @@
           class="com.coremcp.services.impl.DefaultVisualSearchService">
         <property name="llmClient" ref="llmClient"/>
         <property name="productSearchFacade" ref="productSearchFacade"/>
+        <property name="visionModel" value="${coremcp.visualsearch.model}"/>
+        <property name="maxResults" value="${coremcp.visualsearch.maxResults}"/>
     </bean>
 
     <!-- ===================================================================
          LLM Client and Providers
          =================================================================== -->
 
-    <bean id="openAiLlmProvider"
+    <!-- Shared HTTP resilience defaults for all LLM providers (see AbstractHttpLlmProvider). -->
+    <bean id="abstractHttpLlmProvider" abstract="true">
+        <property name="retryMaxAttempts" value="${coremcp.llm.retry.maxAttempts}"/>
+        <property name="retryBaseDelayMillis" value="${coremcp.llm.retry.baseDelayMillis}"/>
+    </bean>
+
+    <alias name="defaultOpenAiLlmProvider" alias="openAiLlmProvider"/>
+    <bean id="defaultOpenAiLlmProvider" parent="abstractHttpLlmProvider"
           class="com.coremcp.services.impl.OpenAiLlmProvider"/>
 
-    <bean id="anthropicLlmProvider"
+    <alias name="defaultAnthropicLlmProvider" alias="anthropicLlmProvider"/>
+    <bean id="defaultAnthropicLlmProvider" parent="abstractHttpLlmProvider"
           class="com.coremcp.services.impl.AnthropicLlmProvider"/>
 
-    <bean id="openAiCompatibleLlmProvider"
+    <alias name="defaultOpenAiCompatibleLlmProvider" alias="openAiCompatibleLlmProvider"/>
+    <bean id="defaultOpenAiCompatibleLlmProvider" parent="abstractHttpLlmProvider"
           class="com.coremcp.services.impl.OpenAiCompatibleLlmProvider"/>
 
     <alias name="defaultLlmClient" alias="llmClient"/>
@@ -261,15 +298,71 @@
     </bean>
 
     <!-- ===================================================================
-         Agent Service
+         Agent Rate Limiter — per-user request budget for /agent/* endpoints
+         (every request triggers paid LLM calls). 0 disables.
          =================================================================== -->
+
+    <alias name="defaultAgentRateLimiter" alias="agentRateLimiter"/>
+    <bean id="defaultAgentRateLimiter"
+          class="com.coremcp.services.impl.DefaultAgentRateLimiter">
+        <property name="requestsPerMinute" value="${coremcp.agent.rateLimit.perMinute}"/>
+    </bean>
+
+    <!-- ===================================================================
+         Agent Service and collaborators (state snapshot, entity refs,
+         tool invocation) — see AgentService / AgentToolInvoker interfaces.
+         =================================================================== -->
+
+    <alias name="defaultAgentStateSnapshotBuilder" alias="agentStateSnapshotBuilder"/>
+    <bean id="defaultAgentStateSnapshotBuilder"
+          class="com.coremcp.services.impl.DefaultAgentStateSnapshotBuilder">
+        <property name="cartFacade" ref="cartFacade"/>
+        <property name="customerFacade" ref="customerFacade"/>
+    </bean>
+
+    <alias name="defaultEntityRefCollector" alias="entityRefCollector"/>
+    <bean id="defaultEntityRefCollector"
+          class="com.coremcp.services.impl.DefaultEntityRefCollector"/>
+
+    <alias name="defaultAgentToolInvoker" alias="agentToolInvoker"/>
+    <bean id="defaultAgentToolInvoker"
+          class="com.coremcp.services.impl.DefaultAgentToolInvoker">
+        <property name="entityRefCollector" ref="entityRefCollector"/>
+        <property name="toolHandlers">
+            <list>
+                <ref bean="productSearchToolHandler"/>
+                <ref bean="productGetToolHandler"/>
+                <ref bean="cartGetToolHandler"/>
+                <ref bean="cartAddProductToolHandler"/>
+                <ref bean="cartUpdateEntryToolHandler"/>
+                <ref bean="cartRemoveEntryToolHandler"/>
+                <ref bean="cartApplyVoucherToolHandler"/>
+                <ref bean="cartRemoveVoucherToolHandler"/>
+                <ref bean="orderGetToolHandler"/>
+                <ref bean="orderHistoryToolHandler"/>
+                <ref bean="customerGetToolHandler"/>
+                <ref bean="customerLookupToolHandler"/>
+                <ref bean="checkoutSetDeliveryAddressToolHandler"/>
+                <ref bean="checkoutSetDeliveryModeToolHandler"/>
+                <ref bean="checkoutSetPaymentToolHandler"/>
+                <ref bean="orderPlaceToolHandler"/>
+                <ref bean="promotionsGetToolHandler"/>
+                <ref bean="infoGetToolHandler"/>
+                <ref bean="infoSearchToolHandler"/>
+                <ref bean="uiActionToolHandler"/>
+            </list>
+        </property>
+    </bean>
 
     <alias name="defaultAgentService" alias="agentService"/>
     <bean id="defaultAgentService"
           class="com.coremcp.services.impl.DefaultAgentService">
+        <property name="maxToolIterations" value="${coremcp.agent.maxToolIterations}"/>
+        <property name="toolResultSummaryThreshold" value="${coremcp.agent.toolResult.summaryThreshold}"/>
+        <property name="toolResultSummarySnippet" value="${coremcp.agent.toolResult.summarySnippet}"/>
         <property name="llmClient" ref="llmClient"/>
-        <property name="cartFacade" ref="cartFacade"/>
-        <property name="customerFacade" ref="customerFacade"/>
+        <property name="stateSnapshotBuilder" ref="agentStateSnapshotBuilder"/>
+        <property name="toolInvoker" ref="agentToolInvoker"/>
         <property name="toolHandlers">
             <list>
                 <ref bean="productSearchToolHandler"/>

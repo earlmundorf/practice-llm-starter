@@ -1,5 +1,6 @@
 package com.coremcp.services.impl;
 
+import com.coremcp.dto.llm.VisionAnalysisResult;
 import com.coremcp.services.LlmClient;
 import com.coremcp.services.VisualSearchService;
 
@@ -34,8 +35,10 @@ public class DefaultVisualSearchService implements VisualSearchService
 {
 	private static final Logger LOG = LoggerFactory.getLogger(DefaultVisualSearchService.class);
 
-	private static final String VISION_MODEL = "gpt-4o";
-	private static final int MAX_RESULTS = 10;
+	// Defaults for these live in project.properties (coremcp.visualsearch.*) and are
+	// injected via coremcp-spring.xml.
+	private String visionModel = "gpt-4o";
+	private int maxResults = 10;
 
 	private static final String SYSTEM_PROMPT = """
 		You are a product identification expert for an electronics e-commerce store.
@@ -75,22 +78,18 @@ public class DefaultVisualSearchService implements VisualSearchService
 	{
 		final Map<String, Object> result = new LinkedHashMap<>();
 
-		// Step 1: Send image to GPT-4o Vision
-		final Map<String, Object> analysis = analyzeImage(base64Image, mimeType);
-		final String reasoning = (String) analysis.getOrDefault("reasoning",
-			analysis.getOrDefault("description", "Unable to analyze image"));
-		result.put("visionAnalysis", reasoning);
-		result.put("aiDetail", analysis); // full AI response for transparency
+		// Step 1: Send image to the configured vision model
+		final VisionAnalysisResult analysis = analyzeImage(base64Image, mimeType);
+		result.put("visionAnalysis", analysis.resolveReasoning());
+		result.put("aiDetail", objectMapper.convertValue(analysis, Map.class)); // full AI response for transparency
 
 		// Step 2: Search catalog using AI-suggested search terms (3-tier)
 		final List<Map<String, Object>> matches = new ArrayList<>();
 
-		final String brand = (String) analysis.get("brand");
-		final String productName = (String) analysis.get("productName");
-		final String category = (String) analysis.get("category");
-
-		@SuppressWarnings("unchecked")
-		final List<String> searchTerms = (List<String>) analysis.get("searchTerms");
+		final String brand = analysis.getBrand();
+		final String productName = analysis.getProductName();
+		final String category = analysis.getCategory();
+		final List<String> searchTerms = analysis.getSearchTerms();
 
 		// Tier 1: Exact — brand + product name (or first search term)
 		if (brand != null && productName != null)
@@ -103,11 +102,11 @@ public class DefaultVisualSearchService implements VisualSearchService
 		}
 
 		// Tier 2: Similar — use additional search terms
-		if (matches.size() < MAX_RESULTS)
+		if (matches.size() < maxResults)
 		{
 			if (searchTerms != null && searchTerms.size() > 1)
 			{
-				for (int i = 1; i < searchTerms.size() && matches.size() < MAX_RESULTS; i++)
+				for (int i = 1; i < searchTerms.size() && matches.size() < maxResults; i++)
 				{
 					addMatches(matches, searchCatalog(searchTerms.get(i), 5), "similar", 0.7);
 				}
@@ -115,7 +114,7 @@ public class DefaultVisualSearchService implements VisualSearchService
 			else
 			{
 				final String broadQuery = buildBroadQuery(productName,
-					(String) analysis.get("color"), (String) analysis.get("material"), category);
+					analysis.getColor(), analysis.getMaterial(), category);
 				if (!broadQuery.isBlank())
 				{
 					addMatches(matches, searchCatalog(broadQuery, 5), "similar", 0.7);
@@ -129,7 +128,7 @@ public class DefaultVisualSearchService implements VisualSearchService
 			addMatches(matches, searchCatalog(category, 5), "explore", 0.4);
 		}
 
-		result.put("products", matches.stream().limit(MAX_RESULTS).toList());
+		result.put("products", matches.stream().limit(maxResults).toList());
 		return result;
 	}
 
@@ -149,10 +148,10 @@ public class DefaultVisualSearchService implements VisualSearchService
 	}
 
 	/**
-	 * Sends the image to the configured vision-capable LLM provider.
+	 * Sends the image to the configured vision-capable LLM provider and parses the
+	 * structured identification result.
 	 */
-	@SuppressWarnings("unchecked")
-	private Map<String, Object> analyzeImage(final String base64Image, final String mimeType)
+	private VisionAnalysisResult analyzeImage(final String base64Image, final String mimeType)
 	{
 		try
 		{
@@ -169,26 +168,29 @@ public class DefaultVisualSearchService implements VisualSearchService
 				))
 			);
 
-			final Map<String, Object> response = llmClient.chatCompletion(messages, null, VISION_MODEL);
-
-			final List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
-			if (choices == null || choices.isEmpty())
+			final Map<String, Object> response = llmClient.chatCompletion(messages, null, visionModel);
+			final String rawContent = com.coremcp.dto.llm.LlmChatResponse.parse(response).getContent();
+			if (rawContent.isBlank())
 			{
-				LOG.warn("No choices in vision response");
-				return Map.of("reasoning", "Unable to analyze image");
+				LOG.warn("No content in vision response");
+				return VisionAnalysisResult.unavailable("Unable to analyze image");
 			}
 
-			final Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-			String content = (String) message.get("content");
-
-			content = content.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
-
-			return objectMapper.readValue(content, Map.class);
+			final String content = rawContent.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
+			try
+			{
+				return objectMapper.readValue(content, VisionAnalysisResult.class);
+			}
+			catch (final Exception parseFailure)
+			{
+				LOG.error("Vision model returned unparseable JSON ({}): {}", parseFailure.getMessage(), content);
+				return VisionAnalysisResult.unavailable("Unable to analyze image: model returned malformed analysis");
+			}
 		}
 		catch (final Exception e)
 		{
 			LOG.error("Vision analysis failed: {}", e.getMessage(), e);
-			return Map.of("reasoning", "Unable to analyze image: " + e.getMessage());
+			return VisionAnalysisResult.unavailable("Unable to analyze image: " + e.getMessage());
 		}
 	}
 
@@ -316,6 +318,16 @@ public class DefaultVisualSearchService implements VisualSearchService
 		match.put("matchType", matchType);
 		match.put("confidence", confidence);
 		return match;
+	}
+
+	public void setVisionModel(final String visionModel)
+	{
+		this.visionModel = visionModel;
+	}
+
+	public void setMaxResults(final int maxResults)
+	{
+		this.maxResults = maxResults;
 	}
 
 	public void setLlmClient(final LlmClient llmClient)

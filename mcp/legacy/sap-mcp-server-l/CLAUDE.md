@@ -14,7 +14,7 @@ An SAP Commerce MCP (Model Context Protocol) server extension, structured for CC
 This project follows the SAP Commerce Cloud v2 mandatory layout:
 
 ```
-sap-mcp-server-g/
+sap-mcp-server-l/
 ├── core-customize/                    # CCv2 root — cloud builds start here
 │   ├── manifest.json                  # Build/deployment configuration
 │   └── hybris/
@@ -76,7 +76,7 @@ See `docs/getting-started.md` for the full walkthrough. Summary:
 |---------|-------------|
 | `./gradlew stopServer startServer` | Quick restart (no build) |
 | `./gradlew yclean ybuild stopServer startServer` | **After ANY Java source changes** — see note below |
-| `./gradlew yclean ybuild stopServer startServer yupdatesystem` | After `*-items.xml` changes (preserves data) |
+| `./gradlew yclean ybuild stopServer yupdatesystem startServer` | After `*-items.xml` changes (preserves data). Run `yupdatesystem` with the server **stopped** — with it running, ant tries a JMX wrapper restart that fails (`restartWrapper: serviceURL is null`) before updating anything |
 | `./gradlew yclean ybuild stopServer startServer` | After `*-beans.xml` changes |
 | `./gradlew yclean yall yinitialize` | Full data reset (**destroys all data**) |
 
@@ -128,6 +128,17 @@ Solr **dead** until the next `stopServer/startServer`. Before any
 
 (IDE-driven JUnit runs for `@UnitTest` classes don't boot the platform and don't
 have this problem.)
+
+**Integration tests:** there is no scoped gradle task — run ant directly so the
+extension filter actually applies (the gradle passthrough drops `-D` args and
+runs the whole platform suite):
+
+```bash
+cd hybris/bin/platform && . ./setantenv.sh && ant integrationtests -Dtestclasses.extensions=coremcp
+```
+
+After an `*-items.xml` change, the junit tenant must be re-initialized once
+(`ant yunitinit`) or integration tests fail with `type code '...' invalid`.
 
 ## Key Paths
 

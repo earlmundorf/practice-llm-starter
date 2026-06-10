@@ -38,13 +38,21 @@ public class ProductSearchToolHandler implements McpToolHandler
 			"'what do you have', 'show me laptops', or 'find something under $200'. " +
 			"Pass an empty string for query to browse all products. " +
 			"\n\nKnown category codes:\n" +
+			"  Electronics:\n" +
+			"  - 'computing' — laptops, monitors\n" +
+			"  - 'mobile' — smartphones, tablets, smartwatches\n" +
+			"  - 'audio' — headphones, speakers\n" +
+			"  - 'accessories' — keyboards, mice, webcams\n" +
+			"  Merch:\n" +
 			"  - 'swag' — all ThinkShop branded merch\n" +
 			"  - 'swag-apparel' — tees, hoodies, caps (use this when the user asks for swag CLOTHES/clothing/apparel)\n" +
 			"  - 'swag-drinkware' — mugs and bottles (use this for drink-related swag requests)\n" +
 			"  - 'swag-accessories' — stickers, totes, notebooks\n" +
-			"When the user asks for any kind of swag, pick the most specific category code that fits and " +
-			"pass an empty query. The word 'swag' is not in product names, so a query-only search returns " +
-			"nothing. Electronics products have no category filter; just leave categoryCode empty for those.";
+			"When the user asks to browse a product TYPE, pick the most specific category code and pass an " +
+			"empty query; use a keyword query for specific products or features. The word 'swag' is not in " +
+			"product names, so a query-only search returns nothing for merch — always use the category. " +
+			"Some products may be out of stock (stockLevelStatus 'outOfStock') — say so honestly and " +
+			"suggest an in-stock alternative.";
 	}
 
 	@Override

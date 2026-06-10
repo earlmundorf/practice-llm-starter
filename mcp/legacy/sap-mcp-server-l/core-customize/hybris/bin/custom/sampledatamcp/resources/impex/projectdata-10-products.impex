@@ -6,7 +6,7 @@
 #
 # Creates: 10 products (Staged + Online), 3 customers, 3 orders
 #
-# Prerequisites: essentialdata-infrastructure.impex (catalog, store, delivery modes)
+# Prerequisites: essentialdata-00-infrastructure.impex (catalog, store, delivery modes)
 # ---------------------------------------------------------------------------
 
 #% impex.setLocale(new java.util.Locale("en"));

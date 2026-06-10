@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="ISO-8859-1"?>
 <!--
- coremcp — DTO definitions.
- Phase 2 will add DTOs here for MCP tool responses that need
- beans.xml-generated data objects (beyond raw JSON-RPC protocol messages).
+ coremcp — generated-DTO definitions (*-beans.xml).
+
+ Intentionally empty: MCP tool results and LLM request/response payloads are
+ internal JSON shapes handled with plain Jackson classes, not OCC WsDTOs.
+ Add definitions here only if these payloads ever need to be exposed through
+ the OCC data-mapping pipeline.
 -->
 <beans xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="beans.xsd">
 

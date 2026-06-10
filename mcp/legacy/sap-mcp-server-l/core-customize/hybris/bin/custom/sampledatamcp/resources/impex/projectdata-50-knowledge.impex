@@ -3,7 +3,7 @@
 #
 # Loaded on "ant initialize" (filename matches projectdata-*.impex). To
 # refresh on a running instance use:
-#   ./gradlew impex -Pfile=hybris/bin/custom/sampledatamcp/resources/impex/projectdata-knowledge.impex
+#   ./gradlew impex -Pfile=hybris/bin/custom/sampledatamcp/resources/impex/projectdata-50-knowledge.impex
 #
 # After import, trigger the Solr full index for knowledgeIndex.
 # ---------------------------------------------------------------------------

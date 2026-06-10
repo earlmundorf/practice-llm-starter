@@ -1,7 +1,10 @@
 package com.coremcp.controllers;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.coremcp.services.AgentRateLimiter;
 import com.coremcp.services.VisualSearchService;
+
+import de.hybris.platform.servicelayer.user.UserService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,7 +30,6 @@ import java.util.Set;
 public class VisualSearchController
 {
 	private static final Logger LOG = LoggerFactory.getLogger(VisualSearchController.class);
-	private static final long MAX_IMAGE_SIZE = 10_000_000L; // ~10MB base64
 	private static final Set<String> ALLOWED_MIME_TYPES = Set.of(
 		"image/jpeg", "image/png", "image/webp", "image/gif"
 	);
@@ -37,6 +39,12 @@ public class VisualSearchController
 	@Resource(name = "visualSearchService")
 	private VisualSearchService visualSearchService;
 
+	@Resource(name = "agentRateLimiter")
+	private AgentRateLimiter agentRateLimiter;
+
+	@Resource(name = "userService")
+	private UserService userService;
+
 	@Secured({ "ROLE_CUSTOMERGROUP", "ROLE_TRUSTED_CLIENT" })
 	@RequestMapping(value = "/agent/visual-search", method = RequestMethod.POST, produces = "application/json")
 	@ResponseBody
@@ -45,6 +53,13 @@ public class VisualSearchController
 	{
 		try
 		{
+			if (!agentRateLimiter.tryAcquire(currentUserKey()))
+			{
+				response.setStatus(429);
+				return objectMapper.writeValueAsString(
+					Map.of("error", "Too many requests — please wait a moment and try again"));
+			}
+
 			final Map<String, Object> request = objectMapper.readValue(body, Map.class);
 
 			final String image = (String) request.get("image");
@@ -54,11 +69,12 @@ public class VisualSearchController
 				return objectMapper.writeValueAsString(Map.of("error", "image (base64) is required"));
 			}
 
-			if (image.length() > MAX_IMAGE_SIZE)
+			final long maxImageBytes = getMaxImageBytes();
+			if (image.length() > maxImageBytes)
 			{
 				response.setStatus(413);
 				return objectMapper.writeValueAsString(Map.of("error",
-					"Image exceeds maximum size of 10MB"));
+					"Image exceeds maximum size of " + maxImageBytes + " bytes (base64)"));
 			}
 
 			final String mimeType = (String) request.getOrDefault("mimeType", "image/jpeg");
@@ -67,6 +83,17 @@ public class VisualSearchController
 				response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
 				return objectMapper.writeValueAsString(Map.of("error",
 					"Unsupported image type: " + mimeType + ". Allowed: " + ALLOWED_MIME_TYPES));
+			}
+
+			// Validate the payload is actually base64 before paying for a vision-model call.
+			try
+			{
+				java.util.Base64.getDecoder().decode(image.substring(0, Math.min(image.length(), 4096)));
+			}
+			catch (final IllegalArgumentException invalidBase64)
+			{
+				response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+				return objectMapper.writeValueAsString(Map.of("error", "image is not valid base64 data"));
 			}
 
 			final Map<String, Object> result = visualSearchService.searchByImage(image, mimeType);
@@ -85,5 +112,24 @@ public class VisualSearchController
 				return "{\"error\":\"Internal server error\"}";
 			}
 		}
+	}
+
+	private String currentUserKey()
+	{
+		try
+		{
+			return userService.getCurrentUser().getUid();
+		}
+		catch (final Exception e)
+		{
+			LOG.debug("Could not resolve current user for rate limiting: {}", e.getMessage());
+			return null;
+		}
+	}
+
+	// Config read lives behind a protected getter so unit tests (no platform) can override it.
+	protected long getMaxImageBytes()
+	{
+		return de.hybris.platform.util.Config.getInt("coremcp.visualsearch.maxImageBytes", 10_000_000);
 	}
 }

@@ -4,7 +4,7 @@
 # Loaded automatically during "ant initialize" and "ant updatesystem"
 # (filename matches essentialdata-*.impex)
 #
-# Sorts after essentialdata-infrastructure.impex ('s' > 'i') so Currency,
+# Sorts after essentialdata-00-infrastructure.impex ('s' > 'i') so Currency,
 # Catalog, and CatalogVersion exist before this file references them.
 #
 # Creates: SolrFacetSearchConfig, SolrIndexedType, indexed properties,

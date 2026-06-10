@@ -83,8 +83,9 @@ public class McpController
 
 			final JsonRpcResponse jsonRpcResponse = mcpDispatcherService.dispatch(request, session);
 
-			// Sync the session cart code with hybris's current session cart state.
-			session.setCartCode(mcpCartSessionService.getSessionCartCode());
+			// Sync the session cart code with hybris's current session cart state — through the
+			// session service (not the DTO) so the change persists in the DB-backed store.
+			mcpSessionService.updateCartCode(session.getId(), mcpCartSessionService.getSessionCartCode());
 
 			// Notifications return null — respond with 202 Accepted
 			if (jsonRpcResponse == null)

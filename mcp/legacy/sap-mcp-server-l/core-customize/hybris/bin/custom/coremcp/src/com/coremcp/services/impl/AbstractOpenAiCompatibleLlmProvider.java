@@ -1,19 +1,10 @@
 package com.coremcp.services.impl;
 
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.coremcp.services.LlmProvider;
-
-import de.hybris.platform.util.Config;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,18 +12,12 @@ import java.util.Map;
 /**
  * Shared HTTP/JSON plumbing for providers that speak the OpenAI chat-completions protocol.
  * Subclasses supply config via the abstract getters below — typically by reading hybris
- * properties via {@link Config} (plain text values) and the API key via {@link System#getenv}.
+ * properties via {@link de.hybris.platform.util.Config} (plain text values) and the API
+ * key via {@link System#getenv}. Timeout and retry behavior comes from
+ * {@link AbstractHttpLlmProvider}.
  */
-public abstract class AbstractOpenAiCompatibleLlmProvider implements LlmProvider
+public abstract class AbstractOpenAiCompatibleLlmProvider extends AbstractHttpLlmProvider
 {
-	private static final Logger LOG = LoggerFactory.getLogger(AbstractOpenAiCompatibleLlmProvider.class);
-
-	private final HttpClient httpClient = HttpClient.newBuilder()
-		.connectTimeout(Duration.ofSeconds(10))
-		.build();
-
-	private final ObjectMapper objectMapper = new ObjectMapper();
-
 	@Override
 	public Map<String, Object> chatCompletion(final List<Map<String, Object>> messages,
 		final List<Map<String, Object>> tools,
@@ -52,17 +37,12 @@ public abstract class AbstractOpenAiCompatibleLlmProvider implements LlmProvider
 				.uri(URI.create(resolveApiUrl()))
 				.header("Content-Type", "application/json")
 				.header("Authorization", "Bearer " + requireApiKey())
-				.timeout(Duration.ofSeconds(Config.getInt("coremcp.llm.timeout.seconds", 60)))
+				.timeout(requestTimeout())
 				.POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody)))
 				.build();
 
-			final HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-			if (response.statusCode() != 200)
-			{
-				LOG.error("{} API error ({}): {}", getProviderId(), response.statusCode(), response.body());
-				throw new RuntimeException(getProviderId() + " API returned status " + response.statusCode() + ": "
-					+ response.body());
-			}
+			final HttpResponse<String> response = sendWithRetry(request);
+			requireOk(response);
 
 			return objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
 		}

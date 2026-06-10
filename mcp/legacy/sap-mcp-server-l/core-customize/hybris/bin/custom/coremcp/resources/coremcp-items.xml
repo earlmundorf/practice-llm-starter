@@ -5,6 +5,12 @@
  KnowledgeEntry — shopper-facing knowledge base entries surfaced via the
  info_get / info_search OCC endpoints and MCP tools. Covers policies,
  marketing/events, brand content, how-tos and buying guides.
+
+ McpSessionEntry — DB-backed MCP session state so conversations survive
+ multi-node CCv2 routing (agent clients send headers, not cookies, so
+ ingress stickiness cannot be relied on) and rolling deployments. Used by
+ PersistedMcpSessionService; expired rows are removed by
+ mcpSessionCleanupCronJob.
 -->
 
 <items xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -80,6 +86,42 @@
                     <modifiers optional="false"/>
                 </attribute>
             </attributes>
+        </itemtype>
+
+        <itemtype code="McpSessionEntry"
+                  autocreate="true"
+                  generate="true">
+            <deployment table="McpSessionEntries" typecode="14002"/>
+            <attributes>
+                <attribute qualifier="sessionId" type="java.lang.String">
+                    <persistence type="property"/>
+                    <modifiers unique="true" optional="false"/>
+                </attribute>
+                <attribute qualifier="protocolVersion" type="java.lang.String">
+                    <persistence type="property"/>
+                </attribute>
+                <attribute qualifier="clientInfoJson" type="java.lang.String">
+                    <description>Client info from the MCP initialize request, serialized as JSON.</description>
+                    <persistence type="property">
+                        <columntype><value>HYBRIS.LONG_STRING</value></columntype>
+                    </persistence>
+                </attribute>
+                <attribute qualifier="cartCode" type="java.lang.String">
+                    <persistence type="property"/>
+                </attribute>
+                <attribute qualifier="lastAccessedAt" type="java.util.Date">
+                    <persistence type="property"/>
+                    <modifiers optional="false"/>
+                </attribute>
+            </attributes>
+            <indexes>
+                <index name="mcpSessionIdIdx" unique="true">
+                    <key attribute="sessionId"/>
+                </index>
+                <index name="mcpSessionLastAccessIdx">
+                    <key attribute="lastAccessedAt"/>
+                </index>
+            </indexes>
         </itemtype>
     </itemtypes>
 </items>

@@ -1,8 +1,19 @@
 # Sample Data — Components
 
-Single ImpEx file creates all sample data. Uses the `projectdata-*` pattern (initialize only).
+Sample data loads via the `projectdata-*` convention (initialize only). Files carry
+numeric prefixes because the platform imports them alphabetically and the order
+matters (products before media before category assignments — see ADR 0006):
 
-**File:** `resources/impex/projectdata-sampledatamcp.impex`
+| File | Loads |
+|---|---|
+| `projectdata-10-products.impex` | 10 electronics products, prices, stock, customers, orders (this document) |
+| `projectdata-20-swag.impex` | 10 merch products + swag category tree |
+| `projectdata-30-product-media.impex` | Product images (both catalog versions) |
+| `projectdata-40-categories.impex` | Electronics categories (computing / mobile / audio / accessories) + assignments |
+| `projectdata-50-knowledge.impex`, `-55-knowledge-extras.impex` | Knowledge base entries |
+| `projectdata-60-edge-cases.impex` | `KEYBOARD_LTD_ALUMINUM` — forced out-of-stock, no image (honest-demo paths) |
+
+**This document covers:** `resources/impex/projectdata-10-products.impex`
 
 ## Products
 

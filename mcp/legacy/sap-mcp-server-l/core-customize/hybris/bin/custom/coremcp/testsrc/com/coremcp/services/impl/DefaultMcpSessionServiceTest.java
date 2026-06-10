@@ -74,4 +74,20 @@ public class DefaultMcpSessionServiceTest
 	{
 		sessionService.removeSession(null);
 	}
+
+	@Test
+	public void testUpdateCartCodePersistsOnSession()
+	{
+		final String sessionId = sessionService.createSession(Map.of(), "2025-11-25");
+
+		sessionService.updateCartCode(sessionId, "CART-001");
+
+		assertEquals("CART-001", sessionService.getSession(sessionId).getCartCode());
+	}
+
+	@Test
+	public void testUpdateCartCodeForUnknownSessionIsNoOp()
+	{
+		sessionService.updateCartCode("sess_unknown", "CART-001");
+	}
 }

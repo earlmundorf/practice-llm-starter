@@ -50,7 +50,11 @@ public class KnowledgeController
 			@RequestParam(name = "category", required = false) final String category,
 			@RequestParam(name = "pageSize", required = false, defaultValue = "5") final int pageSize) throws IOException
 	{
-		final List<Map<String, Object>> results = search.search(q, category, pageSize).stream().map(search::toJson).toList();
+		// Clamp to a sane window — an unbounded pageSize would let one request pull the whole index.
+		final int maxPageSize = de.hybris.platform.util.Config.getInt("coremcp.knowledge.maxPageSize", 50);
+		final int effectivePageSize = Math.max(1, Math.min(pageSize, maxPageSize));
+		final List<Map<String, Object>> results =
+			search.search(q, category, effectivePageSize).stream().map(search::toJson).toList();
 		return objectMapper.writeValueAsString(Map.of("results", results, "count", results.size()));
 	}
 }
