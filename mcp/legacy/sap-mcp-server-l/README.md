@@ -100,9 +100,11 @@ All commands run from `core-customize/`.
 | `./gradlew bootstrapPlatform` | Unpack commerce ZIPs, install DB driver, set up config |
 | `./gradlew setupConfig` | Regenerate config (platform defaults + dev-config overlay) |
 | `./gradlew cleanAll` | Wipe everything except `hybris/bin/custom`, `dev-config`, `dependencies`, `scripts` |
-| `./gradlew yclean yall` | Clean build (ant clean all) |
+| `./gradlew yclean yall` | Clean build of everything (ant clean all) |
+| `./gradlew yclean ybuild` | Clean build — the day-to-day command after code changes (always pair with `yclean`; incremental builds silently skip recompiles in this project) |
+| `./gradlew buildCustomExtensions` | Fast incremental build of custom extensions only — subject to the same stale-class hazard; prefer `yclean ybuild` when correctness matters |
 | `./gradlew yinitialize` | Initialize database (destroys existing data) |
-| `./gradlew yupdatesystem` | Update system (preserves data, applies schema changes) |
+| `./gradlew yupdatesystem` | Update system (preserves data, applies schema changes) — run with the server **stopped** |
 
 ### Server
 
@@ -122,6 +124,17 @@ All commands run from `core-customize/`.
 | `./gradlew groovy -Pfile=<path> [-Pcommit=true]` | Run Groovy script via HAC |
 | `./gradlew impex -Pfile=<path>` | Run ImpEx import via HAC |
 | `./gradlew flexquery -Pfile=<path\|query> [-PmaxResults=50]` | Run FlexibleSearch query via HAC |
+
+### Testing
+
+| Command | Purpose |
+|---------|---------|
+| `./gradlew testCustomExtensions` | Unit tests for all custom extensions (stop the server first — the junit tenant kills the live Solr) |
+| `ant integrationtests -Dtestclasses.extensions=coremcp` | Scoped integration tests — run from `hybris/bin/platform` after `. ./setantenv.sh`. Don't use `./gradlew yintegrationtests` with `-D` flags: the plugin drops them and runs the whole platform suite |
+| `./scripts/smoke-test.sh` | 21-check end-to-end suite against the live server (OAuth, MCP, search, cart, agent + live LLM call) |
+| `python3 scripts/test-mcp-e2e.py` | Protocol-level MCP e2e: OAuth → initialize → tools/list → tools/call → session DELETE |
+
+After an `*-items.xml` change, re-initialize the junit tenant once (`ant yunitinit`) or integration tests fail with `type code '...' invalid`.
 
 ## MCP Server Endpoints
 

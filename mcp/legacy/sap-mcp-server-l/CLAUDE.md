@@ -91,7 +91,13 @@ skipping a recompile of edited sources, leaving stale `.class` files on disk
 even though the build reports `BUILD SUCCESSFUL`. The symptom is "my code
 change doesn't seem to take effect" with no error. `yclean` is safe (only
 deletes build outputs, never data); the cost is ~30s extra build time and a
-guarantee your edits actually deploy.
+guarantee your edits actually deploy. The same hazard applies to
+`buildCustomExtensions` (incremental custom-only build) — don't use it when
+verifying changes.
+
+**Diagnostics:** `./gradlew serverStatus` (is it running), `serverLog` /
+`solrLog` / `allLogs` (tail logs — these block; prefer reading
+`hybris/log/tomcat/console-*.log` directly).
 
 ### HAC Console
 
