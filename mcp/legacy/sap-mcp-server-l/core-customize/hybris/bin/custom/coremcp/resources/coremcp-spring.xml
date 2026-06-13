@@ -285,6 +285,10 @@
     <bean id="defaultOpenAiCompatibleLlmProvider" parent="abstractHttpLlmProvider"
           class="com.coremcp.services.impl.OpenAiCompatibleLlmProvider"/>
 
+    <alias name="defaultGeminiLlmProvider" alias="geminiLlmProvider"/>
+    <bean id="defaultGeminiLlmProvider" parent="abstractHttpLlmProvider"
+          class="com.coremcp.services.impl.GeminiLlmProvider"/>
+
     <alias name="defaultLlmClient" alias="llmClient"/>
     <bean id="defaultLlmClient"
           class="com.coremcp.services.impl.DefaultLlmClient">
@@ -293,6 +297,7 @@
                 <ref bean="openAiLlmProvider"/>
                 <ref bean="anthropicLlmProvider"/>
                 <ref bean="openAiCompatibleLlmProvider"/>
+                <ref bean="geminiLlmProvider"/>
             </list>
         </property>
     </bean>

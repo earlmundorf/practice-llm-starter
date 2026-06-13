@@ -185,7 +185,7 @@ round-trip (verifies the agent invokes `info_search` for policy questions).
 The `coremcp` extension provides:
 - **MCP server:** JSON-RPC 2.0 protocol with 19 tools and a DB-persisted, cluster-safe session store (`McpSessionEntry`; `coremcp.session.store=persistent|memory`)
 - **Tool handlers:** Product search (keyword + categories), cart/vouchers, checkout, orders, customer lookup, promotions, knowledge base
-- **Agent service:** Multi-provider LLM agent (OpenAI/Anthropic/OpenAI-compatible) with tool calling, SSE streaming, transient-failure retry, and per-user rate limiting (`coremcp.agent.rateLimit.perMinute`)
+- **Agent service:** Multi-provider LLM agent (OpenAI/Anthropic/Gemini/OpenAI-compatible) with tool calling, SSE streaming, transient-failure retry, and per-user rate limiting (`coremcp.agent.rateLimit.perMinute`)
 - **Visual search:** Vision-model image analysis with 3-tier catalog search (POST /{baseSiteId}/agent/visual-search)
 - **Solr configuration:** `thinkshopIndex` (products: category/price/stock facets) and `knowledgeIndex` (knowledge base)
 
