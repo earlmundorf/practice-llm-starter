@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { auth, api, cartUtils } from '../services/api';
 import { AddressSelector } from '../components/AddressSelector';
@@ -59,15 +59,7 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
   const [serverTotal, setServerTotal] = useState<number | null>(null);
   const [serverDeliveryCost, setServerDeliveryCost] = useState<number | null>(null);
 
-  useEffect(() => {
-    loadCheckoutData();
-
-    const handleCartUpdate = () => loadCheckoutData();
-    window.addEventListener('cartUpdated', handleCartUpdate);
-    return () => window.removeEventListener('cartUpdated', handleCartUpdate);
-  }, []);
-
-  const loadPromotionData = async () => {
+  const loadPromotionData = useCallback(async () => {
     try {
       const promoData = await api.getCartPromotions();
       setAppliedVouchers(promoData.appliedVouchers);
@@ -83,9 +75,9 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
     } catch {
       // Non-critical — promotions display is optional
     }
-  };
+  }, []);
 
-  const loadCheckoutData = async () => {
+  const loadCheckoutData = useCallback(async () => {
     try {
       if (auth.isLoggedIn()) {
         const [user, addrs, cartData] = await Promise.all([
@@ -121,7 +113,15 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
     } finally {
       setLoading(false);
     }
-  };
+  }, [loadPromotionData]);
+
+  useEffect(() => {
+    loadCheckoutData();
+
+    const handleCartUpdate = () => loadCheckoutData();
+    window.addEventListener('cartUpdated', handleCartUpdate);
+    return () => window.removeEventListener('cartUpdated', handleCartUpdate);
+  }, [loadCheckoutData]);
 
   // Fetch delivery modes when address is selected
   useEffect(() => {
@@ -150,7 +150,7 @@ export const Checkout = ({ embedded, onBack, onOrderPlaced }: CheckoutProps = {}
     };
 
     fetchModes();
-  }, [selectedAddress]);
+  }, [selectedAddress, loadPromotionData]);
 
   const handleSelectAddress = (addr: Address) => {
     setSelectedAddress(addr);

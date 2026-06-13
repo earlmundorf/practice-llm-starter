@@ -103,7 +103,8 @@ test.describe('Visual Search — End-to-End Backend Verification', () => {
     console.log(`Response: HTTP ${backendResponse!.status}`);
     console.log(`Analysis: "${responseBody.visionAnalysis}"`);
     console.log(`Products: ${responseBody.products.length} matches`);
-    responseBody.products.forEach((p: any, i: number) => {
+    type MatchSummary = { matchType: string; confidence: number; product: { name: string; code: string } };
+    responseBody.products.forEach((p: MatchSummary, i: number) => {
       console.log(`  [${i}] ${p.matchType} (${Math.round(p.confidence * 100)}%) — ${p.product.name} (${p.product.code})`);
     });
   });

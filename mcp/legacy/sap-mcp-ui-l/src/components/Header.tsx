@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { auth, api, cartUtils } from '../services/api';
-import { useDarkMode } from '../contexts/DarkModeContext';
+import { useDarkMode } from '../hooks/useDarkMode';
 import { UserPicker } from './UserPicker';
 import { CartModal } from './CartModal';
 import type { User } from '../types';

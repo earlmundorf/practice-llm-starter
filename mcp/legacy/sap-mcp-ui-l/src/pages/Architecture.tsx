@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
-import { useDarkMode } from '../contexts/DarkModeContext';
+import { useDarkMode } from '../hooks/useDarkMode';
 
 interface MermaidDiagramProps {
   chart: string;

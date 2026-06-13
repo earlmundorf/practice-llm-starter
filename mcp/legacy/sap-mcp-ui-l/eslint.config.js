@@ -38,6 +38,12 @@ export default defineConfig([
     },
   },
   {
+    files: ['vite.config.ts', 'tests/**/*.ts'],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
+    },
+  },
+  {
     files: ['**/*.{js,jsx}'],
     extends: [
       js.configs.recommended,

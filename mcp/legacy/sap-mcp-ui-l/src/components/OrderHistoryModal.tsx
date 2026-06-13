@@ -15,8 +15,6 @@ export const OrderHistoryModal = ({ onClose, onOpenOrder }: Props) => {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     api.getUserOrders()
       .then((data) => { if (!cancelled) setOrders(data); })
       .catch(() => { if (!cancelled) setError('Failed to load orders'); })

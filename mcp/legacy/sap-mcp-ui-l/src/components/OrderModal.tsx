@@ -15,8 +15,6 @@ export const OrderModal = ({ orderId, onClose }: Props) => {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     api.getOrder(orderId)
       .then((data) => { if (!cancelled) setOrder(data); })
       .catch(() => { if (!cancelled) setError('Failed to load order details'); })

@@ -13,7 +13,6 @@ export const Orders = () => {
 
   useEffect(() => {
     loadUserAndOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.key]);
 
   const loadUserAndOrders = async () => {

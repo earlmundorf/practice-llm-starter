@@ -16,8 +16,6 @@ export const ProductModal = ({ code, onClose, onAddToCart }: Props) => {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
     api.getProduct(code)
       .then((data) => { if (!cancelled) setProduct(data); })
       .catch(() => { if (!cancelled) setError('Failed to load product details'); })
