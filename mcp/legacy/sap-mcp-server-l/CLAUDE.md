@@ -72,7 +72,7 @@ See `docs/getting-started.md` for the full walkthrough. Summary:
    ./scripts/index-solr.sh         # Index Solr (required for product search)
    ./scripts/setup-promotions.sh   # Create promotions
    ./gradlew groovy -Pfile=scripts/publish-promotions.groovy -Pcommit=true  # Publish to Drools
-   ./scripts/smoke-test.sh         # Verify end to end (21 checks)
+   ./scripts/smoke-test.sh         # Verify end to end (22 checks)
    ```
 
 ### Server Lifecycle
@@ -148,8 +148,9 @@ have this problem.)
 `type code '...' invalid`.
 
 **End-to-end verification:** `./scripts/smoke-test.sh` (from `core-customize/`,
-server running) runs 21 live checks — OAuth, MCP handshake/tools, search,
-cart flow, agent guards, and a real LLM round-trip.
+server running) runs 22 live checks — OAuth, MCP handshake/tools, search,
+cart flow, agent guards, a real LLM round-trip, and a KB-grounded LLM
+round-trip (verifies the agent invokes `info_search` for policy questions).
 
 ## Key Paths
 

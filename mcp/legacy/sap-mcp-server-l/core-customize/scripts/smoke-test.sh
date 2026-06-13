@@ -99,6 +99,17 @@ R=$(curl -sk --max-time 90 -X POST "$BASE/agent/chat" -H "Authorization: Bearer 
 REPLY=$(echo "$R" | jqpy "print(json.load(sys.stdin).get('reply',''))")
 if [ -n "$REPLY" ]; then ok "agent /chat LIVE LLM round-trip — reply: ${REPLY:0:90}"; else warn "agent /chat returned no reply (LLM key set on server?): ${R:0:160}"; fi
 
+# --- 10. KB-grounded LLM round-trip (info_search invocation) ------------------
+R=$(curl -sk --max-time 90 -X POST "$BASE/agent/chat" -H "Authorization: Bearer $CTOKEN" -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"In one short sentence, what is your return policy?"}]}')
+REPLY=$(echo "$R" | jqpy "print(json.load(sys.stdin).get('reply',''))")
+if echo "$REPLY" | grep -qiE "30[- ]?day|5-7|prepaid|free return"; then
+  ok "agent /chat KB-grounded round-trip (info_search) — reply: ${REPLY:0:90}"
+elif [ -n "$REPLY" ]; then
+  warn "agent /chat KB reply lacks policy-specific tokens (info_search not invoked?): ${REPLY:0:160}"
+else
+  warn "agent /chat KB-grounded returned no reply: ${R:0:160}"
+fi
+
 echo
 echo "================================================="
 echo "SMOKE TEST: $PASS passed, $FAIL failed, $WARN warnings"

@@ -46,7 +46,7 @@ cd core-customize
 ./scripts/setup-promotions.sh
 ./gradlew groovy -Pfile=scripts/publish-promotions.groovy -Pcommit=true
 
-# 7. Verify everything end to end (21 checks: OAuth, MCP, search, cart, agent)
+# 7. Verify everything end to end (22 checks: OAuth, MCP, search, cart, agent, KB)
 ./scripts/smoke-test.sh
 ```
 
