@@ -201,3 +201,25 @@ export interface VisualSearchResult {
   products: VisualSearchMatch[];
   mappedProducts: MappedVisualSearchMatch[];
 }
+
+// ============================================
+// Knowledge Base Types
+// ============================================
+// Public KB content served over /info/* (no auth). Consumed by the Help
+// center and footer/about pages. `category` is a plain string to stay
+// tolerant of new backend categories (e.g. loyalty content).
+export interface KnowledgeEntry {
+  uid: string;
+  category: string;
+  title: string;
+  summary: string;
+  body: string;
+  tags: string[];
+  priority: number;
+  imageUrl?: string;
+}
+
+export interface KnowledgeSearchResult {
+  results: KnowledgeEntry[];
+  count: number;
+}

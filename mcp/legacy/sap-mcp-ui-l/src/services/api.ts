@@ -11,6 +11,8 @@ import type {
   AppliedVoucher,
   AppliedPromotion,
   VisualSearchResult,
+  KnowledgeEntry,
+  KnowledgeSearchResult,
 } from '../types';
 
 // OCC base URL from environment (e.g., /occ/v2/electronics)
@@ -242,6 +244,17 @@ const mapOccAddress = (occ: any): Address => ({
   postalCode: occ.postalCode || '',
   country: { isocode: occ.country?.isocode || 'US', name: occ.country?.name },
   defaultAddress: occ.defaultAddress || false,
+});
+
+const mapKnowledgeEntry = (raw: any): KnowledgeEntry => ({
+  uid: raw.uid,
+  category: raw.category,
+  title: raw.title,
+  summary: raw.summary,
+  body: raw.body,
+  tags: raw.tags ?? [],
+  priority: raw.priority,
+  imageUrl: raw.imageUrl,
 });
 
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -859,6 +872,25 @@ export const api = {
       const error = await res.json().catch(() => ({}));
       throw new Error(error.errors?.[0]?.message || 'Failed to cancel order');
     }
+  },
+
+  // --- Knowledge Base (public /info/*; no auth) ---
+
+  searchKnowledge: async (
+    opts: { q?: string; category?: string; pageSize?: number } = {},
+  ): Promise<KnowledgeSearchResult> => {
+    const params = new URLSearchParams();
+    if (opts.q) params.set('q', opts.q);
+    if (opts.category) params.set('category', opts.category);
+    if (opts.pageSize != null) params.set('pageSize', String(opts.pageSize));
+
+    const res = await fetch(`${OCC_BASE}/info/search?${params}`, { cache: 'no-store' });
+    // KB is non-critical chrome — degrade quietly rather than throwing.
+    if (!res.ok) return { results: [], count: 0 };
+
+    const data = await res.json();
+    const results = (data.results ?? []).map(mapKnowledgeEntry);
+    return { results, count: data.count ?? results.length };
   },
 };
 
