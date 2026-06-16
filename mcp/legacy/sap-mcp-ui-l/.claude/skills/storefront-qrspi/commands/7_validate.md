@@ -29,6 +29,8 @@
    and propose which to **promote** into the stage commands / SKILL.md / config / repo
    CLAUDE.md (user-approved; mark promoted ones `status: promoted`). Nothing worth carrying
    forward? Say so and skip — don't manufacture findings.
+9. **Retire the ticket file.** If this ticket came from `tickets/active/`, move that file to
+   `tickets/completed/` so `active/` reflects the real remaining backlog.
 
 ## Do not
 

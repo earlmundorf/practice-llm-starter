@@ -5,6 +5,9 @@ If `jira.mode=manual` (or the MCP fetch fails): say so plainly and ask the devel
 paste the ticket — title, description, acceptance criteria, and any comments worth
 keeping. Record `source: manual paste` in `ticket.md`. A failed MCP call must degrade
 to paste, never block the workflow.
+**Local ticket store:** before MCP/paste, check `tickets/active/` — if a file matches the
+key/slug (e.g. `tickets/active/<KEY>*.md`), read it as the ticket source (it wins over MCP
+and paste) and remember its path for stage 7. If `tickets/` doesn't exist, ignore this.
 **Output:** `working-docs/<TICKET-KEY>/ticket.md` and `questions.md`.
 
 ## Instructions
