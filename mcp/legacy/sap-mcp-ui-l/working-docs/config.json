@@ -1,0 +1,37 @@
+{
+  "stack": "react-typescript-vite",
+  "packageManager": "npm",
+  "project": "demo-frontend",
+  "framework": { "react": "19", "router": "react-router-dom", "bundler": "vite", "e2e": "playwright", "markdown": "react-markdown + mermaid (chat rendering)" },
+  "build": {
+    "INSTALL": "npm install",
+    "TYPECHECK": "npx tsc --noEmit",
+    "LINT": "npm run lint",
+    "BUILD": "npm run build",
+    "E2E_TEST": "npx playwright test",
+    "E2E_TEST_ONE": "npx playwright test {spec}",
+    "DEV_SERVER": "npm run dev",
+    "PREVIEW": "npm run preview"
+  },
+  "changeTypeVerbs": {
+    "ts|tsx": ["TYPECHECK", "LINT", "BUILD"],
+    "css|styles": ["BUILD"],
+    "package.json|lockfile": ["INSTALL", "BUILD"],
+    "vite.config|tsconfig|eslint.config": ["TYPECHECK", "LINT", "BUILD"],
+    "tests|spec": ["E2E_TEST"]
+  },
+  "jira": { "mode": "manual", "project": null },
+  "researchLayers": [
+    { "name": "routing-pages", "targets": "App routes, src/pages/ (Home, Products, ProductDetail, Chat, Checkout, Orders, OrderConfirmation, Users, Architecture), navigation" },
+    { "name": "components", "targets": "src/components/, composition, props contracts, styling" },
+    { "name": "state", "targets": "src/contexts/ (DarkMode...), src/hooks/, URL-driven state, window events (cartUpdated/authChanged/authExpired)" },
+    { "name": "api-types", "targets": "src/services/api.ts methods, src/types/, OCC + coremcp agent/knowledge/visual-search contracts, auth/cart lifecycle" },
+    { "name": "build-config", "targets": "vite.config.ts (proxy, aliases), env vars, eslint/tsconfig, playwright.config.ts" }
+  ],
+  "_notes": [
+    "The repo's CLAUDE.md is authoritative for component/state/styling/API conventions.",
+    "This project HAS real e2e tests (Playwright, tests/*.spec.ts incl. visual-search) — E2E_TEST is a real verb, not MANUAL. Slice checkpoints that touch a flow with a spec should run E2E_TEST (or E2E_TEST_ONE for the relevant spec). There is no unit-test runner; TYPECHECK + LINT + BUILD + e2e is the gate.",
+    "Backend: coremcp MCP server at VITE_API_URL (SAP Commerce OCC v2 + agent/knowledge/visual-search). Chat.tsx + react-markdown/mermaid indicate the agent chat UI already exists here — research it before extending.",
+    "Set jira.mode to 'mcp' if the Atlassian connector is available."
+  ]
+}

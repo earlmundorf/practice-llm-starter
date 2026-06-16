@@ -5,10 +5,17 @@ If `jira.mode=manual` (or the MCP fetch fails): say so plainly and ask the devel
 paste the ticket — title, description, acceptance criteria, and any comments worth
 keeping. Record `source: manual paste` in `ticket.md`. A failed MCP call must degrade
 to paste, never block the workflow.
+**Local ticket store:** before MCP/paste, check `tickets/active/` — if a file matches the
+key/slug (e.g. `tickets/active/<KEY>*.md`), read it as the ticket source (it wins over MCP
+and paste) and remember its path for stage 7. If `tickets/` doesn't exist, ignore this.
 **Output:** `working-docs/<TICKET-KEY>/ticket.md` and `questions.md`.
 
 ## Instructions
 
+0. **Load prior findings.** List the skill's `findings/*.md` (skip README/TEMPLATE). Read
+   any whose `applies_to.area` or `ticket_type` plausibly matches this ticket — they carry
+   what earlier tickets learned about this codebase and these stages. Let them inform the
+   questions in step 3.
 1. Create the task directory `working-docs/<TICKET-KEY>/` (e.g., `working-docs/CMRC-1234/`).
    No ticket number? Use a short kebab slug: `working-docs/cart-rate-limit/`.
 2. Write `ticket.md`: problem statement in your own words, business context, draft
