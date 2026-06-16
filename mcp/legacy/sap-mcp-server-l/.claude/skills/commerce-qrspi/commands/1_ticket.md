@@ -9,6 +9,10 @@ to paste, never block the workflow.
 
 ## Instructions
 
+0. **Load prior findings.** List the skill's `findings/*.md` (skip README/TEMPLATE). Read
+   any whose `applies_to.area` or `ticket_type` plausibly matches this ticket — they carry
+   what earlier tickets learned about this codebase and these stages. Let them inform the
+   questions in step 3.
 1. Create the task directory `working-docs/<TICKET-KEY>/` (e.g., `working-docs/CMRC-1234/`).
    No ticket number? Use a short kebab slug: `working-docs/cart-rate-limit/`.
 2. Write `ticket.md`: problem statement in your own words, business context, draft

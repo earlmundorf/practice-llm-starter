@@ -104,6 +104,31 @@ On first run (any stage), if `working-docs/config.json` is missing:
 
 Config is versioned in git, so the team sets it up once per repo.
 
+## Self-improvement (the contract)
+
+This skill gets sharper every ticket. `findings/` holds what prior runs learned —
+workflow improvements and accumulated project knowledge (see `findings/README.md`).
+
+- **Start of a ticket (stage 1):** list `findings/*.md` (excluding README/TEMPLATE) and
+  load any whose `applies_to.area` / `ticket_type` matches this ticket, so research
+  starts informed.
+- **During a ticket:** when a stage hits something the references didn't cover — a wrong
+  verb mapping, a missed research category, a recurring codebase quirk — write
+  `findings/YYYY-MM-DD-{slug}.md` from `TEMPLATE.md`. Small ones count.
+- **End of a ticket (stage 7):** summarize new findings and propose which to **promote**
+  into the stage commands, this SKILL.md, the verb/layer config, or the repo's CLAUDE.md.
+  Promotion is user-approved; mark promoted findings `status: promoted`.
+
+Unpromoted findings still load next run — they help before promotion.
+
+## Editing the stages — keep the two copies in sync
+
+The 8 stage files live in **two** places: `commands/*.md` here (the portable skill copy,
+canonical) and `.claude/commands/cq/*.md` (where Claude Code reads `/cq:*`). The skill
+copy is the source of truth; after editing a stage, re-sync:
+`cp .claude/skills/storefront-qrspi/commands/*.md .claude/commands/cq/`. Drift means `/cq`
+behaves differently from the documented stage — don't let the two diverge.
+
 ## What this skill does NOT do
 
 Deploy, push without consent, edit node_modules/dist, write design.md before the

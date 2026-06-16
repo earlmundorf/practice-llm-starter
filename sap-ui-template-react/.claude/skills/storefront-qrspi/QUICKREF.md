@@ -59,6 +59,13 @@ Checkboxes in plan.md are the resume mechanism — a fresh session reads them an
 continues at the first unchecked task. Artifacts in `working-docs/<KEY>/` are
 gitignored except config.json.
 
+## Findings (the skill learns)
+
+Stage 1 loads `findings/*.md` whose area matches your ticket; stage 7 captures new ones
+and proposes promotion into the stages/config/CLAUDE.md. Findings live IN the skill
+(tracked), not in `working-docs/` (per-ticket scratch). One finding per file from
+`TEMPLATE.md`.
+
 ## Safety rails (every tier, no exceptions)
 
 Verification verbs before claiming done · diff-ownership gate before any PR ·

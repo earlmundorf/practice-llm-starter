@@ -21,7 +21,14 @@
    (e.g., "move to In Review") to `working-docs/<TICKET-KEY>/jira-updates.md` and
    remind the developer to apply it. `none` → skip.
 7. Close out: append a 5-line retrospective to `validation.md` — what went well, what went
-   wrong, what to carry into the next ticket (feeds skill improvement).
+   wrong, what to carry into the next ticket.
+8. **Feed the findings loop.** If this ticket surfaced anything the workflow or a future
+   ticket should know — a wrong/missing verb mapping, a research category the stages
+   missed, a recurring codebase quirk, a tier mis-call — write a
+   `findings/YYYY-MM-DD-{slug}.md` in the skill from `TEMPLATE.md`. Summarize new findings
+   and propose which to **promote** into the stage commands / SKILL.md / config / repo
+   CLAUDE.md (user-approved; mark promoted ones `status: promoted`). Nothing worth carrying
+   forward? Say so and skip — don't manufacture findings.
 
 ## Do not
 
