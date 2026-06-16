@@ -7,8 +7,8 @@ applies_to:
   area: api-types
   ticket_type: data
 kind: project-knowledge
-status: unpromoted
-promotion_target: repo CLAUDE.md (or design.md Manual-criteria phrasing)
+status: promoted
+promotion_target: repo CLAUDE.md → "Smoke-testing API methods in the dev console"
 ---
 
 ## What happened

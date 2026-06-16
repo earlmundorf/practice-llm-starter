@@ -128,6 +128,21 @@ Organize classes in this order: **layout -> spacing -> sizing -> colors -> effec
 - Return typed responses
 - API calls target SAP Commerce OCC endpoints (see `docs/endpoint-mapping.md`)
 
+### Smoke-testing API methods in the dev console
+
+`api` is an ES module export, not a global — a bare `api.x()` in the browser console
+throws `ReferenceError: api is not defined`. With `npm run dev` running, pull the module
+in first:
+
+```js
+const { api } = await import('/src/services/api.ts');
+await api.searchProducts('shoe');
+```
+
+A red `404 (Not Found)` line in the console on a method that returns `null`/`[]` for
+missing data is the browser logging the network response — not a thrown error; the call
+still resolves.
+
 ## File Naming Conventions
 
 | Type | Convention | Example |
