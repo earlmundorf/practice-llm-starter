@@ -892,6 +892,13 @@ export const api = {
     const results = (data.results ?? []).map(mapKnowledgeEntry);
     return { results, count: data.count ?? results.length };
   },
+
+  getKnowledgeEntry: async (uid: string): Promise<KnowledgeEntry | null> => {
+    const res = await fetch(`${OCC_BASE}/info/${encodeURIComponent(uid)}`, { cache: 'no-store' });
+    // null on 404 (and any non-OK) — missing entries must not throw.
+    if (!res.ok) return null;
+    return mapKnowledgeEntry(await res.json());
+  },
 };
 
 // ============================================
