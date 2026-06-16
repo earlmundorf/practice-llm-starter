@@ -27,3 +27,7 @@ test-results/
 
 # Claude Code local settings (copy from .claude/settings.local.json.example)
 .claude/settings.local.json
+
+# QRSPI per-ticket working artifacts — only the shared build-adapter config is tracked
+working-docs/*
+!working-docs/config.json

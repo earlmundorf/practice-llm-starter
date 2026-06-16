@@ -62,6 +62,20 @@ ThinkShop-UI/
 └── .claude/skills/    # Claude Code skills for SAP Commerce
 ```
 
+## Skills & Workflow
+
+| Skill (`.claude/skills/`) | Use it for |
+|---|---|
+| `react-ecommerce` | Code review against this repo's conventions |
+| `storefront-qrspi` | Structured ticket workflow — `/cq:go <TICKET> [tier]` (trivial/simple/full/comprehensive) |
+
+QRSPI verification verbs + research layers resolve from `working-docs/config.json`
+(committed; the rest of `working-docs/` is gitignored per-ticket scratch). This project
+has **real Playwright e2e** (`tests/*.spec.ts`), so `E2E_TEST` (`npx playwright test`) is
+a live checkpoint verb — there's no unit runner, so the gate is TYPECHECK + LINT + BUILD +
+e2e. The skill learns across tickets via `storefront-qrspi/findings/` (stage 1 loads
+matching findings; stage 7 captures + proposes promotion).
+
 ## Documentation Convention
 
 Each feature flow has a dedicated directory in `docs/` with three files:
