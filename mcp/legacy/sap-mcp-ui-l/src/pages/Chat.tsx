@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeExternalLinks from 'rehype-external-links';
 import { api, auth, getStoredCartCode, storeCartCode, clearStoredCartCode } from '../services/api';
 import { Checkout } from './Checkout';
+import { Markdown } from '../components/Markdown';
 import { OrderModal } from '../components/OrderModal';
 import { ProductModal } from '../components/ProductModal';
 import { OrderHistoryModal } from '../components/OrderHistoryModal';
@@ -616,35 +614,7 @@ export const Chat = () => {
                   ) : (
                     <>
                     {msg.content && (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[[rehypeExternalLinks, { target: '_blank', rel: ['noopener', 'noreferrer'] }]]}
-                      components={{
-                        a: (props) => (
-                          <a
-                            {...props}
-                            className="text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-700 dark:hover:text-blue-300"
-                          />
-                        ),
-                        p: (props) => <p {...props} className="mb-2 last:mb-0" />,
-                        ul: (props) => <ul {...props} className="list-disc pl-5 mb-2 last:mb-0" />,
-                        ol: (props) => <ol {...props} className="list-decimal pl-5 mb-2 last:mb-0" />,
-                        table: (props) => (
-                          <table {...props} className="border-collapse my-2 text-sm" />
-                        ),
-                        th: (props) => (
-                          <th {...props} className="border border-gray-300 dark:border-gray-600 px-2 py-1 text-left font-semibold" />
-                        ),
-                        td: (props) => (
-                          <td {...props} className="border border-gray-300 dark:border-gray-600 px-2 py-1" />
-                        ),
-                        code: (props) => (
-                          <code {...props} className="bg-gray-200 dark:bg-gray-800 rounded px-1 py-0.5 text-sm" />
-                        ),
-                      }}
-                    >
-                      {msg.content}
-                    </ReactMarkdown>
+                    <Markdown>{msg.content}</Markdown>
                     )}
                     {msg.streaming && msg.toolStatus && (
                       <div className={`flex items-center gap-2 text-sm italic text-gray-500 dark:text-gray-400 ${msg.content ? 'mt-2' : ''}`}>
