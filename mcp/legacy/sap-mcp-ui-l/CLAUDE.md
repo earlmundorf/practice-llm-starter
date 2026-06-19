@@ -165,6 +165,17 @@ still resolves.
 - **Display:** Uses same `ProductCard` component as normal search, with match type badge overlay
 - **Mobile:** Uses `capture="environment"` for native camera, 44px+ touch targets
 
+## Help Center
+
+- **Routes:** `/help` (`HelpCenter`, `src/pages/HelpCenter.tsx`) and `/help/:uid` (`HelpDetail`, `src/pages/HelpDetail.tsx`). Public — no auth required.
+- **API:** `api.searchKnowledge({ q?, category?, pageSize? })` returns `{ results, count }`; `api.getKnowledgeEntry(uid)` returns `KnowledgeEntry | null`. Both in `src/services/api.ts`. Public fetch (no `authFetch`), safe defaults on failure (empty result / null), never throw.
+- **Backend:** `GET ${OCC_BASE}/info/search` and `GET ${OCC_BASE}/info/{uid}` (coremcp). `pageSize` is server-clamped (default max 50); no offset/cursor.
+- **Types:** `KnowledgeEntry`, `KnowledgeSearchResult`, `KnowledgeCategory`, `KNOWLEDGE_CATEGORIES` const in `src/types/Knowledge.ts` (re-exported from `src/types/index.ts`). Categories: `policy, event, promo, guide, brand, howto, contact, loyalty`.
+- **URL state:** `/help` mirrors `Products.tsx` — `?q=` (300 ms debounce) + `?category=`, `setSearchParams(..., { replace: true })`, merge-then-mutate. Empty `q` is omitted so `/help` is canonical.
+- **Markdown:** Entry `body` rendered via shared `<Markdown>` (`src/components/Markdown.tsx`) — same component used by `Chat.tsx`. Plugins: `remarkGfm`, `rehypeExternalLinks` (links open in new tab). No sanitization (content is server-controlled).
+- **Not-found:** `/help/:uid` renders an inline not-found block per the `ProductDetail.tsx` pattern. No catch-all `<NotFound>` route.
+- **Spec:** `tests/help-center.spec.ts` covers index render, search-debounce → URL, category-chip toggle, click-through, and direct not-found navigation. Selectors: `getByRole` + `aria-label` (no `data-testid`).
+
 ## Don'ts
 
 - Don't modify files in `sample/` — it's a read-only reference
