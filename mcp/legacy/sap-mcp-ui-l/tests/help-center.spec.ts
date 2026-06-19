@@ -1,5 +1,26 @@
 import { test, expect } from '@playwright/test';
 
+const TEST_USER = 'john.doe@thinkshop.com';
+const TEST_PASS = '1234';
+
+async function dismissUserPicker(page: import('@playwright/test').Page) {
+  const emailInput = page.locator('input[placeholder*="email" i]');
+  if (await emailInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+    await emailInput.fill(TEST_USER);
+    await page.locator('input[type="password"]').fill(TEST_PASS);
+    await page
+      .locator('.fixed button[type="submit"], .fixed button:has-text("Sign In"), .fixed button:has-text("Log In")')
+      .first()
+      .click();
+    await expect(page.locator('.fixed.inset-0')).not.toBeVisible({ timeout: 10000 });
+  }
+}
+
+test.beforeEach(async ({ page }) => {
+  await page.goto('/');
+  await dismissUserPicker(page);
+});
+
 test.describe('/help — index', () => {
   test('renders search input and category chips', async ({ page }) => {
     await page.goto('/help');
