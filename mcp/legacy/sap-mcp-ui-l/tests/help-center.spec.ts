@@ -28,3 +28,25 @@ test.describe('/help — index', () => {
     await expect(page).toHaveURL((url) => !url.searchParams.has('category'));
   });
 });
+
+test.describe('/help/:uid — detail', () => {
+  test('clicking a result navigates to the detail page', async ({ page }) => {
+    await page.goto('/help');
+    await page.waitForLoadState('networkidle');
+    const firstLink = page.locator('a[href^="/help/"]').first();
+    if ((await firstLink.count()) === 0) {
+      // Backend has no entries; not-found test still covers the route.
+      return;
+    }
+    await firstLink.click();
+    await expect(page).toHaveURL(/\/help\/[^/]+/);
+    await expect(page.getByLabel('Back to Help')).toBeVisible();
+    await expect(page.locator('h1')).toBeVisible();
+  });
+
+  test('unknown uid renders a clean not-found block with a back link', async ({ page }) => {
+    await page.goto('/help/__nonexistent_kb_entry_for_test__');
+    await expect(page.getByRole('heading', { name: 'Help entry not found' })).toBeVisible();
+    await expect(page.getByLabel('Back to Help')).toBeVisible();
+  });
+});
