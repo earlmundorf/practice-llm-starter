@@ -10,6 +10,7 @@ import { ProductDetail } from './pages/ProductDetail';
 import { OrderConfirmation } from './pages/OrderConfirmation';
 import { Chat } from './pages/Chat';
 import { Architecture } from './pages/Architecture';
+import { HelpCenter } from './pages/HelpCenter';
 import { UserPicker } from './components/UserPicker';
 import { auth } from './services/api';
 import { DarkModeProvider } from './contexts/DarkModeContext';
@@ -57,6 +58,7 @@ export const App = () => {
               <Route path="/order-confirmation" element={<OrderConfirmation />} />
               <Route path="/chat" element={<Chat />} />
               <Route path="/architecture" element={<Architecture />} />
+              <Route path="/help" element={<HelpCenter />} />
             </Routes>
           </div>
           <footer className="hidden md:block text-center py-3 text-xs text-gray-400 dark:text-gray-600">

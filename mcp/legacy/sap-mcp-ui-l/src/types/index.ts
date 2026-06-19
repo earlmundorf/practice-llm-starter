@@ -223,3 +223,5 @@ export interface KnowledgeSearchResult {
   results: KnowledgeEntry[];
   count: number;
 }
+
+export * from './Knowledge';
