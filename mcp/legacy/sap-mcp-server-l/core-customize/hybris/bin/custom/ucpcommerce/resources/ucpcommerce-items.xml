@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!--
+ ucpcommerce item types.
+
+ Empty for now — UcpCheckoutSessionEntry (opaque UCP checkout id → hybris cart
+ code + protocol state; typecode 14003) is added in Phase 3 of the UCP build
+ sequence. Nothing in Phase 1/2 needs persisted state.
+-->
+
+<items xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:noNamespaceSchemaLocation="items.xsd">
+
+</items>

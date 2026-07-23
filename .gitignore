@@ -30,3 +30,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Riptide artifacts (cloud-synced)
+.humanlayer/tasks/
