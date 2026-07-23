@@ -22,4 +22,61 @@
     <bean id="defaultUcpProfileService"
           class="com.ucpcommerce.services.impl.DefaultUcpProfileService"/>
 
+    <!-- ===================================================================
+         Money boundary — the single BigDecimal-major ⇄ integer-minor-unit
+         converter every UCP marshaller must use (silent-100×-bug guard).
+         =================================================================== -->
+
+    <alias name="defaultUcpMoneyConverter" alias="ucpMoneyConverter"/>
+    <bean id="defaultUcpMoneyConverter"
+          class="com.ucpcommerce.services.impl.UcpMoneyConverter"/>
+
+    <!-- ===================================================================
+         Catalog capability (dev.ucp.shopping.catalog) — binding-agnostic
+         service over the standard product facades.
+         =================================================================== -->
+
+    <alias name="defaultUcpCatalogService" alias="ucpCatalogService"/>
+    <bean id="defaultUcpCatalogService"
+          class="com.ucpcommerce.services.impl.DefaultUcpCatalogService">
+        <property name="productSearchFacade" ref="productSearchFacade"/>
+        <property name="productFacade" ref="productFacade"/>
+        <property name="ucpMoneyConverter" ref="ucpMoneyConverter"/>
+    </bean>
+
+    <!-- ===================================================================
+         UCP MCP binding — tool adapters + stateless JSON-RPC dispatcher.
+         Tool names follow the UCP MCP capability bindings.
+         =================================================================== -->
+
+    <alias name="defaultSearchCatalogTool" alias="searchCatalogTool"/>
+    <bean id="defaultSearchCatalogTool"
+          class="com.ucpcommerce.tools.impl.SearchCatalogTool">
+        <property name="ucpCatalogService" ref="ucpCatalogService"/>
+    </bean>
+
+    <alias name="defaultLookupCatalogTool" alias="lookupCatalogTool"/>
+    <bean id="defaultLookupCatalogTool"
+          class="com.ucpcommerce.tools.impl.LookupCatalogTool">
+        <property name="ucpCatalogService" ref="ucpCatalogService"/>
+    </bean>
+
+    <alias name="defaultGetProductTool" alias="getProductTool"/>
+    <bean id="defaultGetProductTool"
+          class="com.ucpcommerce.tools.impl.GetProductTool">
+        <property name="ucpCatalogService" ref="ucpCatalogService"/>
+    </bean>
+
+    <alias name="defaultUcpMcpDispatcherService" alias="ucpMcpDispatcherService"/>
+    <bean id="defaultUcpMcpDispatcherService"
+          class="com.ucpcommerce.services.impl.DefaultUcpMcpDispatcherService">
+        <property name="tools">
+            <list>
+                <ref bean="searchCatalogTool"/>
+                <ref bean="lookupCatalogTool"/>
+                <ref bean="getProductTool"/>
+            </list>
+        </property>
+    </bean>
+
 </beans>

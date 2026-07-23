@@ -7,10 +7,14 @@ day one (--transport mcp is the default; rest lands in Phase 7). Assertions
 are written against UCP payload objects, not the wire, so they are reused
 verbatim across transports.
 
-Phase 1 scope: fetch the public profile anonymously, assert its JSON shape,
-and (best-effort) schema-validate captured payloads with the `ucp-schema` CLI
-when it is installed. Later phases append catalog / checkout / order /
-promotions / knowledge sections.
+Sections so far:
+  1. Profile   — anonymous discovery document shape (Phase 1) + Phase 2 entries
+  2. Auth      — password-grant bootstrap (design R8)
+  3. Catalog   — tools/list, search_catalog / lookup_catalog / get_product with
+                 integer minor-unit price assertions (Phase 2)
+Later phases append checkout / order / promotions / knowledge sections.
+Schema validation shells out to the `ucp-schema` CLI when installed (best
+effort; SKIP otherwise).
 
 Usage:
     python3 core-customize/scripts/ucp-e2e.py
@@ -52,6 +56,19 @@ CUSTOMER_PASSWORD = "1234"
 
 # Pinned UCP versions are dated calver strings, e.g. 2026-04-08.
 UCP_VERSION_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+# Known ThinkShop fixtures (sampledatamcp projectdata-10-products.impex).
+# Prices are asserted in INTEGER MINOR UNITS — the storefront major-unit
+# price × 100 for USD (the silent-100×-bug guard).
+KNOWN_SKU = "LAPTOP_PRO_15"
+KNOWN_SKU_PRICE_MINOR = 129999          # $1299.99
+SECOND_SKU = "WIRELESS_GAMING_MOUSE"
+SECOND_SKU_PRICE_MINOR = 7999           # $79.99
+
+# UCP MCP catalog binding tool names (pinned spec 2026-04-08).
+EXPECTED_CATALOG_TOOLS = {"search_catalog", "lookup_catalog", "get_product"}
+
+HARNESS_AGENT_PROFILE = {"profile": "https://ucp-e2e.invalid/.well-known/ucp"}
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -214,17 +231,200 @@ def test_profile(base_url, base_site):
     check("profile has payment_handlers array",
           isinstance(body.get("payment_handlers"), list), f"got {body.get('payment_handlers')!r}")
 
-    # Phase 1 serves a nearly-empty profile — the profile only advertises what
-    # works. These assertions are updated as later phases add entries.
-    check("capabilities is empty (Phase 1)", body.get("capabilities") == [],
-          f"got {body.get('capabilities')!r}")
-    check("services is empty (Phase 1)", body.get("services") == {},
-          f"got {body.get('services')!r}")
-    check("payment_handlers is empty (Phase 1)", body.get("payment_handlers") == [],
+    # The profile only advertises what works. Phase 2: the catalog capability
+    # + the mcp transport; checkout/payment_handlers stay absent until Phase 5.
+    caps = body.get("capabilities") or []
+    cap_names = [c.get("name") for c in caps if isinstance(c, dict)]
+    check("profile advertises dev.ucp.shopping.catalog",
+          "dev.ucp.shopping.catalog" in cap_names, f"got {cap_names!r}")
+    catalog_cap = next((c for c in caps if isinstance(c, dict)
+                        and c.get("name") == "dev.ucp.shopping.catalog"), {})
+    check("catalog capability version is a dated calver string",
+          bool(UCP_VERSION_RE.match(catalog_cap.get("version", ""))),
+          f"got {catalog_cap.get('version')!r}")
+
+    services = body.get("services") or {}
+    mcp_endpoint = (services.get("dev.ucp.shopping") or {}).get("mcp", {}).get("endpoint", "")
+    check("profile advertises the mcp transport endpoint",
+          mcp_endpoint.endswith(f"/occ/v2/{base_site}/ucp/mcp"), f"got {mcp_endpoint!r}")
+    check("rest transport not advertised yet (pre-Phase 7)",
+          "rest" not in (services.get("dev.ucp.shopping") or {}),
+          f"got {services.get('dev.ucp.shopping')!r}")
+    check("payment_handlers is empty (pre-Phase 5)", body.get("payment_handlers") == [],
           f"got {body.get('payment_handlers')!r}")
 
     ucp_schema_validate(body, "profile")
     return body
+
+
+# ── UCP MCP binding helpers ─────────────────────────────────────────────────
+
+_rpc_id = 0
+
+
+def mcp_rpc(base_url, base_site, token, method, params=None, notification=False):
+    """POST one JSON-RPC request to the UCP MCP endpoint. Returns (status, headers, body)."""
+    global _rpc_id
+    payload = {"jsonrpc": "2.0", "method": method}
+    if not notification:
+        _rpc_id += 1
+        payload["id"] = _rpc_id
+    if params is not None:
+        payload["params"] = params
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    url = f"{base_url}/occ/v2/{base_site}/ucp/mcp"
+    log_verbose(f"  POST {url} {method}")
+    return http_request(url, data=payload, headers=headers, method="POST")
+
+
+def mcp_tool_call(base_url, base_site, token, tool, arguments, meta=None):
+    """tools/call with UCP per-call meta. Returns (status, body, payload_dict_or_None)."""
+    params = {"name": tool, "arguments": arguments,
+              "meta": meta if meta is not None else {"ucp-agent": HARNESS_AGENT_PROFILE}}
+    status, _, body = mcp_rpc(base_url, base_site, token, "tools/call", params)
+    payload = None
+    try:
+        content = body["result"]["content"][0]["text"]
+        payload = json.loads(content)
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+        pass
+    log_verbose(f"  {tool} payload: {json.dumps(payload, indent=2)[:1200] if payload else body}")
+    return status, body, payload
+
+
+def assert_ucp_envelope(payload, label, expected_status="success"):
+    """Every UCP capability payload leads with a ucp envelope."""
+    ucp = (payload or {}).get("ucp") or {}
+    check(f"{label}: ucp envelope has dated version",
+          bool(UCP_VERSION_RE.match(ucp.get("version", ""))), f"got {ucp.get('version')!r}")
+    check(f"{label}: ucp.status is {expected_status}",
+          ucp.get("status") == expected_status, f"got {ucp.get('status')!r}")
+
+
+def test_auth(base_url):
+    """Password-grant auth bootstrap (design R8 / diagram S1)."""
+    log(f"\n{Colors.CYAN}── Auth bootstrap (password grant, {CUSTOMER_EMAIL}) ──{Colors.RESET}")
+    token = get_customer_token(base_url)
+    check("password-grant token obtained", token is not None,
+          "OAuth token request failed — is the server initialized?")
+    return token
+
+
+def test_catalog_mcp(base_url, base_site, token):
+    """Phase 2: dev.ucp.shopping.catalog over the MCP binding."""
+    log(f"\n{Colors.CYAN}── Catalog capability (MCP binding) ──{Colors.RESET}")
+
+    # The endpoint is @Secured — no token must mean 401, not data.
+    status, _, _ = mcp_rpc(base_url, base_site, None, "tools/list")
+    check("unauthenticated call is rejected (401)", status == 401, f"got {status}")
+
+    # A generic MCP client's initialize is tolerated harmlessly (stateless).
+    status, headers, body = mcp_rpc(base_url, base_site, token, "initialize",
+                                    {"protocolVersion": "2025-11-25",
+                                     "clientInfo": {"name": "ucp-e2e", "version": "1.0"}})
+    check("initialize tolerated (200, no error)",
+          status == 200 and body.get("error") is None, f"status {status}, body {str(body)[:200]}")
+    check("initialize returns serverInfo",
+          isinstance(body.get("result", {}).get("serverInfo"), dict), f"got {body.get('result')!r}")
+    check("initialize issues no session header",
+          not any(h.lower() == "mcp-session-id" for h in headers), f"headers {list(headers)}")
+
+    # notifications/initialized → 202, empty body.
+    status, _, _ = mcp_rpc(base_url, base_site, token, "notifications/initialized", notification=True)
+    check("notification answered with 202", status == 202, f"got {status}")
+
+    # tools/list — exactly the catalog binding's tool names (Phase 2).
+    status, _, body = mcp_rpc(base_url, base_site, token, "tools/list")
+    tools = body.get("result", {}).get("tools", [])
+    tool_names = {t.get("name") for t in tools if isinstance(t, dict)}
+    check("tools/list returns exactly the catalog tools",
+          tool_names == EXPECTED_CATALOG_TOOLS, f"got {sorted(tool_names)!r}")
+
+    # Unknown tool → JSON-RPC invalid-params error.
+    status, body, _ = mcp_tool_call(base_url, base_site, token, "definitely_not_a_tool", {})
+    check("unknown tool returns -32602",
+          body.get("error", {}).get("code") == -32602, f"got {body.get('error')!r}")
+
+    # search_catalog for a known SKU keyword.
+    status, body, payload = mcp_tool_call(base_url, base_site, token,
+                                          "search_catalog", {"query": "laptop"})
+    check("search_catalog returns a parseable UCP payload", payload is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if payload is None:
+        return
+    assert_ucp_envelope(payload, "search_catalog")
+    products = payload.get("products") or []
+    check("search_catalog returns products", len(products) > 0, "no products — is Solr indexed?")
+    check("every product price is integer minor units",
+          all(isinstance(p.get("price"), int) for p in products if p.get("price") is not None)
+          and any(isinstance(p.get("price"), int) for p in products),
+          f"prices: {[p.get('price') for p in products]!r}")
+    known = next((p for p in products if p.get("id") == KNOWN_SKU), None)
+    check(f"search_catalog finds {KNOWN_SKU}", known is not None,
+          f"got ids {[p.get('id') for p in products]!r}")
+    if known:
+        check(f"{KNOWN_SKU} search price is {KNOWN_SKU_PRICE_MINOR} minor units",
+              known.get("price") == KNOWN_SKU_PRICE_MINOR, f"got {known.get('price')!r}")
+        check(f"{KNOWN_SKU} currency is USD", known.get("currency") == "USD",
+              f"got {known.get('currency')!r}")
+    check("search_catalog includes pagination",
+          isinstance(payload.get("pagination"), dict), f"got {payload.get('pagination')!r}")
+    ucp_schema_validate(payload, "search_catalog response")
+
+    # get_product for the known SKU — the ×100 spot check on the detail path.
+    status, body, payload = mcp_tool_call(base_url, base_site, token,
+                                          "get_product", {"id": KNOWN_SKU})
+    check("get_product returns a parseable UCP payload", payload is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if payload is not None:
+        assert_ucp_envelope(payload, "get_product")
+        product = payload.get("product") or {}
+        check(f"get_product returns {KNOWN_SKU}", product.get("id") == KNOWN_SKU,
+              f"got {product.get('id')!r}")
+        check(f"get_product price is {KNOWN_SKU_PRICE_MINOR} minor units (storefront $1299.99)",
+              product.get("price") == KNOWN_SKU_PRICE_MINOR, f"got {product.get('price')!r}")
+        check("get_product has availability", bool(product.get("availability")),
+              f"got {product.get('availability')!r}")
+        ucp_schema_validate(payload, "get_product response")
+
+    # lookup_catalog batch — known ids resolve, price integrity on a second SKU.
+    status, body, payload = mcp_tool_call(base_url, base_site, token,
+                                          "lookup_catalog", {"ids": [KNOWN_SKU, SECOND_SKU]})
+    check("lookup_catalog returns a parseable UCP payload", payload is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if payload is not None:
+        assert_ucp_envelope(payload, "lookup_catalog")
+        by_id = {p.get("id"): p for p in payload.get("products") or []}
+        check("lookup_catalog resolves both known ids",
+              set(by_id) == {KNOWN_SKU, SECOND_SKU}, f"got {sorted(by_id)!r}")
+        check(f"{SECOND_SKU} lookup price is {SECOND_SKU_PRICE_MINOR} minor units",
+              by_id.get(SECOND_SKU, {}).get("price") == SECOND_SKU_PRICE_MINOR,
+              f"got {by_id.get(SECOND_SKU, {}).get('price')!r}")
+
+    # lookup with one unknown id → partial success + recoverable message.
+    status, body, payload = mcp_tool_call(base_url, base_site, token,
+                                          "lookup_catalog", {"ids": [KNOWN_SKU, "NO_SUCH_SKU"]})
+    if payload is not None:
+        msgs = payload.get("messages") or []
+        check("lookup_catalog reports unknown id in messages[]",
+              any(m.get("code") == "not_found" and m.get("severity") == "recoverable"
+                  for m in msgs), f"got {msgs!r}")
+        check("lookup_catalog still resolves the known id",
+              any(p.get("id") == KNOWN_SKU for p in payload.get("products") or []),
+              f"got {payload.get('products')!r}")
+
+    # get_product for an unknown id — UCP business error, not a transport error.
+    status, body, payload = mcp_tool_call(base_url, base_site, token,
+                                          "get_product", {"id": "NO_SUCH_SKU"})
+    check("get_product unknown id still returns 200", status == 200, f"got {status}")
+    if payload is not None:
+        assert_ucp_envelope(payload, "get_product (unknown id)", expected_status="error")
+        msgs = payload.get("messages") or []
+        check("unknown id yields unrecoverable not_found message",
+              any(m.get("code") == "not_found" and m.get("severity") == "unrecoverable"
+                  for m in msgs), f"got {msgs!r}")
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
@@ -255,10 +455,17 @@ def main():
         log(f"\n{Colors.RED}FATAL: could not fetch the UCP profile — is the server running?{Colors.RESET}")
         sys.exit(1)
 
-    # Later phases: auth bootstrap (password grant) + catalog / checkout /
-    # order / promotions / knowledge sections over the selected transport.
+    # Section 2: auth bootstrap (password grant) — required by every
+    # capability section from here on.
+    token = test_auth(base_url)
+
+    # Section 3+: capability sections over the selected transport.
     if args.transport == "rest":
         log(f"\n{Colors.YELLOW}NOTE{Colors.RESET} --transport rest is not implemented until Phase 7")
+    elif token:
+        test_catalog_mcp(base_url, args.base_site, token)
+    else:
+        log(f"\n{Colors.RED}FATAL: no auth token — skipping capability sections{Colors.RESET}")
 
     # Summary
     log(f"\n{'='*60}")
