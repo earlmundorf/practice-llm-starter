@@ -33,3 +33,6 @@ logs/
 
 # Riptide artifacts (cloud-synced)
 .humanlayer/tasks/
+
+# Riptide workspace local overrides
+.humanlayer/workspace.local.json
