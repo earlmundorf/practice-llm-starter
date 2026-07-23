@@ -32,6 +32,10 @@ public class UcpCheckoutRequest
 	@JsonProperty("fulfillment")
 	private UcpFulfillment fulfillment;
 
+	/** Payment instruments — only acted on by {@code complete_checkout} (Phase 5). */
+	@JsonProperty("payment")
+	private UcpPayment payment;
+
 	public List<UcpLineItemRequest> getLineItems()
 	{
 		return lineItems;
@@ -60,5 +64,15 @@ public class UcpCheckoutRequest
 	public void setFulfillment(final UcpFulfillment fulfillment)
 	{
 		this.fulfillment = fulfillment;
+	}
+
+	public UcpPayment getPayment()
+	{
+		return payment;
+	}
+
+	public void setPayment(final UcpPayment payment)
+	{
+		this.payment = payment;
 	}
 }

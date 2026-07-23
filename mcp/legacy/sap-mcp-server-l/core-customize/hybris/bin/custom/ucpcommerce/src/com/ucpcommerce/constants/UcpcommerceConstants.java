@@ -20,6 +20,14 @@ public class UcpcommerceConstants extends GeneratedUcpcommerceConstants
 	/** Shipped default for the public base URL (local dev server). */
 	public static final String PUBLIC_BASE_URL_DEFAULT = "https://localhost:9002";
 
+	/**
+	 * The single declared payment handler id (design R9): the profile's
+	 * {@code payment_handlers} entry and the only {@code handler_id}
+	 * {@code complete_checkout} accepts. Any credential token is accepted for
+	 * this handler; the existing mock default-Visa flow runs behind it.
+	 */
+	public static final String PAYMENT_HANDLER_ID = "thinkshop_mock_card";
+
 	private UcpcommerceConstants()
 	{
 		//empty

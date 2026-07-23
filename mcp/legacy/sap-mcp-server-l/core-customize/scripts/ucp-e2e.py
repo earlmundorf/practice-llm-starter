@@ -18,7 +18,11 @@ Sections so far:
                  delivery mode, derived status transition to ready_for_complete,
                  and Drools promotion discounts (BOGO mouse) in totals (Phase 4;
                  requires setup-promotions.sh + publish-promotions.groovy)
-Later phases append complete/cancel, order, promotions and knowledge sections.
+  6. Complete  — complete_checkout (mock payment handler thinkshop_mock_card,
+                 meta["idempotency-key"], idempotent replay returns the SAME
+                 order with no second placeOrder) + cancel_checkout (idempotent,
+                 terminal) (Phase 5)
+Later phases append order, promotions and knowledge sections.
 Schema validation shells out to the `ucp-schema` CLI when installed (best
 effort; SKIP otherwise).
 
@@ -39,6 +43,7 @@ import tempfile
 import urllib.request
 import urllib.error
 import urllib.parse
+import uuid
 
 # Skip certificate verification for self-signed dev cert (same as test-mcp-e2e.py)
 _SSL_CTX = ssl.create_default_context()
@@ -72,10 +77,16 @@ SECOND_SKU = "WIRELESS_GAMING_MOUSE"
 SECOND_SKU_PRICE_MINOR = 7999           # $79.99
 
 # UCP MCP binding tool names (pinned spec 2026-04-08). Grows phase by phase:
-# catalog (Phase 2) + create/get checkout (Phase 3) + update (Phase 4).
+# catalog (Phase 2) + create/get checkout (Phase 3) + update (Phase 4)
+# + complete/cancel (Phase 5).
 EXPECTED_CATALOG_TOOLS = {"search_catalog", "lookup_catalog", "get_product"}
-EXPECTED_CHECKOUT_TOOLS = {"create_checkout", "get_checkout", "update_checkout"}
+EXPECTED_CHECKOUT_TOOLS = {"create_checkout", "get_checkout", "update_checkout",
+                           "complete_checkout", "cancel_checkout"}
 EXPECTED_TOOLS = EXPECTED_CATALOG_TOOLS | EXPECTED_CHECKOUT_TOOLS
+
+# The single declared mock payment handler (design R9) — the only handler_id
+# complete_checkout accepts; any credential token is accepted for it.
+PAYMENT_HANDLER_ID = "thinkshop_mock_card"
 
 # Destination fixtures (sampledatamcp: john.doe's deliverable US address,
 # ZoneDeliveryMode thinkshop-standard $5.99 / thinkshop-express $14.99; the
@@ -256,8 +267,9 @@ def test_profile(base_url, base_site):
     check("profile has payment_handlers array",
           isinstance(body.get("payment_handlers"), list), f"got {body.get('payment_handlers')!r}")
 
-    # The profile only advertises what works. Phase 2: the catalog capability
-    # + the mcp transport; checkout/payment_handlers stay absent until Phase 5.
+    # The profile only advertises what works. Phase 2 added the catalog
+    # capability + the mcp transport; Phase 5 adds the checkout capability
+    # and the single mock payment handler.
     caps = body.get("capabilities") or []
     cap_names = [c.get("name") for c in caps if isinstance(c, dict)]
     check("profile advertises dev.ucp.shopping.catalog",
@@ -267,6 +279,8 @@ def test_profile(base_url, base_site):
     check("catalog capability version is a dated calver string",
           bool(UCP_VERSION_RE.match(catalog_cap.get("version", ""))),
           f"got {catalog_cap.get('version')!r}")
+    check("profile advertises dev.ucp.shopping.checkout (Phase 5)",
+          "dev.ucp.shopping.checkout" in cap_names, f"got {cap_names!r}")
 
     services = body.get("services") or {}
     mcp_endpoint = (services.get("dev.ucp.shopping") or {}).get("mcp", {}).get("endpoint", "")
@@ -275,8 +289,10 @@ def test_profile(base_url, base_site):
     check("rest transport not advertised yet (pre-Phase 7)",
           "rest" not in (services.get("dev.ucp.shopping") or {}),
           f"got {services.get('dev.ucp.shopping')!r}")
-    check("payment_handlers is empty (pre-Phase 5)", body.get("payment_handlers") == [],
-          f"got {body.get('payment_handlers')!r}")
+    handlers = body.get("payment_handlers") or []
+    handler_ids = [h.get("id") for h in handlers if isinstance(h, dict)]
+    check(f"profile declares exactly the mock payment handler {PAYMENT_HANDLER_ID}",
+          handler_ids == [PAYMENT_HANDLER_ID], f"got {handler_ids!r}")
 
     ucp_schema_validate(body, "profile")
     return body
@@ -700,6 +716,191 @@ def test_checkout_update_mcp(base_url, base_site, token):
           body.get("result", {}).get("isError") is True, f"got {body.get('result')!r}")
 
 
+def test_checkout_complete_mcp(base_url, base_site, token):
+    """Phase 5: complete_checkout (mock payment + idempotency) and cancel_checkout."""
+    log(f"\n{Colors.CYAN}── Checkout capability: complete/cancel (MCP binding) ──{Colors.RESET}")
+
+    def totals_of(payload):
+        return {t.get("type"): t.get("amount") for t in payload.get("totals") or []}
+
+    def payment_checkout(handler_id=PAYMENT_HANDLER_ID):
+        # Any credential token is accepted for the declared mock handler (R9).
+        return {"payment": {"instruments": [
+            {"handler_id": handler_id, "type": "card",
+             "credential": {"token": "tok_ucp_e2e_demo"}}]}}
+
+    def meta_with_key(key):
+        return {"ucp-agent": HARNESS_AGENT_PROFILE, "idempotency-key": key}
+
+    # Build a purchasable checkout: two mice (BOGO fires) + destination.
+    _, body, payload = mcp_tool_call(base_url, base_site, token, "create_checkout",
+                                     {"checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                                   "quantity": 2}],
+                                                   "buyer": {"first_name": "John", "last_name": "Doe",
+                                                             "email": CUSTOMER_EMAIL}}})
+    checkout_id = (payload or {}).get("id")
+    check("complete section: purchase checkout created", bool(checkout_id),
+          f"body {str(body)[:300]}")
+    if not checkout_id:
+        return None
+    _, body, upd = mcp_tool_call(base_url, base_site, token, "update_checkout",
+                                 {"id": checkout_id,
+                                  "checkout": {"fulfillment": {
+                                      "destination": DESTINATION,
+                                      "delivery_mode": DELIVERY_MODE_STANDARD}}})
+    check("purchase checkout is ready_for_complete",
+          (upd or {}).get("status") == "ready_for_complete",
+          f"got {(upd or {}).get('status')!r}")
+    if (upd or {}).get("status") != "ready_for_complete":
+        return None
+
+    # 1. Missing meta["idempotency-key"] → client protocol bug → MCP isError.
+    status, body, _ = mcp_tool_call(base_url, base_site, token, "complete_checkout",
+                                    {"id": checkout_id, "checkout": payment_checkout()})
+    check("complete without idempotency-key is an isError tool result",
+          body.get("result", {}).get("isError") is True, f"got {body.get('result')!r}")
+
+    # 2. Unknown handler_id → unrecoverable UCP message, checkout untouched.
+    status, body, bad = mcp_tool_call(base_url, base_site, token, "complete_checkout",
+                                      {"id": checkout_id,
+                                       "checkout": payment_checkout("acme_real_card")},
+                                      meta=meta_with_key(str(uuid.uuid4())))
+    check("unknown payment handler still returns 200", status == 200, f"got {status}")
+    if bad is not None:
+        assert_ucp_envelope(bad, "complete_checkout (unknown handler)", expected_status="error")
+        msgs = bad.get("messages") or []
+        check("unknown handler yields an unrecoverable message naming the declared handler",
+              any(m.get("severity") == "unrecoverable" and PAYMENT_HANDLER_ID in (m.get("content") or "")
+                  for m in msgs), f"got {msgs!r}")
+
+    # 3. The real complete: mock Visa path → placeOrder → status completed + order.id.
+    idempotency_key = str(uuid.uuid4())
+    status, body, done = mcp_tool_call(base_url, base_site, token, "complete_checkout",
+                                       {"id": checkout_id, "checkout": payment_checkout()},
+                                       meta=meta_with_key(idempotency_key))
+    check("complete_checkout returns a parseable UCP payload", done is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if done is None:
+        return None
+    check("complete_checkout is not an MCP isError result",
+          body.get("result", {}).get("isError") is not True, f"got {body.get('result')!r}")
+    assert_ucp_envelope(done, "complete_checkout")
+    check("completed checkout echoes the id", done.get("id") == checkout_id,
+          f"got {done.get('id')!r}")
+    check("status is completed", done.get("status") == "completed",
+          f"got {done.get('status')!r}")
+    order_id = (done.get("order") or {}).get("id")
+    check("completed checkout embeds order.id", bool(order_id), f"got {done.get('order')!r}")
+    totals = totals_of(done)
+    check(f"completed BOGO discount of {BOGO_DISCOUNT_MINOR} survives onto the order",
+          totals.get("discount") == BOGO_DISCOUNT_MINOR, f"got {totals!r}")
+    check(f"completed shipping is {SHIPPING_STANDARD_MINOR}",
+          totals.get("shipping") == SHIPPING_STANDARD_MINOR, f"got {totals!r}")
+    expected_total = SECOND_SKU_PRICE_MINOR + SHIPPING_STANDARD_MINOR
+    check(f"completed total is {expected_total} (discounted mice + standard shipping)",
+          totals.get("total") == expected_total, f"got {totals!r}")
+    ucp_schema_validate(done, "complete_checkout response")
+
+    # 4. Idempotent replay: the SAME key returns the SAME order — never a second
+    #    placeOrder (verified in the DB as exactly one order for this key).
+    status, body, replay = mcp_tool_call(base_url, base_site, token, "complete_checkout",
+                                         {"id": checkout_id, "checkout": payment_checkout()},
+                                         meta=meta_with_key(idempotency_key))
+    check("idempotent replay returns a parseable UCP payload", replay is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if replay is not None:
+        check("replay status is completed", replay.get("status") == "completed",
+              f"got {replay.get('status')!r}")
+        check("replay returns the SAME order.id (no second order)",
+              (replay.get("order") or {}).get("id") == order_id,
+              f"first {order_id!r} vs replay {(replay.get('order') or {}).get('id')!r}")
+
+    # 5. A DIFFERENT key on the completed checkout → unrecoverable, no new order.
+    status, body, again = mcp_tool_call(base_url, base_site, token, "complete_checkout",
+                                        {"id": checkout_id, "checkout": payment_checkout()},
+                                        meta=meta_with_key(str(uuid.uuid4())))
+    if again is not None:
+        assert_ucp_envelope(again, "complete_checkout (different key, already completed)",
+                            expected_status="error")
+        msgs = again.get("messages") or []
+        check("different-key complete on a completed checkout is unrecoverable",
+              any(m.get("severity") == "unrecoverable" for m in msgs), f"got {msgs!r}")
+
+    # 6. get_checkout reflects the terminal completed state (cart was consumed).
+    _, _, got = mcp_tool_call(base_url, base_site, token, "get_checkout", {"id": checkout_id})
+    check("get_checkout after completion shows status completed",
+          (got or {}).get("status") == "completed", f"got {(got or {}).get('status')!r}")
+    check("get_checkout after completion carries the order id",
+          ((got or {}).get("order") or {}).get("id") == order_id,
+          f"got {(got or {}).get('order')!r}")
+
+    # 7. Terminal guard: a completed checkout can no longer be updated.
+    _, body, blocked = mcp_tool_call(base_url, base_site, token, "update_checkout",
+                                     {"id": checkout_id,
+                                      "checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                                   "quantity": 1}]}})
+    if blocked is not None:
+        assert_ucp_envelope(blocked, "update_checkout (completed)", expected_status="error")
+        check("update after completion is unrecoverable",
+              any(m.get("severity") == "unrecoverable" for m in blocked.get("messages") or []),
+              f"got {blocked.get('messages')!r}")
+
+    # ── cancel_checkout: idempotent + terminal ──────────────────────────────
+    _, body, payload = mcp_tool_call(base_url, base_site, token, "create_checkout",
+                                     {"checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                                   "quantity": 1}]}})
+    cancel_id = (payload or {}).get("id")
+    check("cancel section: fresh checkout created", bool(cancel_id), f"body {str(body)[:300]}")
+    if not cancel_id:
+        return order_id
+
+    # Missing idempotency-key → MCP isError (binding requires it on cancel too).
+    status, body, _ = mcp_tool_call(base_url, base_site, token, "cancel_checkout",
+                                    {"id": cancel_id})
+    check("cancel without idempotency-key is an isError tool result",
+          body.get("result", {}).get("isError") is True, f"got {body.get('result')!r}")
+
+    cancel_key = str(uuid.uuid4())
+    status, body, canceled = mcp_tool_call(base_url, base_site, token, "cancel_checkout",
+                                           {"id": cancel_id}, meta=meta_with_key(cancel_key))
+    check("cancel_checkout returns a parseable UCP payload", canceled is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if canceled is not None:
+        assert_ucp_envelope(canceled, "cancel_checkout")
+        check("canceled checkout has status canceled",
+              canceled.get("status") == "canceled", f"got {canceled.get('status')!r}")
+        ucp_schema_validate(canceled, "cancel_checkout response")
+
+    # Replayed cancel is idempotent — same terminal state, no error.
+    status, body, canceled2 = mcp_tool_call(base_url, base_site, token, "cancel_checkout",
+                                            {"id": cancel_id}, meta=meta_with_key(cancel_key))
+    check("replayed cancel is not an isError result",
+          body.get("result", {}).get("isError") is not True, f"got {body.get('result')!r}")
+    check("replayed cancel re-returns status canceled",
+          (canceled2 or {}).get("status") == "canceled",
+          f"got {(canceled2 or {}).get('status')!r}")
+
+    # Canceled is terminal: neither update nor complete may run afterwards.
+    _, _, after = mcp_tool_call(base_url, base_site, token, "update_checkout",
+                                {"id": cancel_id,
+                                 "checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                              "quantity": 2}]}})
+    check("update after cancel is an unrecoverable UCP error",
+          (after or {}).get("ucp", {}).get("status") == "error"
+          and any(m.get("severity") == "unrecoverable" for m in (after or {}).get("messages") or []),
+          f"got {after!r}")
+    status, body, comp = mcp_tool_call(base_url, base_site, token, "complete_checkout",
+                                       {"id": cancel_id, "checkout": payment_checkout()},
+                                       meta=meta_with_key(str(uuid.uuid4())))
+    check("complete after cancel is an unrecoverable UCP error",
+          (comp or {}).get("ucp", {}).get("status") == "error"
+          and any(m.get("severity") == "unrecoverable" for m in (comp or {}).get("messages") or []),
+          f"got {comp!r}")
+
+    log(f"  {Colors.DIM}placed order: {order_id} (idempotency key {idempotency_key}){Colors.RESET}")
+    return order_id
+
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 def main():
@@ -739,6 +940,7 @@ def main():
         test_catalog_mcp(base_url, args.base_site, token)
         test_checkout_create_get_mcp(base_url, args.base_site, token)
         test_checkout_update_mcp(base_url, args.base_site, token)
+        test_checkout_complete_mcp(base_url, args.base_site, token)
     else:
         log(f"\n{Colors.RED}FATAL: no auth token — skipping capability sections{Colors.RESET}")
 

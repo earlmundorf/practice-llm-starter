@@ -22,14 +22,18 @@ import com.ucpcommerce.dto.UcpFulfillment;
 import com.ucpcommerce.dto.UcpItemRef;
 import com.ucpcommerce.dto.UcpLineItemRequest;
 import com.ucpcommerce.dto.UcpMessage;
+import com.ucpcommerce.dto.UcpPayment;
+import com.ucpcommerce.dto.UcpPaymentInstrument;
 import com.ucpcommerce.services.UcpCheckoutSessionService;
 
 import de.hybris.bootstrap.annotations.UnitTest;
 import de.hybris.platform.commercefacades.order.CartFacade;
 import de.hybris.platform.commercefacades.order.CheckoutFacade;
+import de.hybris.platform.commercefacades.order.data.CCPaymentInfoData;
 import de.hybris.platform.commercefacades.order.data.CartData;
 import de.hybris.platform.commercefacades.order.data.CartModificationData;
 import de.hybris.platform.commercefacades.order.data.DeliveryModeData;
+import de.hybris.platform.commercefacades.order.data.OrderData;
 import de.hybris.platform.commercefacades.order.data.OrderEntryData;
 import de.hybris.platform.commercefacades.product.data.PriceData;
 import de.hybris.platform.commercefacades.product.data.ProductData;
@@ -38,9 +42,12 @@ import de.hybris.platform.commercefacades.user.data.AddressData;
 import de.hybris.platform.commercefacades.user.data.CountryData;
 import de.hybris.platform.commerceservices.order.CommerceCartModificationException;
 import de.hybris.platform.commercewebservicescommons.strategies.CartLoaderStrategy;
+import de.hybris.platform.order.InvalidCartException;
 
 import java.math.BigDecimal;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -89,6 +96,7 @@ public class DefaultUcpCheckoutServiceTest
 		checkoutService.setCartLoaderStrategy(cartLoaderStrategy);
 		checkoutService.setUcpCheckoutSessionService(sessionService);
 		checkoutService.setUcpCheckoutMarshaller(marshaller);
+		checkoutService.setUcpOrderMarshaller(new UcpOrderMarshaller());
 	}
 
 	private CartData sessionCart()
@@ -619,6 +627,420 @@ public class DefaultUcpCheckoutServiceTest
 		assertEquals("not_found", checkout.getMessages().get(0).getCode());
 		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, checkout.getMessages().get(0).getSeverity());
 		verify(sessionService, never()).update(anyString(), anyString(), anyString());
+	}
+
+	// ── Phase 5: complete_checkout / cancel_checkout ────────────────────────
+
+	private static final String IDEMPOTENCY_KEY = "1f0f2a34-idem-key-0001";
+	private static final String ORDER_CODE = "00001000";
+	private static final String HANDLER_ID = "thinkshop_mock_card";
+
+	private UcpCheckoutRequest completeRequest(final String handlerId)
+	{
+		final UcpCheckoutRequest request = new UcpCheckoutRequest();
+		final UcpPayment payment = new UcpPayment();
+		final UcpPaymentInstrument instrument = new UcpPaymentInstrument();
+		instrument.setHandlerId(handlerId);
+		instrument.setType("card");
+		instrument.setCredential(Map.of("token", "tok_any_token_accepted"));
+		payment.setInstruments(List.of(instrument));
+		request.setPayment(payment);
+		return request;
+	}
+
+	private OrderData orderData()
+	{
+		final OrderData order = new OrderData();
+		order.setCode(ORDER_CODE);
+		order.setCreated(new Date());
+		final PriceData total = new PriceData();
+		total.setValue(new BigDecimal("85.98"));
+		total.setCurrencyIso("USD");
+		order.setTotalPrice(total);
+		order.setSubTotal(total);
+		return order;
+	}
+
+	private void mockHappyPaymentPath() throws Exception
+	{
+		when(checkoutFacade.getCheckoutCart()).thenReturn(withDestination(sessionCart()));
+		when(checkoutFacade.createPaymentSubscription(any())).thenReturn(new CCPaymentInfoData());
+		when(checkoutFacade.authorizePayment("123")).thenReturn(true);
+		when(checkoutFacade.placeOrder()).thenReturn(orderData());
+	}
+
+	@Test
+	public void completeRunsMockPaymentPathAndRecordsCompletionAtomically() throws Exception
+	{
+		when(sessionService.get(CHECKOUT_ID))
+			.thenReturn(session(UcpCheckout.STATUS_READY_FOR_COMPLETE,
+				"{\"email\":\"john.doe@thinkshop.com\"}"));
+		mockHappyPaymentPath();
+
+		final UcpCheckout checkout = checkoutService.complete(CHECKOUT_ID,
+			completeRequest(HANDLER_ID), IDEMPOTENCY_KEY);
+
+		// The S3 sequence: subscription (default mock Visa) → authorize("123") → placeOrder.
+		verify(cartLoaderStrategy).loadCart(CART_CODE);
+		final org.mockito.ArgumentCaptor<CCPaymentInfoData> paymentInfo =
+			org.mockito.ArgumentCaptor.forClass(CCPaymentInfoData.class);
+		verify(checkoutFacade).createPaymentSubscription(paymentInfo.capture());
+		assertEquals("4111111111111111", paymentInfo.getValue().getCardNumber());
+		assertEquals("billing address defaults to the delivery address",
+			"100 Main St", paymentInfo.getValue().getBillingAddress().getLine1());
+		verify(checkoutFacade).authorizePayment("123");
+		verify(checkoutFacade).placeOrder();
+
+		assertEquals("success", checkout.getUcp().getStatus());
+		assertEquals(UcpCheckout.STATUS_COMPLETED, checkout.getStatus());
+		assertEquals(ORDER_CODE, checkout.getOrder().getId());
+		assertEquals("buyer survives onto the completed checkout",
+			"john.doe@thinkshop.com", checkout.getBuyer().getEmail());
+
+		// Protocol-state persistence: accept marks in-progress + key, success
+		// records status/orderCode/replayable response in one save.
+		verify(sessionService).beginCompletion(CHECKOUT_ID, IDEMPOTENCY_KEY);
+		final org.mockito.ArgumentCaptor<String> stored = org.mockito.ArgumentCaptor.forClass(String.class);
+		verify(sessionService).recordCompletion(eq(CHECKOUT_ID), stored.capture(), eq(ORDER_CODE));
+		assertTrue("stored response is the serialized completed checkout",
+			stored.getValue().contains("\"completed\"") && stored.getValue().contains(ORDER_CODE));
+		verify(sessionService, never()).failCompletion(anyString());
+	}
+
+	@Test
+	public void completeReplaysStoredResponseWithoutAnyFacadeCalls() throws Exception
+	{
+		final UcpCheckoutSession completed = session(UcpCheckout.STATUS_COMPLETED, null);
+		completed.setIdempotencyKey(IDEMPOTENCY_KEY);
+		completed.setOrderCode(ORDER_CODE);
+		completed.setCompletionResponseJson("{\"ucp\":{\"version\":\"2026-04-08\",\"status\":\"success\"},"
+			+ "\"id\":\"" + CHECKOUT_ID + "\",\"status\":\"completed\","
+			+ "\"order\":{\"id\":\"" + ORDER_CODE + "\"}}");
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(completed);
+
+		final UcpCheckout checkout = checkoutService.complete(CHECKOUT_ID,
+			completeRequest(HANDLER_ID), IDEMPOTENCY_KEY);
+
+		// The stored response verbatim — never a second placeOrder (S3).
+		assertEquals(UcpCheckout.STATUS_COMPLETED, checkout.getStatus());
+		assertEquals(ORDER_CODE, checkout.getOrder().getId());
+		assertEquals("success", checkout.getUcp().getStatus());
+		verify(cartLoaderStrategy, never()).loadCart(anyString());
+		verify(checkoutFacade, never()).createPaymentSubscription(any());
+		verify(checkoutFacade, never()).placeOrder();
+		verify(sessionService, never()).beginCompletion(anyString(), anyString());
+		verify(sessionService, never()).recordCompletion(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	public void completeOnCompletedCheckoutWithDifferentKeyIsUnrecoverable() throws Exception
+	{
+		final UcpCheckoutSession completed = session(UcpCheckout.STATUS_COMPLETED, null);
+		completed.setIdempotencyKey("some-other-key");
+		completed.setCompletionResponseJson("{\"status\":\"completed\"}");
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(completed);
+
+		final UcpCheckout checkout = checkoutService.complete(CHECKOUT_ID,
+			completeRequest(HANDLER_ID), IDEMPOTENCY_KEY);
+
+		assertEquals("error", checkout.getUcp().getStatus());
+		assertEquals("invalid_request", checkout.getMessages().get(0).getCode());
+		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, checkout.getMessages().get(0).getSeverity());
+		verify(checkoutFacade, never()).placeOrder();
+	}
+
+	@Test
+	public void completeWithUnknownHandlerIsUnrecoverableAndPlacesNoOrder() throws Exception
+	{
+		when(sessionService.get(CHECKOUT_ID))
+			.thenReturn(session(UcpCheckout.STATUS_READY_FOR_COMPLETE, null));
+
+		final UcpCheckout checkout = checkoutService.complete(CHECKOUT_ID,
+			completeRequest("acme_real_card"), IDEMPOTENCY_KEY);
+
+		assertEquals("error", checkout.getUcp().getStatus());
+		assertEquals("invalid_request", checkout.getMessages().get(0).getCode());
+		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, checkout.getMessages().get(0).getSeverity());
+		assertTrue("message names the declared handler",
+			checkout.getMessages().get(0).getContent().contains("thinkshop_mock_card"));
+		verify(cartLoaderStrategy, never()).loadCart(anyString());
+		verify(checkoutFacade, never()).placeOrder();
+		verify(sessionService, never()).beginCompletion(anyString(), anyString());
+	}
+
+	@Test
+	public void completeWithoutPaymentInstrumentsIsUnrecoverable() throws Exception
+	{
+		when(sessionService.get(CHECKOUT_ID))
+			.thenReturn(session(UcpCheckout.STATUS_READY_FOR_COMPLETE, null));
+
+		final UcpCheckout checkout = checkoutService.complete(CHECKOUT_ID,
+			new UcpCheckoutRequest(), IDEMPOTENCY_KEY);
+
+		assertEquals("error", checkout.getUcp().getStatus());
+		assertEquals("invalid_request", checkout.getMessages().get(0).getCode());
+		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, checkout.getMessages().get(0).getSeverity());
+		verify(checkoutFacade, never()).placeOrder();
+	}
+
+	@Test
+	public void completeInvalidCartIsRecoverableAndRollsBackToReadyForComplete() throws Exception
+	{
+		when(sessionService.get(CHECKOUT_ID))
+			.thenReturn(session(UcpCheckout.STATUS_READY_FOR_COMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(withDestination(sessionCart()));
+		when(checkoutFacade.createPaymentSubscription(any())).thenReturn(new CCPaymentInfoData());
+		when(checkoutFacade.authorizePayment("123")).thenReturn(true);
+		when(checkoutFacade.placeOrder()).thenThrow(new InvalidCartException("cart is not calculated"));
+
+		final UcpCheckout checkout = checkoutService.complete(CHECKOUT_ID,
+			completeRequest(HANDLER_ID), IDEMPOTENCY_KEY);
+
+		assertEquals("the checkout survives", "success", checkout.getUcp().getStatus());
+		assertEquals(UcpCheckout.STATUS_READY_FOR_COMPLETE, checkout.getStatus());
+		assertEquals("invalid_request", checkout.getMessages().get(0).getCode());
+		assertEquals(UcpMessage.SEVERITY_RECOVERABLE, checkout.getMessages().get(0).getSeverity());
+		assertNull("no order on failure", checkout.getOrder());
+		// S5: complete_in_progress → ready_for_complete, key cleared for retry.
+		verify(sessionService).beginCompletion(CHECKOUT_ID, IDEMPOTENCY_KEY);
+		verify(sessionService).failCompletion(CHECKOUT_ID);
+		verify(sessionService, never()).recordCompletion(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	public void completePaymentSubscriptionFailureIsRecoverablePaymentDeclined() throws Exception
+	{
+		when(sessionService.get(CHECKOUT_ID))
+			.thenReturn(session(UcpCheckout.STATUS_READY_FOR_COMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(withDestination(sessionCart()));
+		when(checkoutFacade.createPaymentSubscription(any())).thenReturn(null);
+
+		final UcpCheckout checkout = checkoutService.complete(CHECKOUT_ID,
+			completeRequest(HANDLER_ID), IDEMPOTENCY_KEY);
+
+		assertEquals("success", checkout.getUcp().getStatus());
+		assertEquals(UcpCheckout.STATUS_READY_FOR_COMPLETE, checkout.getStatus());
+		assertEquals("payment_declined", checkout.getMessages().get(0).getCode());
+		assertEquals(UcpMessage.SEVERITY_RECOVERABLE, checkout.getMessages().get(0).getSeverity());
+		verify(checkoutFacade, never()).placeOrder();
+		verify(sessionService).failCompletion(CHECKOUT_ID);
+	}
+
+	@Test
+	public void completeIgnoresTheMockAuthorizationResultLikeOrderPlaceDoes() throws Exception
+	{
+		// Found live: the demo platform's mock payment reports a non-ACCEPTED
+		// authorization even though placeOrder succeeds — the proprietary
+		// order_place handler ignores the boolean, and so do we.
+		when(sessionService.get(CHECKOUT_ID))
+			.thenReturn(session(UcpCheckout.STATUS_READY_FOR_COMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(withDestination(sessionCart()));
+		when(checkoutFacade.createPaymentSubscription(any())).thenReturn(new CCPaymentInfoData());
+		when(checkoutFacade.authorizePayment("123")).thenReturn(false);
+		when(checkoutFacade.placeOrder()).thenReturn(orderData());
+
+		final UcpCheckout checkout = checkoutService.complete(CHECKOUT_ID,
+			completeRequest(HANDLER_ID), IDEMPOTENCY_KEY);
+
+		assertEquals(UcpCheckout.STATUS_COMPLETED, checkout.getStatus());
+		assertEquals(ORDER_CODE, checkout.getOrder().getId());
+		verify(checkoutFacade).placeOrder();
+	}
+
+	@Test
+	public void completeOnCheckoutThatIsNotReadyIsRecoverable() throws Exception
+	{
+		// Entry claims ready, but the cart has no destination — derived state wins (S5).
+		when(sessionService.get(CHECKOUT_ID))
+			.thenReturn(session(UcpCheckout.STATUS_READY_FOR_COMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(sessionCart());
+
+		final UcpCheckout checkout = checkoutService.complete(CHECKOUT_ID,
+			completeRequest(HANDLER_ID), IDEMPOTENCY_KEY);
+
+		assertEquals("success", checkout.getUcp().getStatus());
+		assertEquals(UcpCheckout.STATUS_INCOMPLETE, checkout.getStatus());
+		assertEquals("invalid_request", checkout.getMessages().get(0).getCode());
+		assertEquals(UcpMessage.SEVERITY_RECOVERABLE, checkout.getMessages().get(0).getSeverity());
+		verify(sessionService).update(CHECKOUT_ID, CART_CODE, UcpCheckout.STATUS_INCOMPLETE);
+		verify(sessionService, never()).beginCompletion(anyString(), anyString());
+		verify(checkoutFacade, never()).createPaymentSubscription(any());
+	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void completeWithoutIdempotencyKeyIsAClientProtocolBug()
+	{
+		checkoutService.complete(CHECKOUT_ID, completeRequest(HANDLER_ID), null);
+	}
+
+	@Test
+	public void completeUnknownIdReturnsUnrecoverableNotFound()
+	{
+		when(sessionService.get("ucp_chk_nope")).thenReturn(null);
+
+		final UcpCheckout checkout = checkoutService.complete("ucp_chk_nope",
+			completeRequest(HANDLER_ID), IDEMPOTENCY_KEY);
+
+		assertEquals("error", checkout.getUcp().getStatus());
+		assertEquals("not_found", checkout.getMessages().get(0).getCode());
+		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, checkout.getMessages().get(0).getSeverity());
+	}
+
+	@Test
+	public void completeOnCanceledCheckoutIsUnrecoverable() throws Exception
+	{
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_CANCELED, null));
+
+		final UcpCheckout checkout = checkoutService.complete(CHECKOUT_ID,
+			completeRequest(HANDLER_ID), IDEMPOTENCY_KEY);
+
+		assertEquals("error", checkout.getUcp().getStatus());
+		assertEquals("invalid_request", checkout.getMessages().get(0).getCode());
+		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, checkout.getMessages().get(0).getSeverity());
+		verify(checkoutFacade, never()).placeOrder();
+	}
+
+	@Test
+	public void completeWhileAnotherCompletionIsInProgressIsRecoverable() throws Exception
+	{
+		when(sessionService.get(CHECKOUT_ID))
+			.thenReturn(session(UcpCheckout.STATUS_COMPLETE_IN_PROGRESS, null));
+
+		final UcpCheckout checkout = checkoutService.complete(CHECKOUT_ID,
+			completeRequest(HANDLER_ID), IDEMPOTENCY_KEY);
+
+		assertEquals("error", checkout.getUcp().getStatus());
+		assertEquals(UcpMessage.SEVERITY_RECOVERABLE, checkout.getMessages().get(0).getSeverity());
+		verify(checkoutFacade, never()).placeOrder();
+		verify(sessionService, never()).beginCompletion(anyString(), anyString());
+	}
+
+	@Test
+	public void cancelFromIncompleteBecomesCanceled()
+	{
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_INCOMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(sessionCart());
+
+		final UcpCheckout checkout = checkoutService.cancel(CHECKOUT_ID, IDEMPOTENCY_KEY);
+
+		assertEquals("success", checkout.getUcp().getStatus());
+		assertEquals(UcpCheckout.STATUS_CANCELED, checkout.getStatus());
+		verify(sessionService).update(CHECKOUT_ID, CART_CODE, UcpCheckout.STATUS_CANCELED);
+	}
+
+	@Test
+	public void cancelFromReadyForCompleteBecomesCanceled()
+	{
+		when(sessionService.get(CHECKOUT_ID))
+			.thenReturn(session(UcpCheckout.STATUS_READY_FOR_COMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(withDestination(sessionCart()));
+
+		final UcpCheckout checkout = checkoutService.cancel(CHECKOUT_ID, IDEMPOTENCY_KEY);
+
+		assertEquals(UcpCheckout.STATUS_CANCELED, checkout.getStatus());
+		verify(sessionService).update(CHECKOUT_ID, CART_CODE, UcpCheckout.STATUS_CANCELED);
+	}
+
+	@Test
+	public void cancelIsIdempotentOnAnAlreadyCanceledCheckout()
+	{
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_CANCELED, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(sessionCart());
+
+		final UcpCheckout checkout = checkoutService.cancel(CHECKOUT_ID, IDEMPOTENCY_KEY);
+
+		// Terminal state re-returned; no second status write.
+		assertEquals("success", checkout.getUcp().getStatus());
+		assertEquals(UcpCheckout.STATUS_CANCELED, checkout.getStatus());
+		verify(sessionService, never()).update(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	public void cancelWithUnloadableCartStillReturnsTheCanceledState()
+	{
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_CANCELED, null));
+		doThrow(new IllegalStateException("cart gone")).when(cartLoaderStrategy).loadCart(CART_CODE);
+
+		final UcpCheckout checkout = checkoutService.cancel(CHECKOUT_ID, IDEMPOTENCY_KEY);
+
+		assertEquals("success", checkout.getUcp().getStatus());
+		assertEquals(UcpCheckout.STATUS_CANCELED, checkout.getStatus());
+		assertTrue("no line items when the cart is gone", checkout.getLineItems().isEmpty());
+	}
+
+	@Test
+	public void cancelOnCompletedCheckoutIsUnrecoverable()
+	{
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_COMPLETED, null));
+
+		final UcpCheckout checkout = checkoutService.cancel(CHECKOUT_ID, IDEMPOTENCY_KEY);
+
+		assertEquals("error", checkout.getUcp().getStatus());
+		assertEquals("invalid_request", checkout.getMessages().get(0).getCode());
+		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, checkout.getMessages().get(0).getSeverity());
+		verify(sessionService, never()).update(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	public void cancelWhileCompletionInProgressIsRecoverable()
+	{
+		when(sessionService.get(CHECKOUT_ID))
+			.thenReturn(session(UcpCheckout.STATUS_COMPLETE_IN_PROGRESS, null));
+
+		final UcpCheckout checkout = checkoutService.cancel(CHECKOUT_ID, IDEMPOTENCY_KEY);
+
+		assertEquals("error", checkout.getUcp().getStatus());
+		assertEquals(UcpMessage.SEVERITY_RECOVERABLE, checkout.getMessages().get(0).getSeverity());
+		verify(sessionService, never()).update(anyString(), anyString(), anyString());
+	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void cancelWithoutIdempotencyKeyIsAClientProtocolBug()
+	{
+		checkoutService.cancel(CHECKOUT_ID, " ");
+	}
+
+	@Test
+	public void cancelUnknownIdReturnsUnrecoverableNotFound()
+	{
+		when(sessionService.get("ucp_chk_nope")).thenReturn(null);
+
+		final UcpCheckout checkout = checkoutService.cancel("ucp_chk_nope", IDEMPOTENCY_KEY);
+
+		assertEquals("error", checkout.getUcp().getStatus());
+		assertEquals("not_found", checkout.getMessages().get(0).getCode());
+	}
+
+	@Test
+	public void updateWhileCompletionInProgressIsRecoverablyRejected()
+	{
+		when(sessionService.get(CHECKOUT_ID))
+			.thenReturn(session(UcpCheckout.STATUS_COMPLETE_IN_PROGRESS, null));
+
+		final UcpCheckout checkout = checkoutService.update(CHECKOUT_ID, itemsRequest("X", 1));
+
+		assertEquals("error", checkout.getUcp().getStatus());
+		assertEquals(UcpMessage.SEVERITY_RECOVERABLE, checkout.getMessages().get(0).getSeverity());
+		verify(cartLoaderStrategy, never()).loadCart(anyString());
+	}
+
+	@Test
+	public void getOnCompletedCheckoutReplaysTheStoredCompletionResponse()
+	{
+		final UcpCheckoutSession completed = session(UcpCheckout.STATUS_COMPLETED, null);
+		completed.setIdempotencyKey(IDEMPOTENCY_KEY);
+		completed.setOrderCode(ORDER_CODE);
+		completed.setCompletionResponseJson("{\"ucp\":{\"version\":\"2026-04-08\",\"status\":\"success\"},"
+			+ "\"id\":\"" + CHECKOUT_ID + "\",\"status\":\"completed\","
+			+ "\"order\":{\"id\":\"" + ORDER_CODE + "\"}}");
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(completed);
+
+		final UcpCheckout checkout = checkoutService.get(CHECKOUT_ID);
+
+		// The consumed cart is never loaded — the stored terminal state IS the checkout.
+		assertEquals(UcpCheckout.STATUS_COMPLETED, checkout.getStatus());
+		assertEquals(ORDER_CODE, checkout.getOrder().getId());
+		verify(cartLoaderStrategy, never()).loadCart(anyString());
 	}
 
 	@Test

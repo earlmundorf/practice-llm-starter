@@ -70,6 +70,12 @@
         <property name="ucpMoneyConverter" ref="ucpMoneyConverter"/>
     </bean>
 
+    <!-- OrderData → the order block embedded in a completed checkout (Phase 5;
+         extended to the full UCP order schema by the order capability). -->
+    <alias name="defaultUcpOrderMarshaller" alias="ucpOrderMarshaller"/>
+    <bean id="defaultUcpOrderMarshaller"
+          class="com.ucpcommerce.services.impl.UcpOrderMarshaller"/>
+
     <alias name="defaultUcpCheckoutService" alias="ucpCheckoutService"/>
     <bean id="defaultUcpCheckoutService"
           class="com.ucpcommerce.services.impl.DefaultUcpCheckoutService">
@@ -79,6 +85,7 @@
         <property name="cartLoaderStrategy" ref="cartLoaderStrategy"/>
         <property name="ucpCheckoutSessionService" ref="ucpCheckoutSessionService"/>
         <property name="ucpCheckoutMarshaller" ref="ucpCheckoutMarshaller"/>
+        <property name="ucpOrderMarshaller" ref="ucpOrderMarshaller"/>
     </bean>
 
     <!-- ===================================================================
@@ -122,6 +129,18 @@
         <property name="ucpCheckoutService" ref="ucpCheckoutService"/>
     </bean>
 
+    <alias name="defaultCompleteCheckoutTool" alias="completeCheckoutTool"/>
+    <bean id="defaultCompleteCheckoutTool"
+          class="com.ucpcommerce.tools.impl.CompleteCheckoutTool">
+        <property name="ucpCheckoutService" ref="ucpCheckoutService"/>
+    </bean>
+
+    <alias name="defaultCancelCheckoutTool" alias="cancelCheckoutTool"/>
+    <bean id="defaultCancelCheckoutTool"
+          class="com.ucpcommerce.tools.impl.CancelCheckoutTool">
+        <property name="ucpCheckoutService" ref="ucpCheckoutService"/>
+    </bean>
+
     <alias name="defaultUcpMcpDispatcherService" alias="ucpMcpDispatcherService"/>
     <bean id="defaultUcpMcpDispatcherService"
           class="com.ucpcommerce.services.impl.DefaultUcpMcpDispatcherService">
@@ -133,6 +152,8 @@
                 <ref bean="createCheckoutTool"/>
                 <ref bean="getCheckoutTool"/>
                 <ref bean="updateCheckoutTool"/>
+                <ref bean="completeCheckoutTool"/>
+                <ref bean="cancelCheckoutTool"/>
             </list>
         </property>
     </bean>

@@ -10,8 +10,8 @@ import com.ucpcommerce.dto.UcpCheckoutRequest;
  * (design diagram S2); business failures are returned as checkout payloads
  * with {@code ucp.status="error"} + {@code messages[]}, never thrown.
  *
- * Phases 3–4 ship create/get/update; complete/cancel (Phase 5) are added as
- * the lifecycle grows.
+ * Phases 3–4 ship create/get/update; Phase 5 completes the lifecycle with
+ * complete/cancel (mock payment handler + idempotency, designs R9/S3).
  */
 public interface UcpCheckoutService
 {
@@ -42,4 +42,37 @@ public interface UcpCheckoutService
 	 * become visible here.
 	 */
 	UcpCheckout update(String checkoutId, UcpCheckoutRequest payload);
+
+	/**
+	 * Complete the purchase (design S3): validate the payment instrument's
+	 * {@code handler_id} against the single declared mock handler (R9), then
+	 * run the existing mock payment path — {@code createPaymentSubscription}
+	 * (default Visa) → {@code authorizePayment("123")} → {@code placeOrder} —
+	 * and return the checkout with {@code status=completed} + the embedded
+	 * {@code order} block.
+	 *
+	 * Idempotency (checked against the entry FIRST): a duplicate
+	 * {@code idempotencyKey} replays the stored completion response verbatim —
+	 * never a second {@code placeOrder}. An {@code InvalidCartException} is a
+	 * {@code recoverable} message with the status rolled back to
+	 * {@code ready_for_complete}; an unknown {@code handler_id} is
+	 * {@code unrecoverable}.
+	 *
+	 * @param idempotencyKey required ({@code meta["idempotency-key"]} on the
+	 *                       MCP binding); null/blank →
+	 *                       {@link IllegalArgumentException} (client protocol
+	 *                       bug, not a business error)
+	 */
+	UcpCheckout complete(String checkoutId, UcpCheckoutRequest payload, String idempotencyKey);
+
+	/**
+	 * Cancel the checkout — idempotent and terminal (S5): allowed from
+	 * {@code incomplete} and {@code ready_for_complete}; repeating it on an
+	 * already-{@code canceled} checkout re-returns the canceled state; a
+	 * {@code completed} checkout can no longer be canceled
+	 * ({@code unrecoverable}).
+	 *
+	 * @param idempotencyKey required, as on {@link #complete}
+	 */
+	UcpCheckout cancel(String checkoutId, String idempotencyKey);
 }

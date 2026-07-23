@@ -3,6 +3,7 @@ package com.ucpcommerce.services.impl;
 import com.ucpcommerce.constants.UcpcommerceConstants;
 import com.ucpcommerce.dto.UcpCapability;
 import com.ucpcommerce.dto.UcpEnvelope;
+import com.ucpcommerce.dto.UcpPaymentHandler;
 import com.ucpcommerce.dto.UcpProfile;
 import com.ucpcommerce.dto.UcpServiceEntry;
 import com.ucpcommerce.dto.UcpTransportEndpoint;
@@ -23,6 +24,9 @@ public class DefaultUcpProfileService implements UcpProfileService
 	private static final String CATALOG_CAPABILITY = "dev.ucp.shopping.catalog";
 	private static final String CATALOG_SPEC_URL = "https://ucp.dev/specification/catalog";
 	private static final String CATALOG_SCHEMA_URL = "https://ucp.dev/schemas/catalog.json";
+	private static final String CHECKOUT_CAPABILITY = "dev.ucp.shopping.checkout";
+	private static final String CHECKOUT_SPEC_URL = "https://ucp.dev/specification/checkout";
+	private static final String CHECKOUT_SCHEMA_URL = "https://ucp.dev/schemas/checkout.json";
 
 	@Override
 	public UcpProfile buildProfile(final String baseSiteId)
@@ -38,6 +42,13 @@ public class DefaultUcpProfileService implements UcpProfileService
 		catalog.setSchema(CATALOG_SCHEMA_URL);
 		profile.getCapabilities().add(catalog);
 
+		// Checkout capability (Phase 5) — advertised only now that the full
+		// create → update → complete/cancel lifecycle works end-to-end.
+		final UcpCapability checkout = new UcpCapability(CHECKOUT_CAPABILITY, version);
+		checkout.setSpec(CHECKOUT_SPEC_URL);
+		checkout.setSchema(CHECKOUT_SCHEMA_URL);
+		profile.getCapabilities().add(checkout);
+
 		// MCP transport (Phase 2). The advertised endpoint must be the
 		// publicly reachable base (runbook §2.1) — configurable so an edge
 		// rewrite / tunnel deployment can override the local default.
@@ -46,7 +57,14 @@ public class DefaultUcpProfileService implements UcpProfileService
 			stripTrailingSlash(getPublicBaseUrl()) + "/occ/v2/" + baseSiteId + "/ucp/mcp"));
 		profile.getServices().put(SHOPPING_SERVICE, shopping);
 
-		// payment_handlers stays empty until complete_checkout works (Phase 5).
+		// The single mock payment handler (design R9): complete_checkout
+		// accepts any credential token for this handler id and runs the
+		// existing mock default-Visa flow — honestly declared as a mock.
+		final UcpPaymentHandler mockCard = new UcpPaymentHandler(UcpcommerceConstants.PAYMENT_HANDLER_ID,
+			"ThinkShop mock card (demo handler — any credential token is accepted, no real payment)");
+		mockCard.setVersion(version);
+		profile.getPaymentHandlers().add(mockCard);
+
 		return profile;
 	}
 

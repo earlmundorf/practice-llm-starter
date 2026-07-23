@@ -45,4 +45,31 @@ public interface UcpCheckoutSessionService
 	 * ids.
 	 */
 	void updateBuyer(String checkoutId, String buyerJson);
+
+	/**
+	 * Mark an accepted {@code complete_checkout}: status →
+	 * {@code complete_in_progress} and the accepted {@code idempotency-key}
+	 * stored on the entry, in one save (design S5: ready_for_complete →
+	 * complete_in_progress). No-op for unknown/expired ids.
+	 */
+	void beginCompletion(String checkoutId, String idempotencyKey);
+
+	/**
+	 * Roll back a recoverable completion failure: status →
+	 * {@code ready_for_complete} and the stored idempotency key cleared so a
+	 * retry (same or new key) re-executes (design S5: complete_in_progress →
+	 * ready_for_complete on recoverable failure). No-op for unknown/expired
+	 * ids.
+	 */
+	void failCompletion(String checkoutId);
+
+	/**
+	 * Record a successful completion in ONE atomic entry save (runbook §5.2:
+	 * the idempotency write must be atomic with order placement so a crash
+	 * between them cannot double-charge): status → {@code completed}, the
+	 * serialized completion response (replayed verbatim on duplicate keys) and
+	 * the placed order's code. The idempotency key itself was stored by
+	 * {@link #beginCompletion}. No-op for unknown/expired ids.
+	 */
+	void recordCompletion(String checkoutId, String completionResponseJson, String orderCode);
 }

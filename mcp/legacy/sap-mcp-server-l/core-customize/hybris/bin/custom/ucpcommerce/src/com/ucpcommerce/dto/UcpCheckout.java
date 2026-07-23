@@ -1,5 +1,6 @@
 package com.ucpcommerce.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -13,6 +14,9 @@ import java.util.List;
  * or a transport-level error.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+// Tolerant deserialization: the stored completion response is re-parsed on
+// idempotent replay (Phase 5), and must survive additive future fields.
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class UcpCheckout
 {
 	/** UCP checkout status lifecycle codes (design diagram S5). */
@@ -45,6 +49,10 @@ public class UcpCheckout
 
 	@JsonProperty("fulfillment")
 	private UcpFulfillment fulfillment;
+
+	/** The placed order — present only once the checkout is {@code completed} (S3). */
+	@JsonProperty("order")
+	private UcpOrder order;
 
 	@JsonProperty("messages")
 	private List<UcpMessage> messages;
@@ -127,6 +135,16 @@ public class UcpCheckout
 	public void setFulfillment(final UcpFulfillment fulfillment)
 	{
 		this.fulfillment = fulfillment;
+	}
+
+	public UcpOrder getOrder()
+	{
+		return order;
+	}
+
+	public void setOrder(final UcpOrder order)
+	{
+		this.order = order;
 	}
 
 	public List<UcpMessage> getMessages()

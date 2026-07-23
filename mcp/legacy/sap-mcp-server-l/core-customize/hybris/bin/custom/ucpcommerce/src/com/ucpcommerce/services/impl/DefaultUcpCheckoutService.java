@@ -1,6 +1,7 @@
 package com.ucpcommerce.services.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ucpcommerce.constants.UcpcommerceConstants;
 import com.ucpcommerce.dto.UcpBuyer;
 import com.ucpcommerce.dto.UcpCheckout;
 import com.ucpcommerce.dto.UcpCheckoutRequest;
@@ -9,20 +10,25 @@ import com.ucpcommerce.dto.UcpDestination;
 import com.ucpcommerce.dto.UcpFulfillment;
 import com.ucpcommerce.dto.UcpLineItemRequest;
 import com.ucpcommerce.dto.UcpMessage;
+import com.ucpcommerce.dto.UcpOrder;
+import com.ucpcommerce.dto.UcpPaymentInstrument;
 import com.ucpcommerce.services.UcpCheckoutService;
 import com.ucpcommerce.services.UcpCheckoutSessionService;
 
 import de.hybris.platform.commercefacades.order.CartFacade;
 import de.hybris.platform.commercefacades.order.CheckoutFacade;
+import de.hybris.platform.commercefacades.order.data.CCPaymentInfoData;
 import de.hybris.platform.commercefacades.order.data.CartData;
 import de.hybris.platform.commercefacades.order.data.CartModificationData;
 import de.hybris.platform.commercefacades.order.data.DeliveryModeData;
+import de.hybris.platform.commercefacades.order.data.OrderData;
 import de.hybris.platform.commercefacades.order.data.OrderEntryData;
 import de.hybris.platform.commercefacades.user.UserFacade;
 import de.hybris.platform.commercefacades.user.data.AddressData;
 import de.hybris.platform.commercefacades.user.data.CountryData;
 import de.hybris.platform.commercefacades.user.data.RegionData;
 import de.hybris.platform.commercewebservicescommons.strategies.CartLoaderStrategy;
+import de.hybris.platform.order.InvalidCartException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,12 +61,20 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
+	/** Mock payment defaults — the same values coremcp's checkout_set_payment uses. */
+	private static final String MOCK_CARD_NUMBER = "4111111111111111";
+	private static final String MOCK_CARD_TYPE = "visa";
+	private static final String MOCK_CARD_EXPIRY_MONTH = "12";
+	private static final String MOCK_CARD_EXPIRY_YEAR = "2028";
+	private static final String MOCK_SECURITY_CODE = "123";
+
 	private CartFacade cartFacade;
 	private CheckoutFacade checkoutFacade;
 	private UserFacade userFacade;
 	private CartLoaderStrategy cartLoaderStrategy;
 	private UcpCheckoutSessionService ucpCheckoutSessionService;
 	private UcpCheckoutMarshaller ucpCheckoutMarshaller;
+	private UcpOrderMarshaller ucpOrderMarshaller;
 
 	@Override
 	public UcpCheckout create(final UcpCheckoutRequest payload)
@@ -108,6 +122,16 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "not_found",
 				UcpMessage.SEVERITY_UNRECOVERABLE, "Unknown or expired checkout id: " + checkoutId)));
 		}
+		if (UcpCheckout.STATUS_COMPLETED.equals(session.getStatus()))
+		{
+			// The backing cart was consumed by placeOrder — the stored
+			// completion response IS the checkout's terminal state (Phase 5).
+			final UcpCheckout stored = parseCompletionResponse(session);
+			if (stored != null)
+			{
+				return stored;
+			}
+		}
 		try
 		{
 			cartLoaderStrategy.loadCart(session.getCartCode());
@@ -141,6 +165,15 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
 				UcpMessage.SEVERITY_UNRECOVERABLE,
 				"Checkout " + checkoutId + " is " + session.getStatus() + " and can no longer be updated")));
+		}
+		if (UcpCheckout.STATUS_COMPLETE_IN_PROGRESS.equals(session.getStatus()))
+		{
+			// A completion is running — mutating the cart underneath it would
+			// race placeOrder. Recoverable: the client can retry after the
+			// completion settles one way or the other (S5).
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
+				UcpMessage.SEVERITY_RECOVERABLE,
+				"Checkout " + checkoutId + " has a completion in progress and cannot be updated right now")));
 		}
 		try
 		{
@@ -180,6 +213,312 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		LOG.info("UCP update_checkout: {} → cart {} ({} entries, status {})", checkoutId, cart.getCode(),
 			cart.getEntries() == null ? 0 : cart.getEntries().size(), status);
 		return ucpCheckoutMarshaller.marshal(checkoutId, status, cart, buyer, messages);
+	}
+
+	@Override
+	public UcpCheckout complete(final String checkoutId, final UcpCheckoutRequest payload,
+		final String idempotencyKey)
+	{
+		requireIdempotencyKey(idempotencyKey, "complete_checkout");
+		final UcpCheckoutSession session = ucpCheckoutSessionService.get(checkoutId);
+		if (session == null)
+		{
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "not_found",
+				UcpMessage.SEVERITY_UNRECOVERABLE, "Unknown or expired checkout id: " + checkoutId)));
+		}
+
+		// Idempotency check FIRST (S3): a duplicate key replays the stored
+		// response verbatim — never a second placeOrder.
+		if (idempotencyKey.equals(session.getIdempotencyKey())
+			&& session.getCompletionResponseJson() != null)
+		{
+			LOG.info("UCP complete_checkout {}: replaying stored completion (order {})",
+				checkoutId, session.getOrderCode());
+			final UcpCheckout stored = parseCompletionResponse(session);
+			if (stored != null)
+			{
+				return stored;
+			}
+			// The stored response is unreadable, but the order EXISTS — never
+			// place a second one. Rebuild a minimal completed payload.
+			return completedFallback(session);
+		}
+
+		if (UcpCheckout.STATUS_COMPLETED.equals(session.getStatus()))
+		{
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
+				UcpMessage.SEVERITY_UNRECOVERABLE,
+				"Checkout " + checkoutId + " is already completed (under a different idempotency key)")));
+		}
+		if (UcpCheckout.STATUS_CANCELED.equals(session.getStatus()))
+		{
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
+				UcpMessage.SEVERITY_UNRECOVERABLE,
+				"Checkout " + checkoutId + " is canceled and can no longer be completed")));
+		}
+		if (UcpCheckout.STATUS_COMPLETE_IN_PROGRESS.equals(session.getStatus()))
+		{
+			// A previous complete was accepted but has not settled (concurrent
+			// call, or a crash mid-completion). Recoverable — retry later.
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
+				UcpMessage.SEVERITY_RECOVERABLE,
+				"A completion for checkout " + checkoutId + " is already in progress; retry shortly")));
+		}
+
+		// Handler validation (R9): the single declared mock handler must be
+		// referenced; any credential token for it is accepted (and never read).
+		final UcpMessage handlerError = validatePaymentHandler(payload);
+		if (handlerError != null)
+		{
+			return ucpCheckoutMarshaller.error(List.of(handlerError));
+		}
+
+		try
+		{
+			cartLoaderStrategy.loadCart(session.getCartCode());
+		}
+		catch (final Exception e)
+		{
+			LOG.warn("UCP complete_checkout {}: backing cart {} could not be loaded: {}",
+				checkoutId, session.getCartCode(), e.getMessage());
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "not_found",
+				UcpMessage.SEVERITY_UNRECOVERABLE, "Checkout " + checkoutId + " is no longer available")));
+		}
+
+		final UcpBuyer buyer = parseBuyer(session.getBuyerJson());
+
+		// Readiness is derived from cart state, never from the stored status (S5).
+		final CartData cart = currentCart();
+		final String derived = deriveStatus(cart);
+		if (!UcpCheckout.STATUS_READY_FOR_COMPLETE.equals(derived))
+		{
+			ucpCheckoutSessionService.update(checkoutId, cart.getCode(), derived);
+			return ucpCheckoutMarshaller.marshal(checkoutId, derived, cart, buyer,
+				List.of(new UcpMessage("error", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
+					"Checkout is not ready to complete: it needs at least one item, a delivery "
+						+ "destination and a delivery mode (current status: " + derived + ")")));
+		}
+
+		// Accepted: S5 ready_for_complete → complete_in_progress, key stored.
+		ucpCheckoutSessionService.beginCompletion(checkoutId, idempotencyKey);
+
+		final OrderData order;
+		try
+		{
+			runMockPayment(cart);
+			order = checkoutFacade.placeOrder();
+		}
+		catch (final InvalidCartException e)
+		{
+			LOG.warn("UCP complete_checkout {}: invalid cart: {}", checkoutId, e.getMessage());
+			ucpCheckoutSessionService.failCompletion(checkoutId);
+			return ucpCheckoutMarshaller.marshal(checkoutId, UcpCheckout.STATUS_READY_FOR_COMPLETE,
+				currentCart(), buyer,
+				List.of(new UcpMessage("error", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
+					"Cannot place order — cart is invalid: " + e.getMessage())));
+		}
+		catch (final Exception e)
+		{
+			LOG.warn("UCP complete_checkout {}: payment/place failed: {}", checkoutId, e.getMessage());
+			ucpCheckoutSessionService.failCompletion(checkoutId);
+			return ucpCheckoutMarshaller.marshal(checkoutId, UcpCheckout.STATUS_READY_FOR_COMPLETE,
+				currentCart(), buyer,
+				List.of(new UcpMessage("error", "payment_declined", UcpMessage.SEVERITY_RECOVERABLE,
+					"Payment could not be processed: " + e.getMessage())));
+		}
+
+		// placeOrder succeeded — marshal the completed checkout from the ORDER
+		// (the session cart was consumed) and persist the terminal state in one
+		// atomic entry save (status, order code, replayable response).
+		final UcpCheckout completed = ucpCheckoutMarshaller.marshal(checkoutId,
+			UcpCheckout.STATUS_COMPLETED, order, buyer, List.of());
+		completed.setOrder(ucpOrderMarshaller.marshal(order));
+		ucpCheckoutSessionService.recordCompletion(checkoutId, toJson(completed), order.getCode());
+		LOG.info("UCP complete_checkout: {} completed as order {}", checkoutId, order.getCode());
+		return completed;
+	}
+
+	@Override
+	public UcpCheckout cancel(final String checkoutId, final String idempotencyKey)
+	{
+		requireIdempotencyKey(idempotencyKey, "cancel_checkout");
+		final UcpCheckoutSession session = ucpCheckoutSessionService.get(checkoutId);
+		if (session == null)
+		{
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "not_found",
+				UcpMessage.SEVERITY_UNRECOVERABLE, "Unknown or expired checkout id: " + checkoutId)));
+		}
+		if (UcpCheckout.STATUS_COMPLETED.equals(session.getStatus()))
+		{
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
+				UcpMessage.SEVERITY_UNRECOVERABLE,
+				"Checkout " + checkoutId + " is already completed and can no longer be canceled")));
+		}
+		if (UcpCheckout.STATUS_COMPLETE_IN_PROGRESS.equals(session.getStatus()))
+		{
+			// S5 has no complete_in_progress → canceled edge: the completion
+			// must settle first. Recoverable — retry after it does.
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
+				UcpMessage.SEVERITY_RECOVERABLE,
+				"A completion for checkout " + checkoutId + " is in progress; it cannot be canceled right now")));
+		}
+		if (!UcpCheckout.STATUS_CANCELED.equals(session.getStatus()))
+		{
+			// incomplete / ready_for_complete → canceled (terminal). The cart
+			// itself is left to the platform's abandoned-cart cleanup; the
+			// terminal entry status blocks all further mutations.
+			ucpCheckoutSessionService.update(checkoutId, session.getCartCode(), UcpCheckout.STATUS_CANCELED);
+			LOG.info("UCP cancel_checkout: {} canceled (cart {})", checkoutId, session.getCartCode());
+		}
+		// Idempotent: a repeated cancel re-returns the canceled state.
+		return marshalCanceled(session);
+	}
+
+	/** The canceled checkout payload — cart re-marshaled best-effort. */
+	protected UcpCheckout marshalCanceled(final UcpCheckoutSession session)
+	{
+		CartData cart = null;
+		try
+		{
+			cartLoaderStrategy.loadCart(session.getCartCode());
+			cart = currentCart();
+		}
+		catch (final Exception e)
+		{
+			// A canceled checkout with a swept cart is still canceled — return
+			// the terminal state without line items rather than an error.
+			LOG.debug("UCP cancel_checkout {}: backing cart {} not loadable: {}",
+				session.getCheckoutId(), session.getCartCode(), e.getMessage());
+		}
+		return ucpCheckoutMarshaller.marshal(session.getCheckoutId(), UcpCheckout.STATUS_CANCELED,
+			cart, parseBuyer(session.getBuyerJson()), List.of());
+	}
+
+	/**
+	 * The mock payment path (design R9/S3) — the same orchestration coremcp's
+	 * checkout_set_payment + order_place handlers embody: a payment
+	 * subscription with the default mock Visa (billing address = the cart's
+	 * delivery address), then authorization with the mock CVV. The client's
+	 * credential token is deliberately never read, logged or stored.
+	 */
+	protected void runMockPayment(final CartData cart)
+	{
+		final CCPaymentInfoData paymentInfo = new CCPaymentInfoData();
+		paymentInfo.setCardNumber(MOCK_CARD_NUMBER);
+		paymentInfo.setCardType(MOCK_CARD_TYPE);
+		paymentInfo.setExpiryMonth(MOCK_CARD_EXPIRY_MONTH);
+		paymentInfo.setExpiryYear(MOCK_CARD_EXPIRY_YEAR);
+		final AddressData deliveryAddress = cart != null ? cart.getDeliveryAddress() : null;
+		if (deliveryAddress != null)
+		{
+			paymentInfo.setBillingAddress(deliveryAddress);
+			paymentInfo.setAccountHolderName(
+				(deliveryAddress.getFirstName() != null ? deliveryAddress.getFirstName() : "") + " "
+					+ (deliveryAddress.getLastName() != null ? deliveryAddress.getLastName() : ""));
+		}
+		final CCPaymentInfoData created = checkoutFacade.createPaymentSubscription(paymentInfo);
+		if (created == null)
+		{
+			throw new IllegalStateException("payment subscription was not created");
+		}
+		// The existing mock path (OrderPlaceToolHandler) deliberately ignores
+		// authorizePayment's boolean: the demo platform's mock payment setup
+		// reports a non-ACCEPTED transaction status here (found live in
+		// Phase 5) even though placeOrder then succeeds. Failing on it would
+		// block every purchase, so we follow the proven flow verbatim.
+		if (!checkoutFacade.authorizePayment(MOCK_SECURITY_CODE))
+		{
+			LOG.debug("UCP complete_checkout: mock authorizePayment did not report ACCEPTED (ignored, "
+				+ "as in the proprietary order_place path)");
+		}
+	}
+
+	/**
+	 * Validate the complete payload's payment instrument against the single
+	 * declared handler (R9). Returns null when valid, otherwise the
+	 * unrecoverable message to return.
+	 */
+	protected UcpMessage validatePaymentHandler(final UcpCheckoutRequest payload)
+	{
+		final List<UcpPaymentInstrument> instruments =
+			payload != null && payload.getPayment() != null ? payload.getPayment().getInstruments() : null;
+		if (instruments == null || instruments.isEmpty())
+		{
+			return new UcpMessage("error", "invalid_request", UcpMessage.SEVERITY_UNRECOVERABLE,
+				"payment.instruments must reference a declared payment handler (declared: "
+					+ UcpcommerceConstants.PAYMENT_HANDLER_ID + ")");
+		}
+		for (final UcpPaymentInstrument instrument : instruments)
+		{
+			if (instrument != null
+				&& UcpcommerceConstants.PAYMENT_HANDLER_ID.equals(instrument.getHandlerId()))
+			{
+				return null;
+			}
+		}
+		final String offered = instruments.stream()
+			.map(i -> i != null ? String.valueOf(i.getHandlerId()) : "null")
+			.reduce((a, b) -> a + ", " + b).orElse("none");
+		return new UcpMessage("error", "invalid_request", UcpMessage.SEVERITY_UNRECOVERABLE,
+			"Unknown payment handler id(s): " + offered + "; this store declares only "
+				+ UcpcommerceConstants.PAYMENT_HANDLER_ID);
+	}
+
+	/** Binding spec: complete/cancel MUST carry meta["idempotency-key"] — a missing one is a client protocol bug. */
+	private static void requireIdempotencyKey(final String idempotencyKey, final String operation)
+	{
+		if (idempotencyKey == null || idempotencyKey.isBlank())
+		{
+			throw new IllegalArgumentException(
+				"meta[\"idempotency-key\"] is required for " + operation);
+		}
+	}
+
+	/**
+	 * Last-resort replay when the stored completion response cannot be parsed:
+	 * a minimal completed payload carrying the recorded order id — the order
+	 * exists, so re-executing the purchase is never an option.
+	 */
+	protected UcpCheckout completedFallback(final UcpCheckoutSession session)
+	{
+		final UcpCheckout checkout = ucpCheckoutMarshaller.marshal(session.getCheckoutId(),
+			UcpCheckout.STATUS_COMPLETED, null, parseBuyer(session.getBuyerJson()), List.of());
+		final UcpOrder order = new UcpOrder();
+		order.setId(session.getOrderCode());
+		checkout.setOrder(order);
+		return checkout;
+	}
+
+	/** Parse the stored completion response; null (and a warning) when unreadable. */
+	protected UcpCheckout parseCompletionResponse(final UcpCheckoutSession session)
+	{
+		if (session.getCompletionResponseJson() == null || session.getCompletionResponseJson().isBlank())
+		{
+			return null;
+		}
+		try
+		{
+			return objectMapper.readValue(session.getCompletionResponseJson(), UcpCheckout.class);
+		}
+		catch (final Exception e)
+		{
+			LOG.warn("UCP checkout {}: stored completion response is unreadable: {}",
+				session.getCheckoutId(), e.getMessage());
+			return null;
+		}
+	}
+
+	private String toJson(final UcpCheckout checkout)
+	{
+		try
+		{
+			return objectMapper.writeValueAsString(checkout);
+		}
+		catch (final Exception e)
+		{
+			LOG.warn("Could not serialize UCP completion response, storing none: {}", e.getMessage());
+			return null;
+		}
 	}
 
 	/**
@@ -572,5 +911,11 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 	public void setUcpCheckoutMarshaller(final UcpCheckoutMarshaller ucpCheckoutMarshaller)
 	{
 		this.ucpCheckoutMarshaller = ucpCheckoutMarshaller;
+	}
+
+	@Required
+	public void setUcpOrderMarshaller(final UcpOrderMarshaller ucpOrderMarshaller)
+	{
+		this.ucpOrderMarshaller = ucpOrderMarshaller;
 	}
 }

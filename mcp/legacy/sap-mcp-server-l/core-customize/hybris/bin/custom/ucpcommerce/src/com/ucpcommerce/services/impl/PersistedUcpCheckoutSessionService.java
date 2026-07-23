@@ -102,6 +102,53 @@ public class PersistedUcpCheckoutSessionService implements UcpCheckoutSessionSer
 		modelService.save(entry);
 	}
 
+	@Override
+	public void beginCompletion(final String checkoutId, final String idempotencyKey)
+	{
+		final UcpCheckoutSessionEntryModel entry = findEntry(checkoutId);
+		if (entry == null || isExpired(entry))
+		{
+			return;
+		}
+		entry.setStatus(UcpCheckoutStatus.COMPLETE_IN_PROGRESS);
+		entry.setIdempotencyKey(idempotencyKey);
+		entry.setLastAccessedAt(new Date());
+		modelService.save(entry);
+	}
+
+	@Override
+	public void failCompletion(final String checkoutId)
+	{
+		final UcpCheckoutSessionEntryModel entry = findEntry(checkoutId);
+		if (entry == null || isExpired(entry))
+		{
+			return;
+		}
+		entry.setStatus(UcpCheckoutStatus.READY_FOR_COMPLETE);
+		// Clear the accepted key so a retry (same or new key) re-executes.
+		entry.setIdempotencyKey(null);
+		entry.setLastAccessedAt(new Date());
+		modelService.save(entry);
+	}
+
+	@Override
+	public void recordCompletion(final String checkoutId, final String completionResponseJson,
+		final String orderCode)
+	{
+		final UcpCheckoutSessionEntryModel entry = findEntry(checkoutId);
+		if (entry == null || isExpired(entry))
+		{
+			return;
+		}
+		// One save = one atomic entry update (runbook §5.2).
+		entry.setStatus(UcpCheckoutStatus.COMPLETED);
+		entry.setCompletionResponseJson(completionResponseJson);
+		entry.setOrderCode(orderCode);
+		entry.setLastAccessedAt(new Date());
+		modelService.save(entry);
+		LOG.debug("UCP checkout {} completed as order {}", checkoutId, orderCode);
+	}
+
 	private UcpCheckoutSessionEntryModel findEntry(final String checkoutId)
 	{
 		if (checkoutId == null)

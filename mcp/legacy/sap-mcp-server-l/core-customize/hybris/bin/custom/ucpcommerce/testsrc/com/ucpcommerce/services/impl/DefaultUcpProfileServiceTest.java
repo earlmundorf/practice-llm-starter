@@ -58,13 +58,33 @@ public class DefaultUcpProfileServiceTest
 	{
 		final UcpProfile profile = profileService.buildProfile("electronics");
 
-		assertEquals(1, profile.getCapabilities().size());
-		final UcpCapability catalog = profile.getCapabilities().get(0);
-		assertEquals("dev.ucp.shopping.catalog", catalog.getName());
+		final UcpCapability catalog = capability(profile, "dev.ucp.shopping.catalog");
+		assertNotNull("catalog capability must be advertised", catalog);
 		assertEquals("capability version is the pinned dated calver string",
 			PINNED_VERSION, catalog.getVersion());
 		assertNotNull(catalog.getSpec());
 		assertNotNull(catalog.getSchema());
+	}
+
+	@Test
+	public void testPhase5ProfileAdvertisesCheckoutCapability()
+	{
+		final UcpProfile profile = profileService.buildProfile("electronics");
+
+		// Exactly the capabilities that work end-to-end so far (Phases 2 + 5).
+		assertEquals(2, profile.getCapabilities().size());
+		final UcpCapability checkout = capability(profile, "dev.ucp.shopping.checkout");
+		assertNotNull("checkout capability must be advertised once the lifecycle works", checkout);
+		assertEquals(PINNED_VERSION, checkout.getVersion());
+		assertNotNull(checkout.getSpec());
+		assertNotNull(checkout.getSchema());
+	}
+
+	private UcpCapability capability(final UcpProfile profile, final String name)
+	{
+		return profile.getCapabilities().stream()
+			.filter(c -> name.equals(c.getName()))
+			.findFirst().orElse(null);
 	}
 
 	@Test
@@ -81,10 +101,15 @@ public class DefaultUcpProfileServiceTest
 	}
 
 	@Test
-	public void testPaymentHandlersStayEmptyUntilCheckoutWorks()
+	public void testPhase5ProfileDeclaresTheSingleMockPaymentHandler()
 	{
-		// The profile only advertises what works — checkout/payment land in Phase 5.
-		assertTrue(profileService.buildProfile("electronics").getPaymentHandlers().isEmpty());
+		// One honest mock handler (design R9): thinkshop_mock_card, nothing else.
+		final UcpProfile profile = profileService.buildProfile("electronics");
+
+		assertEquals(1, profile.getPaymentHandlers().size());
+		assertEquals("thinkshop_mock_card", profile.getPaymentHandlers().get(0).getId());
+		assertNotNull("handler declares a human-readable name",
+			profile.getPaymentHandlers().get(0).getName());
 	}
 
 	@Test
@@ -119,10 +144,12 @@ public class DefaultUcpProfileServiceTest
 		assertTrue("ucp block must be an object", root.path("ucp").isObject());
 		assertTrue("capabilities must serialize as an array", root.path("capabilities").isArray());
 		assertEquals("dev.ucp.shopping.catalog", root.path("capabilities").path(0).path("name").asText());
+		assertEquals("dev.ucp.shopping.checkout", root.path("capabilities").path(1).path("name").asText());
 		assertTrue("services must serialize as an object", root.path("services").isObject());
 		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp/mcp",
 			root.path("services").path("dev.ucp.shopping").path("mcp").path("endpoint").asText());
 		assertTrue("payment_handlers must serialize as an array", root.path("payment_handlers").isArray());
+		assertEquals("thinkshop_mock_card", root.path("payment_handlers").path(0).path("id").asText());
 	}
 
 	@Test
