@@ -129,8 +129,19 @@ public class DefaultUcpProfileServiceTest
 		assertNotNull("mcp transport must be advertised", profile.getServices().get("dev.ucp.shopping").getMcp());
 		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp/mcp",
 			profile.getServices().get("dev.ucp.shopping").getMcp().getEndpoint());
-		// REST is not advertised until it works (Phase 7).
-		assertEquals(null, profile.getServices().get("dev.ucp.shopping").getRest());
+	}
+
+	@Test
+	public void testPhase7ProfileAdvertisesRestTransportBase()
+	{
+		// The rest entry is the BASE the client prefixes to resource paths
+		// (/checkout-sessions, /catalog/search, /orders — ADR 0002).
+		final UcpProfile profile = profileService.buildProfile("electronics");
+
+		assertNotNull("rest transport must be advertised once the REST routes work",
+			profile.getServices().get("dev.ucp.shopping").getRest());
+		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp",
+			profile.getServices().get("dev.ucp.shopping").getRest().getEndpoint());
 	}
 
 	@Test
@@ -186,6 +197,8 @@ public class DefaultUcpProfileServiceTest
 		assertTrue("services must serialize as an object", root.path("services").isObject());
 		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp/mcp",
 			root.path("services").path("dev.ucp.shopping").path("mcp").path("endpoint").asText());
+		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp",
+			root.path("services").path("dev.ucp.shopping").path("rest").path("endpoint").asText());
 		assertTrue("payment_handlers must serialize as an array", root.path("payment_handlers").isArray());
 		assertEquals("thinkshop_mock_card", root.path("payment_handlers").path(0).path("id").asText());
 	}

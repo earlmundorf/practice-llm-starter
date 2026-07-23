@@ -8,8 +8,15 @@ non-`isError` payloads with `ucp.status="error"` + `messages[]`
 `payment_declined`, `severity` ∈ `recoverable` / `unrecoverable`). Tool
 `getDescription()`/`getInputSchema()` are authoritative; this table is the map.
 
-Endpoint: `POST /occ/v2/{baseSiteId}/ucp/mcp` (stateless JSON-RPC;
-`@Secured({ROLE_CUSTOMERGROUP, ROLE_TRUSTED_CLIENT})`).
+Transports (both advertised in the profile's `services.dev.ucp.shopping`):
+
+- **MCP**: `POST /occ/v2/{baseSiteId}/ucp/mcp` (stateless JSON-RPC;
+  `@Secured({ROLE_CUSTOMERGROUP, ROLE_TRUSTED_CLIENT})`).
+- **REST** (Phase 7, same roles; base `/occ/v2/{baseSiteId}/ucp`): thin
+  adapters over the identical capability services — see the REST route table
+  below. Client protocol bugs are HTTP 400 (UCP error envelope) — the REST
+  spelling of an MCP `isError` result; business errors stay HTTP 200 +
+  `messages[]`.
 
 ## Capabilities → tools (13 tools)
 
@@ -59,10 +66,38 @@ contract). Order `status` values are lowercased hybris codes.
 
 Backed by coremcp's Solr-only `KnowledgeSearchService` (`knowledgeIndex`).
 
+## REST binding routes (Phase 7)
+
+Base = `services.dev.ucp.shopping.rest.endpoint` from the profile
+(locally `https://localhost:9002/occ/v2/{baseSiteId}/ucp`). Resource naming
+per ADR 0002 (`/checkout-sessions`). Identical payloads to the MCP tools —
+one wire, same bytes.
+
+| Operation | Route | Notes |
+|---|---|---|
+| `search_catalog` | `GET /catalog/search?query=&page=&page_size=` | same defaults/clamps as the tool |
+| `lookup_catalog` | `GET /catalog/lookup?ids=A,B` | missing `ids` → 400 |
+| `get_product` | `GET /products/{id}` | |
+| `create_checkout` | `POST /checkout-sessions` | body = the `checkout` payload (no `id` — 400 if present) |
+| `get_checkout` | `GET /checkout-sessions/{id}` | |
+| `update_checkout` | `PUT /checkout-sessions/{id}` | body = the `checkout` payload (no `id`) |
+| `complete_checkout` | `POST /checkout-sessions/{id}/complete` | `Idempotency-Key` header REQUIRED (400 without it) |
+| `cancel_checkout` | `POST /checkout-sessions/{id}/cancel` | `Idempotency-Key` header REQUIRED; body ignored |
+| `get_order` | `GET /orders/{id}` | |
+| `list_orders` | `GET /orders?page=&page_size=&statuses=A,B` | |
+
+The `com.thinkshop.*` custom capabilities have **no REST routes** (MCP-only —
+Phase 6/7 decisions, ADR 0002). The `UCP-Agent` header is the REST spelling of
+`meta["ucp-agent"]`.
+
 ## Verification
 
 - `core-customize/scripts/ucp-e2e.py --transport mcp` — full-flow harness
   (profile → catalog → checkout lifecycle → orders → promotions → knowledge),
   with best-effort `ucp-schema validate` on captured payloads.
+- `core-customize/scripts/ucp-e2e.py --transport rest` — the same payload
+  assertions over the REST routes (custom capabilities skipped).
 - `core-customize/scripts/smoke-test.sh` — UCP section: profile, tools/list
   (exactly 13), one catalog search, `com.thinkshop.*` calls.
+- Official `conformance`/`samples` tooling: external follow-up — see
+  docs/README.md → Verification.

@@ -72,8 +72,13 @@ public class DefaultUcpProfileService implements UcpProfileService
 		// publicly reachable base (runbook §2.1) — configurable so an edge
 		// rewrite / tunnel deployment can override the local default.
 		final UcpServiceEntry shopping = new UcpServiceEntry();
-		shopping.setMcp(new UcpTransportEndpoint(
-			stripTrailingSlash(getPublicBaseUrl()) + "/occ/v2/" + baseSiteId + "/ucp/mcp"));
+		final String publicBase = stripTrailingSlash(getPublicBaseUrl());
+		shopping.setMcp(new UcpTransportEndpoint(publicBase + "/occ/v2/" + baseSiteId + "/ucp/mcp"));
+
+		// REST transport (Phase 7) — advertised only now that the REST routes
+		// work end-to-end. The endpoint is the BASE the client prefixes to the
+		// resource paths (/checkout-sessions, /catalog/..., /orders — ADR 0002).
+		shopping.setRest(new UcpTransportEndpoint(publicBase + "/occ/v2/" + baseSiteId + "/ucp"));
 		profile.getServices().put(SHOPPING_SERVICE, shopping);
 
 		// The single mock payment handler (design R9): complete_checkout

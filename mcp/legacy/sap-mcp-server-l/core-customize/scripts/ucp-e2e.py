@@ -3,9 +3,14 @@
 End-to-end harness for the UCP surface (ucpcommerce extension).
 
 Drives the UCP flows against a running local server, transport-flagged from
-day one (--transport mcp is the default; rest lands in Phase 7). Assertions
-are written against UCP payload objects, not the wire, so they are reused
-verbatim across transports.
+day one (--transport mcp is the default; --transport rest drives the Phase 7
+REST binding). Assertions are written against UCP payload objects, not the
+wire, so they are reused verbatim across transports. Transport-specific bits:
+MCP protocol checks (initialize/tools-list/isError) run only on mcp; on rest,
+client protocol bugs are HTTP 400 (UCP error envelope), the Idempotency-Key
+header replaces meta["idempotency-key"], and the com.thinkshop.* custom
+capabilities are skipped (MCP-only — Phase 7 REST scope is catalog/checkout/
+order; see docs/adr/0002).
 
 Sections so far:
   1. Profile   — anonymous discovery document shape (Phase 1) + Phase 2 entries
@@ -314,9 +319,9 @@ def test_profile(base_url, base_site):
     mcp_endpoint = (services.get("dev.ucp.shopping") or {}).get("mcp", {}).get("endpoint", "")
     check("profile advertises the mcp transport endpoint",
           mcp_endpoint.endswith(f"/occ/v2/{base_site}/ucp/mcp"), f"got {mcp_endpoint!r}")
-    check("rest transport not advertised yet (pre-Phase 7)",
-          "rest" not in (services.get("dev.ucp.shopping") or {}),
-          f"got {services.get('dev.ucp.shopping')!r}")
+    rest_endpoint = (services.get("dev.ucp.shopping") or {}).get("rest", {}).get("endpoint", "")
+    check("profile advertises the rest transport base endpoint (Phase 7)",
+          rest_endpoint.endswith(f"/occ/v2/{base_site}/ucp"), f"got {rest_endpoint!r}")
     handlers = body.get("payment_handlers") or []
     handler_ids = [h.get("id") for h in handlers if isinstance(h, dict)]
     check(f"profile declares exactly the mock payment handler {PAYMENT_HANDLER_ID}",
@@ -363,6 +368,95 @@ def mcp_tool_call(base_url, base_site, token, tool, arguments, meta=None):
     return status, body, payload
 
 
+# ── UCP REST binding helpers (Phase 7) ──────────────────────────────────────
+
+# Which wire the capability sections drive; set from --transport in main().
+TRANSPORT = "mcp"
+
+
+def rest_call(base_url, base_site, token, tool, arguments, meta=None):
+    """
+    One logical UCP operation over the REST binding (thin adapters over the
+    same capability services — design R12). Resource naming: /checkout-sessions
+    per ADR 0002 (runbook §9.1 ambiguity resolved to the researched Google
+    Native-checkout shape). Returns (status, body, payload) exactly like
+    mcp_tool_call so section assertions are reused verbatim.
+    """
+    base = f"{base_url}/occ/v2/{base_site}/ucp"
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    # REST spelling of the per-call agent metadata (meta["ucp-agent"] on MCP).
+    headers["UCP-Agent"] = f'profile="{HARNESS_AGENT_PROFILE["profile"]}"'
+    key = (meta or {}).get("idempotency-key")
+    if key:
+        headers["Idempotency-Key"] = key
+
+    def q(params):
+        cleaned = {k: v for k, v in params.items() if v is not None}
+        return ("?" + urllib.parse.urlencode(cleaned)) if cleaned else ""
+
+    def path_id(value):
+        return urllib.parse.quote(str(value if value is not None else ""), safe="")
+
+    a = arguments or {}
+    if tool == "search_catalog":
+        method, url, body = "GET", f"{base}/catalog/search" + q(
+            {"query": a.get("query"), "page": a.get("page"), "page_size": a.get("page_size")}), None
+    elif tool == "lookup_catalog":
+        method, url, body = "GET", f"{base}/catalog/lookup" + q(
+            {"ids": ",".join(a.get("ids") or [])}), None
+    elif tool == "get_product":
+        method, url, body = "GET", f"{base}/products/{path_id(a.get('id'))}", None
+    elif tool == "create_checkout":
+        method, url, body = "POST", f"{base}/checkout-sessions", a.get("checkout")
+    elif tool == "get_checkout":
+        method, url, body = "GET", f"{base}/checkout-sessions/{path_id(a.get('id'))}", None
+    elif tool == "update_checkout":
+        method, url, body = "PUT", f"{base}/checkout-sessions/{path_id(a.get('id'))}", a.get("checkout")
+    elif tool == "complete_checkout":
+        method, url, body = "POST", f"{base}/checkout-sessions/{path_id(a.get('id'))}/complete", a.get("checkout")
+    elif tool == "cancel_checkout":
+        # Cancel carries no checkout payload on either binding.
+        method, url, body = "POST", f"{base}/checkout-sessions/{path_id(a.get('id'))}/cancel", {}
+    elif tool == "get_order":
+        method, url, body = "GET", f"{base}/orders/{path_id(a.get('id'))}", None
+    elif tool == "list_orders":
+        statuses = a.get("statuses")
+        method, url, body = "GET", f"{base}/orders" + q(
+            {"page": a.get("page"), "page_size": a.get("page_size"),
+             "statuses": ",".join(statuses) if statuses else None}), None
+    else:
+        raise ValueError(f"{tool} has no REST route (com.thinkshop.* capabilities are MCP-only)")
+
+    log_verbose(f"  {method} {url}")
+    status, _, parsed = http_request(url, data=body, headers=headers, method=method)
+    payload = parsed if isinstance(parsed, dict) and "_raw" not in parsed and "_error" not in parsed else None
+    log_verbose(f"  {tool} [{status}] payload: "
+                f"{json.dumps(payload, indent=2)[:1200] if payload else parsed}")
+    return status, parsed, payload
+
+
+def ucp_call(base_url, base_site, token, tool, arguments, meta=None):
+    """Transport-agnostic capability call: same (status, body, payload) contract."""
+    if TRANSPORT == "rest":
+        return rest_call(base_url, base_site, token, tool, arguments, meta)
+    return mcp_tool_call(base_url, base_site, token, tool, arguments, meta)
+
+
+def protocol_rejected(status, body):
+    """
+    True when the transport rejected the call as a CLIENT PROTOCOL BUG
+    (schema-shape violations, missing idempotency key): an MCP isError tool
+    result, or HTTP 400 with the UCP error envelope on REST. UCP business
+    errors are never protocol rejections — they are 200/non-isError payloads
+    with ucp.status="error" + messages[].
+    """
+    if TRANSPORT == "rest":
+        return status == 400
+    return isinstance(body, dict) and (body.get("result") or {}).get("isError") is True
+
+
 def assert_ucp_envelope(payload, label, expected_status="success"):
     """Every UCP capability payload leads with a ucp envelope."""
     ucp = (payload or {}).get("ucp") or {}
@@ -381,45 +475,49 @@ def test_auth(base_url):
     return token
 
 
-def test_catalog_mcp(base_url, base_site, token):
-    """Phase 2: dev.ucp.shopping.catalog over the MCP binding."""
-    log(f"\n{Colors.CYAN}── Catalog capability (MCP binding) ──{Colors.RESET}")
+def test_catalog(base_url, base_site, token):
+    """Phase 2: dev.ucp.shopping.catalog (Phase 7: same assertions over REST)."""
+    log(f"\n{Colors.CYAN}── Catalog capability ({TRANSPORT.upper()} binding) ──{Colors.RESET}")
 
-    # The endpoint is @Secured — no token must mean 401, not data.
-    status, _, _ = mcp_rpc(base_url, base_site, None, "tools/list")
+    # The endpoints are @Secured — no token must mean 401, not data.
+    if TRANSPORT == "mcp":
+        status, _, _ = mcp_rpc(base_url, base_site, None, "tools/list")
+    else:
+        status, _, _ = rest_call(base_url, base_site, None, "search_catalog", {"query": "laptop"})
     check("unauthenticated call is rejected (401)", status == 401, f"got {status}")
 
-    # A generic MCP client's initialize is tolerated harmlessly (stateless).
-    status, headers, body = mcp_rpc(base_url, base_site, token, "initialize",
-                                    {"protocolVersion": "2025-11-25",
-                                     "clientInfo": {"name": "ucp-e2e", "version": "1.0"}})
-    check("initialize tolerated (200, no error)",
-          status == 200 and body.get("error") is None, f"status {status}, body {str(body)[:200]}")
-    check("initialize returns serverInfo",
-          isinstance(body.get("result", {}).get("serverInfo"), dict), f"got {body.get('result')!r}")
-    check("initialize issues no session header",
-          not any(h.lower() == "mcp-session-id" for h in headers), f"headers {list(headers)}")
+    if TRANSPORT == "mcp":
+        # A generic MCP client's initialize is tolerated harmlessly (stateless).
+        status, headers, body = mcp_rpc(base_url, base_site, token, "initialize",
+                                        {"protocolVersion": "2025-11-25",
+                                         "clientInfo": {"name": "ucp-e2e", "version": "1.0"}})
+        check("initialize tolerated (200, no error)",
+              status == 200 and body.get("error") is None, f"status {status}, body {str(body)[:200]}")
+        check("initialize returns serverInfo",
+              isinstance(body.get("result", {}).get("serverInfo"), dict), f"got {body.get('result')!r}")
+        check("initialize issues no session header",
+              not any(h.lower() == "mcp-session-id" for h in headers), f"headers {list(headers)}")
 
-    # notifications/initialized → 202, empty body.
-    status, _, _ = mcp_rpc(base_url, base_site, token, "notifications/initialized", notification=True)
-    check("notification answered with 202", status == 202, f"got {status}")
+        # notifications/initialized → 202, empty body.
+        status, _, _ = mcp_rpc(base_url, base_site, token, "notifications/initialized", notification=True)
+        check("notification answered with 202", status == 202, f"got {status}")
 
-    # tools/list — exactly the tools shipped so far (catalog + checkout +
-    # order + custom com.thinkshop.* capabilities).
-    status, _, body = mcp_rpc(base_url, base_site, token, "tools/list")
-    tools = body.get("result", {}).get("tools", [])
-    tool_names = {t.get("name") for t in tools if isinstance(t, dict)}
-    check("tools/list returns exactly the catalog + checkout + order + custom tools",
-          tool_names == EXPECTED_TOOLS, f"got {sorted(tool_names)!r}")
+        # tools/list — exactly the tools shipped so far (catalog + checkout +
+        # order + custom com.thinkshop.* capabilities).
+        status, _, body = mcp_rpc(base_url, base_site, token, "tools/list")
+        tools = body.get("result", {}).get("tools", [])
+        tool_names = {t.get("name") for t in tools if isinstance(t, dict)}
+        check("tools/list returns exactly the catalog + checkout + order + custom tools",
+              tool_names == EXPECTED_TOOLS, f"got {sorted(tool_names)!r}")
 
-    # Unknown tool → JSON-RPC invalid-params error.
-    status, body, _ = mcp_tool_call(base_url, base_site, token, "definitely_not_a_tool", {})
-    check("unknown tool returns -32602",
-          body.get("error", {}).get("code") == -32602, f"got {body.get('error')!r}")
+        # Unknown tool → JSON-RPC invalid-params error.
+        status, body, _ = mcp_tool_call(base_url, base_site, token, "definitely_not_a_tool", {})
+        check("unknown tool returns -32602",
+              body.get("error", {}).get("code") == -32602, f"got {body.get('error')!r}")
 
     # search_catalog for a known SKU keyword.
-    status, body, payload = mcp_tool_call(base_url, base_site, token,
-                                          "search_catalog", {"query": "laptop"})
+    status, body, payload = ucp_call(base_url, base_site, token,
+                                     "search_catalog", {"query": "laptop"})
     check("search_catalog returns a parseable UCP payload", payload is not None,
           f"status {status}, body {str(body)[:300]}")
     if payload is None:
@@ -444,8 +542,8 @@ def test_catalog_mcp(base_url, base_site, token):
     ucp_schema_validate(payload, "search_catalog response")
 
     # get_product for the known SKU — the ×100 spot check on the detail path.
-    status, body, payload = mcp_tool_call(base_url, base_site, token,
-                                          "get_product", {"id": KNOWN_SKU})
+    status, body, payload = ucp_call(base_url, base_site, token,
+                                     "get_product", {"id": KNOWN_SKU})
     check("get_product returns a parseable UCP payload", payload is not None,
           f"status {status}, body {str(body)[:300]}")
     if payload is not None:
@@ -460,8 +558,8 @@ def test_catalog_mcp(base_url, base_site, token):
         ucp_schema_validate(payload, "get_product response")
 
     # lookup_catalog batch — known ids resolve, price integrity on a second SKU.
-    status, body, payload = mcp_tool_call(base_url, base_site, token,
-                                          "lookup_catalog", {"ids": [KNOWN_SKU, SECOND_SKU]})
+    status, body, payload = ucp_call(base_url, base_site, token,
+                                     "lookup_catalog", {"ids": [KNOWN_SKU, SECOND_SKU]})
     check("lookup_catalog returns a parseable UCP payload", payload is not None,
           f"status {status}, body {str(body)[:300]}")
     if payload is not None:
@@ -474,8 +572,8 @@ def test_catalog_mcp(base_url, base_site, token):
               f"got {by_id.get(SECOND_SKU, {}).get('price')!r}")
 
     # lookup with one unknown id → partial success + recoverable message.
-    status, body, payload = mcp_tool_call(base_url, base_site, token,
-                                          "lookup_catalog", {"ids": [KNOWN_SKU, "NO_SUCH_SKU"]})
+    status, body, payload = ucp_call(base_url, base_site, token,
+                                     "lookup_catalog", {"ids": [KNOWN_SKU, "NO_SUCH_SKU"]})
     if payload is not None:
         msgs = payload.get("messages") or []
         check("lookup_catalog reports unknown id in messages[]",
@@ -486,8 +584,8 @@ def test_catalog_mcp(base_url, base_site, token):
               f"got {payload.get('products')!r}")
 
     # get_product for an unknown id — UCP business error, not a transport error.
-    status, body, payload = mcp_tool_call(base_url, base_site, token,
-                                          "get_product", {"id": "NO_SUCH_SKU"})
+    status, body, payload = ucp_call(base_url, base_site, token,
+                                     "get_product", {"id": "NO_SUCH_SKU"})
     check("get_product unknown id still returns 200", status == 200, f"got {status}")
     if payload is not None:
         assert_ucp_envelope(payload, "get_product (unknown id)", expected_status="error")
@@ -497,9 +595,9 @@ def test_catalog_mcp(base_url, base_site, token):
                   for m in msgs), f"got {msgs!r}")
 
 
-def test_checkout_create_get_mcp(base_url, base_site, token):
-    """Phase 3: create_checkout / get_checkout over the MCP binding (R5 store)."""
-    log(f"\n{Colors.CYAN}── Checkout capability: create/get (MCP binding) ──{Colors.RESET}")
+def test_checkout_create_get(base_url, base_site, token):
+    """Phase 3: create_checkout / get_checkout (R5 store; Phase 7: over REST too)."""
+    log(f"\n{Colors.CYAN}── Checkout capability: create/get ({TRANSPORT.upper()} binding) ──{Colors.RESET}")
 
     buyer = {"first_name": "John", "last_name": "Doe", "email": CUSTOMER_EMAIL}
     checkout_req = {
@@ -508,14 +606,14 @@ def test_checkout_create_get_mcp(base_url, base_site, token):
     }
 
     # create_checkout — the payload must NOT contain an id; the response mints one.
-    status, body, payload = mcp_tool_call(base_url, base_site, token,
-                                          "create_checkout", {"checkout": checkout_req})
+    status, body, payload = ucp_call(base_url, base_site, token,
+                                     "create_checkout", {"checkout": checkout_req})
     check("create_checkout returns a parseable UCP payload", payload is not None,
           f"status {status}, body {str(body)[:300]}")
     if payload is None:
         return
-    check("create_checkout is not an MCP isError result",
-          body.get("result", {}).get("isError") is not True, f"got {body.get('result')!r}")
+    check("create_checkout is not rejected as a protocol error",
+          not protocol_rejected(status, body), f"status {status}, body {str(body)[:200]}")
     assert_ucp_envelope(payload, "create_checkout")
 
     checkout_id = payload.get("id") or ""
@@ -547,8 +645,8 @@ def test_checkout_create_get_mcp(base_url, base_site, token):
     ucp_schema_validate(payload, "create_checkout response")
 
     # get_checkout round-trip — separate stateless call, id addresses the resource.
-    status, body, got = mcp_tool_call(base_url, base_site, token,
-                                      "get_checkout", {"id": checkout_id})
+    status, body, got = ucp_call(base_url, base_site, token,
+                                 "get_checkout", {"id": checkout_id})
     check("get_checkout returns a parseable UCP payload", got is not None,
           f"status {status}, body {str(body)[:300]}")
     if got is not None:
@@ -570,11 +668,11 @@ def test_checkout_create_get_mcp(base_url, base_site, token):
         ucp_schema_validate(got, "get_checkout response")
 
     # Unknown checkout id → UCP business error payload, never a transport error.
-    status, body, missing = mcp_tool_call(base_url, base_site, token,
-                                          "get_checkout", {"id": "ucp_chk_doesnotexist"})
+    status, body, missing = ucp_call(base_url, base_site, token,
+                                     "get_checkout", {"id": "ucp_chk_doesnotexist"})
     check("get_checkout unknown id still returns 200", status == 200, f"got {status}")
-    check("get_checkout unknown id is not an MCP isError result",
-          body.get("result", {}).get("isError") is not True, f"got {body.get('result')!r}")
+    check("get_checkout unknown id is not rejected as a protocol error",
+          not protocol_rejected(status, body), f"status {status}, body {str(body)[:200]}")
     if missing is not None:
         assert_ucp_envelope(missing, "get_checkout (unknown id)", expected_status="error")
         msgs = missing.get("messages") or []
@@ -583,9 +681,9 @@ def test_checkout_create_get_mcp(base_url, base_site, token):
                   for m in msgs), f"got {msgs!r}")
 
     # create_checkout with only an unknown SKU → error payload, no id minted.
-    status, body, bad = mcp_tool_call(base_url, base_site, token, "create_checkout",
-                                      {"checkout": {"line_items": [{"item": {"id": "NO_SUCH_SKU"},
-                                                                    "quantity": 1}]}})
+    status, body, bad = ucp_call(base_url, base_site, token, "create_checkout",
+                                 {"checkout": {"line_items": [{"item": {"id": "NO_SUCH_SKU"},
+                                                               "quantity": 1}]}})
     if bad is not None:
         assert_ucp_envelope(bad, "create_checkout (unknown SKU)", expected_status="error")
         check("failed create mints no checkout id", bad.get("id") is None,
@@ -597,9 +695,9 @@ def test_checkout_create_get_mcp(base_url, base_site, token):
     return checkout_id
 
 
-def test_checkout_update_mcp(base_url, base_site, token):
+def test_checkout_update(base_url, base_site, token):
     """Phase 4: update_checkout — diffs, destination, derived status, promotions."""
-    log(f"\n{Colors.CYAN}── Checkout capability: update (MCP binding) ──{Colors.RESET}")
+    log(f"\n{Colors.CYAN}── Checkout capability: update ({TRANSPORT.upper()} binding) ──{Colors.RESET}")
 
     def totals_of(payload):
         return {t.get("type"): t.get("amount") for t in payload.get("totals") or []}
@@ -608,11 +706,11 @@ def test_checkout_update_mcp(base_url, base_site, token):
         return {li.get("item", {}).get("id"): li for li in payload.get("line_items") or []}
 
     # Fresh checkout: one mouse, buyer attached.
-    _, body, payload = mcp_tool_call(base_url, base_site, token, "create_checkout",
-                                     {"checkout": {"line_items": [{"item": {"id": SECOND_SKU},
-                                                                   "quantity": 1}],
-                                                   "buyer": {"first_name": "John", "last_name": "Doe",
-                                                             "email": CUSTOMER_EMAIL}}})
+    _, body, payload = ucp_call(base_url, base_site, token, "create_checkout",
+                                {"checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                              "quantity": 1}],
+                                              "buyer": {"first_name": "John", "last_name": "Doe",
+                                                        "email": CUSTOMER_EMAIL}}})
     checkout_id = (payload or {}).get("id")
     check("update section: fresh checkout created", bool(checkout_id),
           f"body {str(body)[:300]}")
@@ -621,10 +719,10 @@ def test_checkout_update_mcp(base_url, base_site, token):
 
     # 1. Quantity change (1 → 2 mice) — the BOGO promotion fires during
     #    recalculation: one mouse free, discount visible in totals.
-    status, body, upd = mcp_tool_call(base_url, base_site, token, "update_checkout",
-                                      {"id": checkout_id,
-                                       "checkout": {"line_items": [{"item": {"id": SECOND_SKU},
-                                                                    "quantity": 2}]}})
+    status, body, upd = ucp_call(base_url, base_site, token, "update_checkout",
+                                 {"id": checkout_id,
+                                  "checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                               "quantity": 2}]}})
     check("update_checkout returns a parseable UCP payload", upd is not None,
           f"status {status}, body {str(body)[:300]}")
     if upd is None:
@@ -645,11 +743,11 @@ def test_checkout_update_mcp(base_url, base_site, token):
     ucp_schema_validate(upd, "update_checkout (quantity) response")
 
     # 2. Destination (address + delivery mode) → derived ready_for_complete.
-    status, body, upd = mcp_tool_call(base_url, base_site, token, "update_checkout",
-                                      {"id": checkout_id,
-                                       "checkout": {"fulfillment": {
-                                           "destination": DESTINATION,
-                                           "delivery_mode": DELIVERY_MODE_STANDARD}}})
+    status, body, upd = ucp_call(base_url, base_site, token, "update_checkout",
+                                 {"id": checkout_id,
+                                  "checkout": {"fulfillment": {
+                                      "destination": DESTINATION,
+                                      "delivery_mode": DELIVERY_MODE_STANDARD}}})
     check("destination update returns a parseable UCP payload", upd is not None,
           f"status {status}, body {str(body)[:300]}")
     if upd is None:
@@ -674,7 +772,7 @@ def test_checkout_update_mcp(base_url, base_site, token):
     ucp_schema_validate(upd, "update_checkout (destination) response")
 
     # 3. The derived status is persisted on the entry (stateless re-read).
-    _, _, got = mcp_tool_call(base_url, base_site, token, "get_checkout", {"id": checkout_id})
+    _, _, got = ucp_call(base_url, base_site, token, "get_checkout", {"id": checkout_id})
     check("get_checkout sees the persisted ready_for_complete status",
           (got or {}).get("status") == "ready_for_complete",
           f"got {(got or {}).get('status')!r}")
@@ -682,11 +780,11 @@ def test_checkout_update_mcp(base_url, base_site, token):
     # 4. Declarative diff: desired state [mouse×2, laptop×1] adds the laptop.
     #    The cart now tops $1,000, so the free_shipping_1000 promotion swaps
     #    the delivery mode to free delivery — a second promotion visible via UCP.
-    status, body, upd = mcp_tool_call(base_url, base_site, token, "update_checkout",
-                                      {"id": checkout_id,
-                                       "checkout": {"line_items": [
-                                           {"item": {"id": SECOND_SKU}, "quantity": 2},
-                                           {"item": {"id": KNOWN_SKU}, "quantity": 1}]}})
+    status, body, upd = ucp_call(base_url, base_site, token, "update_checkout",
+                                 {"id": checkout_id,
+                                  "checkout": {"line_items": [
+                                      {"item": {"id": SECOND_SKU}, "quantity": 2},
+                                      {"item": {"id": KNOWN_SKU}, "quantity": 1}]}})
     check("add-item update returns a parseable UCP payload", upd is not None,
           f"status {status}, body {str(body)[:300]}")
     if upd is not None:
@@ -706,10 +804,10 @@ def test_checkout_update_mcp(base_url, base_site, token):
               upd.get("status") == "ready_for_complete", f"got {upd.get('status')!r}")
 
     # 5. Declarative diff: dropping the laptop from the desired state removes it.
-    status, body, upd = mcp_tool_call(base_url, base_site, token, "update_checkout",
-                                      {"id": checkout_id,
-                                       "checkout": {"line_items": [
-                                           {"item": {"id": SECOND_SKU}, "quantity": 2}]}})
+    status, body, upd = ucp_call(base_url, base_site, token, "update_checkout",
+                                 {"id": checkout_id,
+                                  "checkout": {"line_items": [
+                                      {"item": {"id": SECOND_SKU}, "quantity": 2}]}})
     if upd is not None:
         items = items_of(upd)
         check("laptop was removed by its absence from the desired line_items",
@@ -721,13 +819,13 @@ def test_checkout_update_mcp(base_url, base_site, token):
               upd.get("status") == "ready_for_complete", f"got {upd.get('status')!r}")
 
     # 6. Unknown checkout id → UCP business error payload, never a transport error.
-    status, body, missing = mcp_tool_call(base_url, base_site, token, "update_checkout",
-                                          {"id": "ucp_chk_doesnotexist",
-                                           "checkout": {"line_items": [{"item": {"id": SECOND_SKU},
-                                                                        "quantity": 1}]}})
+    status, body, missing = ucp_call(base_url, base_site, token, "update_checkout",
+                                     {"id": "ucp_chk_doesnotexist",
+                                      "checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                                   "quantity": 1}]}})
     check("update_checkout unknown id still returns 200", status == 200, f"got {status}")
-    check("update_checkout unknown id is not an MCP isError result",
-          body.get("result", {}).get("isError") is not True, f"got {body.get('result')!r}")
+    check("update_checkout unknown id is not rejected as a protocol error",
+          not protocol_rejected(status, body), f"status {status}, body {str(body)[:200]}")
     if missing is not None:
         assert_ucp_envelope(missing, "update_checkout (unknown id)", expected_status="error")
         msgs = missing.get("messages") or []
@@ -735,19 +833,20 @@ def test_checkout_update_mcp(base_url, base_site, token):
               any(m.get("code") == "not_found" and m.get("severity") == "unrecoverable"
                   for m in msgs), f"got {msgs!r}")
 
-    # 7. A checkout payload containing an id violates the binding → MCP isError.
-    status, body, _ = mcp_tool_call(base_url, base_site, token, "update_checkout",
-                                    {"id": checkout_id,
-                                     "checkout": {"id": checkout_id,
-                                                  "line_items": [{"item": {"id": SECOND_SKU},
-                                                                  "quantity": 2}]}})
-    check("checkout payload with an id is rejected as an isError tool result",
-          body.get("result", {}).get("isError") is True, f"got {body.get('result')!r}")
+    # 7. A checkout payload containing an id violates the binding — a client
+    #    protocol bug (MCP isError / REST 400), not a UCP business error.
+    status, body, _ = ucp_call(base_url, base_site, token, "update_checkout",
+                               {"id": checkout_id,
+                                "checkout": {"id": checkout_id,
+                                             "line_items": [{"item": {"id": SECOND_SKU},
+                                                             "quantity": 2}]}})
+    check("checkout payload with an id is rejected as a protocol error",
+          protocol_rejected(status, body), f"status {status}, body {str(body)[:200]}")
 
 
-def test_checkout_complete_mcp(base_url, base_site, token):
+def test_checkout_complete(base_url, base_site, token):
     """Phase 5: complete_checkout (mock payment + idempotency) and cancel_checkout."""
-    log(f"\n{Colors.CYAN}── Checkout capability: complete/cancel (MCP binding) ──{Colors.RESET}")
+    log(f"\n{Colors.CYAN}── Checkout capability: complete/cancel ({TRANSPORT.upper()} binding) ──{Colors.RESET}")
 
     def totals_of(payload):
         return {t.get("type"): t.get("amount") for t in payload.get("totals") or []}
@@ -762,38 +861,39 @@ def test_checkout_complete_mcp(base_url, base_site, token):
         return {"ucp-agent": HARNESS_AGENT_PROFILE, "idempotency-key": key}
 
     # Build a purchasable checkout: two mice (BOGO fires) + destination.
-    _, body, payload = mcp_tool_call(base_url, base_site, token, "create_checkout",
-                                     {"checkout": {"line_items": [{"item": {"id": SECOND_SKU},
-                                                                   "quantity": 2}],
-                                                   "buyer": {"first_name": "John", "last_name": "Doe",
-                                                             "email": CUSTOMER_EMAIL}}})
+    _, body, payload = ucp_call(base_url, base_site, token, "create_checkout",
+                                {"checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                              "quantity": 2}],
+                                              "buyer": {"first_name": "John", "last_name": "Doe",
+                                                        "email": CUSTOMER_EMAIL}}})
     checkout_id = (payload or {}).get("id")
     check("complete section: purchase checkout created", bool(checkout_id),
           f"body {str(body)[:300]}")
     if not checkout_id:
         return None
-    _, body, upd = mcp_tool_call(base_url, base_site, token, "update_checkout",
-                                 {"id": checkout_id,
-                                  "checkout": {"fulfillment": {
-                                      "destination": DESTINATION,
-                                      "delivery_mode": DELIVERY_MODE_STANDARD}}})
+    _, body, upd = ucp_call(base_url, base_site, token, "update_checkout",
+                            {"id": checkout_id,
+                             "checkout": {"fulfillment": {
+                                 "destination": DESTINATION,
+                                 "delivery_mode": DELIVERY_MODE_STANDARD}}})
     check("purchase checkout is ready_for_complete",
           (upd or {}).get("status") == "ready_for_complete",
           f"got {(upd or {}).get('status')!r}")
     if (upd or {}).get("status") != "ready_for_complete":
         return None
 
-    # 1. Missing meta["idempotency-key"] → client protocol bug → MCP isError.
-    status, body, _ = mcp_tool_call(base_url, base_site, token, "complete_checkout",
-                                    {"id": checkout_id, "checkout": payment_checkout()})
-    check("complete without idempotency-key is an isError tool result",
-          body.get("result", {}).get("isError") is True, f"got {body.get('result')!r}")
+    # 1. Missing idempotency key (meta on MCP / Idempotency-Key header on
+    #    REST) → client protocol bug → MCP isError / HTTP 400.
+    status, body, _ = ucp_call(base_url, base_site, token, "complete_checkout",
+                               {"id": checkout_id, "checkout": payment_checkout()})
+    check("complete without idempotency-key is rejected as a protocol error",
+          protocol_rejected(status, body), f"status {status}, body {str(body)[:200]}")
 
     # 2. Unknown handler_id → unrecoverable UCP message, checkout untouched.
-    status, body, bad = mcp_tool_call(base_url, base_site, token, "complete_checkout",
-                                      {"id": checkout_id,
-                                       "checkout": payment_checkout("acme_real_card")},
-                                      meta=meta_with_key(str(uuid.uuid4())))
+    status, body, bad = ucp_call(base_url, base_site, token, "complete_checkout",
+                                 {"id": checkout_id,
+                                  "checkout": payment_checkout("acme_real_card")},
+                                 meta=meta_with_key(str(uuid.uuid4())))
     check("unknown payment handler still returns 200", status == 200, f"got {status}")
     if bad is not None:
         assert_ucp_envelope(bad, "complete_checkout (unknown handler)", expected_status="error")
@@ -804,15 +904,15 @@ def test_checkout_complete_mcp(base_url, base_site, token):
 
     # 3. The real complete: mock Visa path → placeOrder → status completed + order.id.
     idempotency_key = str(uuid.uuid4())
-    status, body, done = mcp_tool_call(base_url, base_site, token, "complete_checkout",
-                                       {"id": checkout_id, "checkout": payment_checkout()},
-                                       meta=meta_with_key(idempotency_key))
+    status, body, done = ucp_call(base_url, base_site, token, "complete_checkout",
+                                  {"id": checkout_id, "checkout": payment_checkout()},
+                                  meta=meta_with_key(idempotency_key))
     check("complete_checkout returns a parseable UCP payload", done is not None,
           f"status {status}, body {str(body)[:300]}")
     if done is None:
         return None
-    check("complete_checkout is not an MCP isError result",
-          body.get("result", {}).get("isError") is not True, f"got {body.get('result')!r}")
+    check("complete_checkout is not rejected as a protocol error",
+          not protocol_rejected(status, body), f"status {status}, body {str(body)[:200]}")
     assert_ucp_envelope(done, "complete_checkout")
     check("completed checkout echoes the id", done.get("id") == checkout_id,
           f"got {done.get('id')!r}")
@@ -832,9 +932,9 @@ def test_checkout_complete_mcp(base_url, base_site, token):
 
     # 4. Idempotent replay: the SAME key returns the SAME order — never a second
     #    placeOrder (verified in the DB as exactly one order for this key).
-    status, body, replay = mcp_tool_call(base_url, base_site, token, "complete_checkout",
-                                         {"id": checkout_id, "checkout": payment_checkout()},
-                                         meta=meta_with_key(idempotency_key))
+    status, body, replay = ucp_call(base_url, base_site, token, "complete_checkout",
+                                    {"id": checkout_id, "checkout": payment_checkout()},
+                                    meta=meta_with_key(idempotency_key))
     check("idempotent replay returns a parseable UCP payload", replay is not None,
           f"status {status}, body {str(body)[:300]}")
     if replay is not None:
@@ -845,9 +945,9 @@ def test_checkout_complete_mcp(base_url, base_site, token):
               f"first {order_id!r} vs replay {(replay.get('order') or {}).get('id')!r}")
 
     # 5. A DIFFERENT key on the completed checkout → unrecoverable, no new order.
-    status, body, again = mcp_tool_call(base_url, base_site, token, "complete_checkout",
-                                        {"id": checkout_id, "checkout": payment_checkout()},
-                                        meta=meta_with_key(str(uuid.uuid4())))
+    status, body, again = ucp_call(base_url, base_site, token, "complete_checkout",
+                                   {"id": checkout_id, "checkout": payment_checkout()},
+                                   meta=meta_with_key(str(uuid.uuid4())))
     if again is not None:
         assert_ucp_envelope(again, "complete_checkout (different key, already completed)",
                             expected_status="error")
@@ -856,7 +956,7 @@ def test_checkout_complete_mcp(base_url, base_site, token):
               any(m.get("severity") == "unrecoverable" for m in msgs), f"got {msgs!r}")
 
     # 6. get_checkout reflects the terminal completed state (cart was consumed).
-    _, _, got = mcp_tool_call(base_url, base_site, token, "get_checkout", {"id": checkout_id})
+    _, _, got = ucp_call(base_url, base_site, token, "get_checkout", {"id": checkout_id})
     check("get_checkout after completion shows status completed",
           (got or {}).get("status") == "completed", f"got {(got or {}).get('status')!r}")
     check("get_checkout after completion carries the order id",
@@ -864,10 +964,10 @@ def test_checkout_complete_mcp(base_url, base_site, token):
           f"got {(got or {}).get('order')!r}")
 
     # 7. Terminal guard: a completed checkout can no longer be updated.
-    _, body, blocked = mcp_tool_call(base_url, base_site, token, "update_checkout",
-                                     {"id": checkout_id,
-                                      "checkout": {"line_items": [{"item": {"id": SECOND_SKU},
-                                                                   "quantity": 1}]}})
+    _, body, blocked = ucp_call(base_url, base_site, token, "update_checkout",
+                                {"id": checkout_id,
+                                 "checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                              "quantity": 1}]}})
     if blocked is not None:
         assert_ucp_envelope(blocked, "update_checkout (completed)", expected_status="error")
         check("update after completion is unrecoverable",
@@ -875,23 +975,23 @@ def test_checkout_complete_mcp(base_url, base_site, token):
               f"got {blocked.get('messages')!r}")
 
     # ── cancel_checkout: idempotent + terminal ──────────────────────────────
-    _, body, payload = mcp_tool_call(base_url, base_site, token, "create_checkout",
-                                     {"checkout": {"line_items": [{"item": {"id": SECOND_SKU},
-                                                                   "quantity": 1}]}})
+    _, body, payload = ucp_call(base_url, base_site, token, "create_checkout",
+                                {"checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                              "quantity": 1}]}})
     cancel_id = (payload or {}).get("id")
     check("cancel section: fresh checkout created", bool(cancel_id), f"body {str(body)[:300]}")
     if not cancel_id:
         return order_id
 
-    # Missing idempotency-key → MCP isError (binding requires it on cancel too).
-    status, body, _ = mcp_tool_call(base_url, base_site, token, "cancel_checkout",
-                                    {"id": cancel_id})
-    check("cancel without idempotency-key is an isError tool result",
-          body.get("result", {}).get("isError") is True, f"got {body.get('result')!r}")
+    # Missing idempotency key → protocol error (the binding requires it on cancel too).
+    status, body, _ = ucp_call(base_url, base_site, token, "cancel_checkout",
+                               {"id": cancel_id})
+    check("cancel without idempotency-key is rejected as a protocol error",
+          protocol_rejected(status, body), f"status {status}, body {str(body)[:200]}")
 
     cancel_key = str(uuid.uuid4())
-    status, body, canceled = mcp_tool_call(base_url, base_site, token, "cancel_checkout",
-                                           {"id": cancel_id}, meta=meta_with_key(cancel_key))
+    status, body, canceled = ucp_call(base_url, base_site, token, "cancel_checkout",
+                                      {"id": cancel_id}, meta=meta_with_key(cancel_key))
     check("cancel_checkout returns a parseable UCP payload", canceled is not None,
           f"status {status}, body {str(body)[:300]}")
     if canceled is not None:
@@ -901,26 +1001,26 @@ def test_checkout_complete_mcp(base_url, base_site, token):
         ucp_schema_validate(canceled, "cancel_checkout response")
 
     # Replayed cancel is idempotent — same terminal state, no error.
-    status, body, canceled2 = mcp_tool_call(base_url, base_site, token, "cancel_checkout",
-                                            {"id": cancel_id}, meta=meta_with_key(cancel_key))
-    check("replayed cancel is not an isError result",
-          body.get("result", {}).get("isError") is not True, f"got {body.get('result')!r}")
+    status, body, canceled2 = ucp_call(base_url, base_site, token, "cancel_checkout",
+                                       {"id": cancel_id}, meta=meta_with_key(cancel_key))
+    check("replayed cancel is not rejected as a protocol error",
+          not protocol_rejected(status, body), f"status {status}, body {str(body)[:200]}")
     check("replayed cancel re-returns status canceled",
           (canceled2 or {}).get("status") == "canceled",
           f"got {(canceled2 or {}).get('status')!r}")
 
     # Canceled is terminal: neither update nor complete may run afterwards.
-    _, _, after = mcp_tool_call(base_url, base_site, token, "update_checkout",
-                                {"id": cancel_id,
-                                 "checkout": {"line_items": [{"item": {"id": SECOND_SKU},
-                                                              "quantity": 2}]}})
+    _, _, after = ucp_call(base_url, base_site, token, "update_checkout",
+                           {"id": cancel_id,
+                            "checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                         "quantity": 2}]}})
     check("update after cancel is an unrecoverable UCP error",
           (after or {}).get("ucp", {}).get("status") == "error"
           and any(m.get("severity") == "unrecoverable" for m in (after or {}).get("messages") or []),
           f"got {after!r}")
-    status, body, comp = mcp_tool_call(base_url, base_site, token, "complete_checkout",
-                                       {"id": cancel_id, "checkout": payment_checkout()},
-                                       meta=meta_with_key(str(uuid.uuid4())))
+    status, body, comp = ucp_call(base_url, base_site, token, "complete_checkout",
+                                  {"id": cancel_id, "checkout": payment_checkout()},
+                                  meta=meta_with_key(str(uuid.uuid4())))
     check("complete after cancel is an unrecoverable UCP error",
           (comp or {}).get("ucp", {}).get("status") == "error"
           and any(m.get("severity") == "unrecoverable" for m in (comp or {}).get("messages") or []),
@@ -930,16 +1030,16 @@ def test_checkout_complete_mcp(base_url, base_site, token):
     return order_id
 
 
-def test_orders_mcp(base_url, base_site, token, order_id):
+def test_orders(base_url, base_site, token, order_id):
     """Phase 6: dev.ucp.shopping.order — get_order + list_orders (OrderFacade,
     scoped to the authenticated customer)."""
-    log(f"\n{Colors.CYAN}── Order capability (MCP binding) ──{Colors.RESET}")
+    log(f"\n{Colors.CYAN}── Order capability ({TRANSPORT.upper()} binding) ──{Colors.RESET}")
 
     # get_order for the purchase the complete section just placed:
     # 2 mice (BOGO fires) + standard shipping.
     if order_id:
-        status, body, payload = mcp_tool_call(base_url, base_site, token,
-                                              "get_order", {"id": order_id})
+        status, body, payload = ucp_call(base_url, base_site, token,
+                                         "get_order", {"id": order_id})
         check("get_order returns a parseable UCP payload", payload is not None,
               f"status {status}, body {str(body)[:300]}")
         if payload is not None:
@@ -975,11 +1075,11 @@ def test_orders_mcp(base_url, base_site, token, order_id):
         skip("get_order for the placed order", "complete section did not yield an order id")
 
     # Unknown order id → UCP business error payload, never a transport error.
-    status, body, missing = mcp_tool_call(base_url, base_site, token,
-                                          "get_order", {"id": "NO_SUCH_ORDER"})
+    status, body, missing = ucp_call(base_url, base_site, token,
+                                     "get_order", {"id": "NO_SUCH_ORDER"})
     check("get_order unknown id still returns 200", status == 200, f"got {status}")
-    check("get_order unknown id is not an MCP isError result",
-          body.get("result", {}).get("isError") is not True, f"got {body.get('result')!r}")
+    check("get_order unknown id is not rejected as a protocol error",
+          not protocol_rejected(status, body), f"status {status}, body {str(body)[:200]}")
     if missing is not None:
         assert_ucp_envelope(missing, "get_order (unknown id)", expected_status="error")
         msgs = missing.get("messages") or []
@@ -989,8 +1089,8 @@ def test_orders_mcp(base_url, base_site, token, order_id):
 
     # list_orders — the full history: the just-placed order plus the durable
     # fixtures (Phase 5's UCP purchase 00005004 and the THINK-000x impex orders).
-    status, body, payload = mcp_tool_call(base_url, base_site, token,
-                                          "list_orders", {"page_size": 50})
+    status, body, payload = ucp_call(base_url, base_site, token,
+                                     "list_orders", {"page_size": 50})
     check("list_orders returns a parseable UCP payload", payload is not None,
           f"status {status}, body {str(body)[:300]}")
     if payload is not None:
@@ -1017,8 +1117,8 @@ def test_orders_mcp(base_url, base_site, token, order_id):
         ucp_schema_validate(payload, "list_orders response")
 
     # Pagination is honored: page_size 1 → exactly one summary.
-    status, body, page1 = mcp_tool_call(base_url, base_site, token,
-                                        "list_orders", {"page_size": 1})
+    status, body, page1 = ucp_call(base_url, base_site, token,
+                                   "list_orders", {"page_size": 1})
     check("list_orders honors page_size",
           page1 is not None and len(page1.get("orders") or []) == 1,
           f"got {page1 and page1.get('orders')!r}")
@@ -1026,8 +1126,14 @@ def test_orders_mcp(base_url, base_site, token, order_id):
 
 def test_promotions_mcp(base_url, base_site, token):
     """Phase 6: com.thinkshop.promotions — rule/coupon metadata via coremcp's
-    PromotionQueryService."""
+    PromotionQueryService. MCP-only: the custom com.thinkshop.* capabilities
+    have no REST routes (Phase 7 REST scope is catalog/checkout/order)."""
     log(f"\n{Colors.CYAN}── Promotions capability (com.thinkshop.promotions) ──{Colors.RESET}")
+
+    if TRANSPORT == "rest":
+        skip("promotions capability over REST",
+             "com.thinkshop.promotions is MCP-only (no REST routes; see docs/adr/0002)")
+        return
 
     status, body, payload = mcp_tool_call(base_url, base_site, token, "get_promotions", {})
     check("get_promotions returns a parseable UCP payload", payload is not None,
@@ -1057,8 +1163,14 @@ def test_promotions_mcp(base_url, base_site, token):
 
 def test_knowledge_mcp(base_url, base_site, token):
     """Phase 6: com.thinkshop.knowledge — search/get over the Solr
-    knowledgeIndex via coremcp's KnowledgeSearchService."""
+    knowledgeIndex via coremcp's KnowledgeSearchService. MCP-only, like
+    promotions (Phase 7 REST scope is catalog/checkout/order)."""
     log(f"\n{Colors.CYAN}── Knowledge capability (com.thinkshop.knowledge) ──{Colors.RESET}")
+
+    if TRANSPORT == "rest":
+        skip("knowledge capability over REST",
+             "com.thinkshop.knowledge is MCP-only (no REST routes; see docs/adr/0002)")
+        return
 
     # search_knowledge for the returns policy — a known KB fixture.
     status, body, payload = mcp_tool_call(base_url, base_site, token,
@@ -1120,7 +1232,7 @@ def test_knowledge_mcp(base_url, base_site, token):
 # ── Main ────────────────────────────────────────────────────────────────────
 
 def main():
-    global verbose
+    global verbose, TRANSPORT
 
     parser = argparse.ArgumentParser(description="E2E harness for the UCP surface")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL,
@@ -1128,11 +1240,12 @@ def main():
     parser.add_argument("--base-site", default=DEFAULT_BASE_SITE,
                         help=f"OCC base site id (default: {DEFAULT_BASE_SITE})")
     parser.add_argument("--transport", choices=["mcp", "rest"], default="mcp",
-                        help="UCP transport binding to drive (default: mcp; rest lands in Phase 7)")
+                        help="UCP transport binding to drive (default: mcp)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Print response bodies")
     args = parser.parse_args()
 
     verbose = args.verbose
+    TRANSPORT = args.transport
     base_url = args.base_url.rstrip("/")
 
     log(f"\n{'='*60}")
@@ -1149,15 +1262,14 @@ def main():
     # capability section from here on.
     token = test_auth(base_url)
 
-    # Section 3+: capability sections over the selected transport.
-    if args.transport == "rest":
-        log(f"\n{Colors.YELLOW}NOTE{Colors.RESET} --transport rest is not implemented until Phase 7")
-    elif token:
-        test_catalog_mcp(base_url, args.base_site, token)
-        test_checkout_create_get_mcp(base_url, args.base_site, token)
-        test_checkout_update_mcp(base_url, args.base_site, token)
-        order_id = test_checkout_complete_mcp(base_url, args.base_site, token)
-        test_orders_mcp(base_url, args.base_site, token, order_id)
+    # Section 3+: capability sections over the selected transport (the
+    # assertions are transport-agnostic — the wire is selected in ucp_call).
+    if token:
+        test_catalog(base_url, args.base_site, token)
+        test_checkout_create_get(base_url, args.base_site, token)
+        test_checkout_update(base_url, args.base_site, token)
+        order_id = test_checkout_complete(base_url, args.base_site, token)
+        test_orders(base_url, args.base_site, token, order_id)
         test_promotions_mcp(base_url, args.base_site, token)
         test_knowledge_mcp(base_url, args.base_site, token)
     else:
