@@ -38,4 +38,11 @@ public interface UcpCheckoutSessionService
 	 * No-op for unknown/expired ids.
 	 */
 	void update(String checkoutId, String cartCode, String status);
+
+	/**
+	 * Replace the stored serialized buyer block (Phase 4: {@code
+	 * update_checkout} may re-supply {@code buyer}). No-op for unknown/expired
+	 * ids.
+	 */
+	void updateBuyer(String checkoutId, String buyerJson);
 }

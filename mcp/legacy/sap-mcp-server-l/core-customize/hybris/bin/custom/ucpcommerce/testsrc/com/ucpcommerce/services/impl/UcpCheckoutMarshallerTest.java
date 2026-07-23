@@ -7,15 +7,20 @@ import static org.junit.Assert.assertTrue;
 
 import com.ucpcommerce.dto.UcpBuyer;
 import com.ucpcommerce.dto.UcpCheckout;
+import com.ucpcommerce.dto.UcpDestination;
 import com.ucpcommerce.dto.UcpLineItem;
 import com.ucpcommerce.dto.UcpMessage;
 import com.ucpcommerce.dto.UcpTotal;
 
 import de.hybris.bootstrap.annotations.UnitTest;
 import de.hybris.platform.commercefacades.order.data.CartData;
+import de.hybris.platform.commercefacades.order.data.DeliveryModeData;
 import de.hybris.platform.commercefacades.order.data.OrderEntryData;
 import de.hybris.platform.commercefacades.product.data.PriceData;
 import de.hybris.platform.commercefacades.product.data.ProductData;
+import de.hybris.platform.commercefacades.user.data.AddressData;
+import de.hybris.platform.commercefacades.user.data.CountryData;
+import de.hybris.platform.commercefacades.user.data.RegionData;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -180,6 +185,62 @@ public class UcpCheckoutMarshallerTest
 		assertNull(checkout.getTotals());
 		assertNotNull(checkout.getMessages());
 		assertEquals("not_found", checkout.getMessages().get(0).getCode());
+	}
+
+	@Test
+	public void fulfillmentIsMarshalledFromTheCartsAddressAndMode()
+	{
+		final CartData cart = cart();
+
+		final AddressData address = new AddressData();
+		address.setFirstName("John");
+		address.setLastName("Doe");
+		address.setLine1("100 Main St");
+		address.setTown("New York");
+		address.setPostalCode("10001");
+		final RegionData region = new RegionData();
+		region.setIsocode("US-NY");
+		region.setIsocodeShort("NY");
+		address.setRegion(region);
+		final CountryData country = new CountryData();
+		country.setIsocode("US");
+		address.setCountry(country);
+		cart.setDeliveryAddress(address);
+
+		final DeliveryModeData mode = new DeliveryModeData();
+		mode.setCode("thinkshop-standard");
+		mode.setName("Standard Delivery");
+		cart.setDeliveryMode(mode);
+		cart.setDeliveryCost(usd("5.99"));
+		cart.setTotalPrice(usd("1465.96"));
+
+		final UcpCheckout checkout = marshaller.marshal("ucp_chk_abc",
+			UcpCheckout.STATUS_READY_FOR_COMPLETE, cart, null, null);
+
+		assertNotNull(checkout.getFulfillment());
+		final UcpDestination destination = checkout.getFulfillment().getDestination();
+		assertEquals("John", destination.getFirstName());
+		assertEquals("100 Main St", destination.getLine1());
+		assertEquals("New York", destination.getCity());
+		assertEquals("the short region code is echoed", "NY", destination.getRegion());
+		assertEquals("10001", destination.getPostalCode());
+		assertEquals("US", destination.getCountry());
+		assertEquals("thinkshop-standard", checkout.getFulfillment().getDeliveryMode());
+		assertEquals("Standard Delivery", checkout.getFulfillment().getDeliveryModeName());
+
+		final Map<String, Long> totals = totalsByType(checkout);
+		assertEquals("delivery cost $5.99 must become 599 minor units",
+			Long.valueOf(599L), totals.get(UcpTotal.TYPE_SHIPPING));
+		assertEquals(Long.valueOf(146596L), totals.get(UcpTotal.TYPE_TOTAL));
+	}
+
+	@Test
+	public void noFulfillmentBlockBeforeADestinationIsSet()
+	{
+		final UcpCheckout checkout = marshaller.marshal("ucp_chk_abc", UcpCheckout.STATUS_INCOMPLETE,
+			cart(), null, null);
+
+		assertNull(checkout.getFulfillment());
 	}
 
 	@Test

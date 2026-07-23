@@ -89,6 +89,19 @@ public class PersistedUcpCheckoutSessionService implements UcpCheckoutSessionSer
 		modelService.save(entry);
 	}
 
+	@Override
+	public void updateBuyer(final String checkoutId, final String buyerJson)
+	{
+		final UcpCheckoutSessionEntryModel entry = findEntry(checkoutId);
+		if (entry == null || isExpired(entry))
+		{
+			return;
+		}
+		entry.setBuyerJson(buyerJson);
+		entry.setLastAccessedAt(new Date());
+		modelService.save(entry);
+	}
+
 	private UcpCheckoutSessionEntryModel findEntry(final String checkoutId)
 	{
 		if (checkoutId == null)

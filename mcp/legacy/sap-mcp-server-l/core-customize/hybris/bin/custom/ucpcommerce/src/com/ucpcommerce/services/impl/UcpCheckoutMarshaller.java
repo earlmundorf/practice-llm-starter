@@ -3,7 +3,9 @@ package com.ucpcommerce.services.impl;
 import com.ucpcommerce.constants.UcpcommerceConstants;
 import com.ucpcommerce.dto.UcpBuyer;
 import com.ucpcommerce.dto.UcpCheckout;
+import com.ucpcommerce.dto.UcpDestination;
 import com.ucpcommerce.dto.UcpEnvelope;
+import com.ucpcommerce.dto.UcpFulfillment;
 import com.ucpcommerce.dto.UcpLineItem;
 import com.ucpcommerce.dto.UcpMessage;
 import com.ucpcommerce.dto.UcpProduct;
@@ -12,6 +14,7 @@ import com.ucpcommerce.dto.UcpTotal;
 import de.hybris.platform.commercefacades.order.data.AbstractOrderData;
 import de.hybris.platform.commercefacades.order.data.OrderEntryData;
 import de.hybris.platform.commercefacades.product.data.PriceData;
+import de.hybris.platform.commercefacades.user.data.AddressData;
 import de.hybris.platform.util.Config;
 
 import org.springframework.beans.factory.annotation.Required;
@@ -52,6 +55,7 @@ public class UcpCheckoutMarshaller
 		checkout.setLineItems(marshalLineItems(cart));
 		checkout.setTotals(marshalTotals(cart));
 		checkout.setBuyer(buyer);
+		checkout.setFulfillment(marshalFulfillment(cart));
 		if (messages != null && !messages.isEmpty())
 		{
 			checkout.setMessages(messages);
@@ -121,6 +125,52 @@ public class UcpCheckoutMarshaller
 		addTotal(totals, UcpTotal.TYPE_SHIPPING, cart.getDeliveryCost(), false);
 		addTotal(totals, UcpTotal.TYPE_TOTAL, cart.getTotalPrice(), true);
 		return totals;
+	}
+
+	/**
+	 * The {@code fulfillment} echo: the applied delivery address and mode as
+	 * read back off the cart (never trusted from the client). Null when the
+	 * checkout has no destination yet.
+	 */
+	protected UcpFulfillment marshalFulfillment(final AbstractOrderData cart)
+	{
+		if (cart == null || (cart.getDeliveryAddress() == null && cart.getDeliveryMode() == null))
+		{
+			return null;
+		}
+		final UcpFulfillment fulfillment = new UcpFulfillment();
+		if (cart.getDeliveryAddress() != null)
+		{
+			fulfillment.setDestination(marshalDestination(cart.getDeliveryAddress()));
+		}
+		if (cart.getDeliveryMode() != null)
+		{
+			fulfillment.setDeliveryMode(cart.getDeliveryMode().getCode());
+			fulfillment.setDeliveryModeName(cart.getDeliveryMode().getName());
+		}
+		return fulfillment;
+	}
+
+	protected UcpDestination marshalDestination(final AddressData address)
+	{
+		final UcpDestination destination = new UcpDestination();
+		destination.setFirstName(address.getFirstName());
+		destination.setLastName(address.getLastName());
+		destination.setLine1(address.getLine1());
+		destination.setLine2(address.getLine2());
+		destination.setCity(address.getTown());
+		if (address.getRegion() != null)
+		{
+			destination.setRegion(address.getRegion().getIsocodeShort() != null
+				? address.getRegion().getIsocodeShort() : address.getRegion().getIsocode());
+		}
+		destination.setPostalCode(address.getPostalCode());
+		if (address.getCountry() != null)
+		{
+			destination.setCountry(address.getCountry().getIsocode());
+		}
+		destination.setPhoneNumber(address.getPhone());
+		return destination;
 	}
 
 	/** Adds a totals entry; optional zero-valued entries are suppressed. */

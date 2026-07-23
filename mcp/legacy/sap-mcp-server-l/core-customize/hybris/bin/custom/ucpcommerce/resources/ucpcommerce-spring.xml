@@ -74,6 +74,8 @@
     <bean id="defaultUcpCheckoutService"
           class="com.ucpcommerce.services.impl.DefaultUcpCheckoutService">
         <property name="cartFacade" ref="cartFacade"/>
+        <property name="checkoutFacade" ref="checkoutFacade"/>
+        <property name="userFacade" ref="userFacade"/>
         <property name="cartLoaderStrategy" ref="cartLoaderStrategy"/>
         <property name="ucpCheckoutSessionService" ref="ucpCheckoutSessionService"/>
         <property name="ucpCheckoutMarshaller" ref="ucpCheckoutMarshaller"/>
@@ -114,6 +116,12 @@
         <property name="ucpCheckoutService" ref="ucpCheckoutService"/>
     </bean>
 
+    <alias name="defaultUpdateCheckoutTool" alias="updateCheckoutTool"/>
+    <bean id="defaultUpdateCheckoutTool"
+          class="com.ucpcommerce.tools.impl.UpdateCheckoutTool">
+        <property name="ucpCheckoutService" ref="ucpCheckoutService"/>
+    </bean>
+
     <alias name="defaultUcpMcpDispatcherService" alias="ucpMcpDispatcherService"/>
     <bean id="defaultUcpMcpDispatcherService"
           class="com.ucpcommerce.services.impl.DefaultUcpMcpDispatcherService">
@@ -124,6 +132,7 @@
                 <ref bean="getProductTool"/>
                 <ref bean="createCheckoutTool"/>
                 <ref bean="getCheckoutTool"/>
+                <ref bean="updateCheckoutTool"/>
             </list>
         </property>
     </bean>

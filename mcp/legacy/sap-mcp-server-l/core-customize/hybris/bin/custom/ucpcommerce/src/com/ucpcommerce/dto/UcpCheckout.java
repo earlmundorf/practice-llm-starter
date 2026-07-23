@@ -43,6 +43,9 @@ public class UcpCheckout
 	@JsonProperty("buyer")
 	private UcpBuyer buyer;
 
+	@JsonProperty("fulfillment")
+	private UcpFulfillment fulfillment;
+
 	@JsonProperty("messages")
 	private List<UcpMessage> messages;
 
@@ -114,6 +117,16 @@ public class UcpCheckout
 	public void setBuyer(final UcpBuyer buyer)
 	{
 		this.buyer = buyer;
+	}
+
+	public UcpFulfillment getFulfillment()
+	{
+		return fulfillment;
+	}
+
+	public void setFulfillment(final UcpFulfillment fulfillment)
+	{
+		this.fulfillment = fulfillment;
 	}
 
 	public List<UcpMessage> getMessages()

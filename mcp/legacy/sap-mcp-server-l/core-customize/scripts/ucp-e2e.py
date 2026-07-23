@@ -14,8 +14,11 @@ Sections so far:
                  integer minor-unit price assertions (Phase 2)
   4. Checkout  — create_checkout / get_checkout round-trip against the
                  persisted UcpCheckoutSessionEntry store (Phase 3)
-Later phases append update/complete/cancel, order, promotions and knowledge
-sections.
+  5. Update    — update_checkout: declarative line-item diffs, destination +
+                 delivery mode, derived status transition to ready_for_complete,
+                 and Drools promotion discounts (BOGO mouse) in totals (Phase 4;
+                 requires setup-promotions.sh + publish-promotions.groovy)
+Later phases append complete/cancel, order, promotions and knowledge sections.
 Schema validation shells out to the `ucp-schema` CLI when installed (best
 effort; SKIP otherwise).
 
@@ -69,10 +72,26 @@ SECOND_SKU = "WIRELESS_GAMING_MOUSE"
 SECOND_SKU_PRICE_MINOR = 7999           # $79.99
 
 # UCP MCP binding tool names (pinned spec 2026-04-08). Grows phase by phase:
-# catalog (Phase 2) + create/get checkout (Phase 3).
+# catalog (Phase 2) + create/get checkout (Phase 3) + update (Phase 4).
 EXPECTED_CATALOG_TOOLS = {"search_catalog", "lookup_catalog", "get_product"}
-EXPECTED_CHECKOUT_TOOLS = {"create_checkout", "get_checkout"}
+EXPECTED_CHECKOUT_TOOLS = {"create_checkout", "get_checkout", "update_checkout"}
 EXPECTED_TOOLS = EXPECTED_CATALOG_TOOLS | EXPECTED_CHECKOUT_TOOLS
+
+# Destination fixtures (sampledatamcp: john.doe's deliverable US address,
+# ZoneDeliveryMode thinkshop-standard $5.99 / thinkshop-express $14.99; the
+# electronics BaseStore delivers to US only).
+DESTINATION = {
+    "first_name": "John", "last_name": "Doe",
+    "line1": "100 Main St", "city": "New York",
+    "postal_code": "10001", "country": "US",
+}
+DELIVERY_MODE_STANDARD = "thinkshop-standard"
+SHIPPING_STANDARD_MINOR = 599            # $5.99
+# Published Drools promotions (setup-promotions.groovy): bogo_mouse gives 100%
+# off the cheapest of each pair of WIRELESS_GAMING_MOUSE; free_shipping_1000
+# swaps the delivery mode to thinkshop-free-delivery on carts >= $1,000.
+BOGO_DISCOUNT_MINOR = SECOND_SKU_PRICE_MINOR    # one mouse free
+FREE_DELIVERY_MODE = "thinkshop-free-delivery"
 
 HARNESS_AGENT_PROFILE = {"profile": "https://ucp-e2e.invalid/.well-known/ucp"}
 
@@ -533,6 +552,154 @@ def test_checkout_create_get_mcp(base_url, base_site, token):
     return checkout_id
 
 
+def test_checkout_update_mcp(base_url, base_site, token):
+    """Phase 4: update_checkout — diffs, destination, derived status, promotions."""
+    log(f"\n{Colors.CYAN}── Checkout capability: update (MCP binding) ──{Colors.RESET}")
+
+    def totals_of(payload):
+        return {t.get("type"): t.get("amount") for t in payload.get("totals") or []}
+
+    def items_of(payload):
+        return {li.get("item", {}).get("id"): li for li in payload.get("line_items") or []}
+
+    # Fresh checkout: one mouse, buyer attached.
+    _, body, payload = mcp_tool_call(base_url, base_site, token, "create_checkout",
+                                     {"checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                                   "quantity": 1}],
+                                                   "buyer": {"first_name": "John", "last_name": "Doe",
+                                                             "email": CUSTOMER_EMAIL}}})
+    checkout_id = (payload or {}).get("id")
+    check("update section: fresh checkout created", bool(checkout_id),
+          f"body {str(body)[:300]}")
+    if not checkout_id:
+        return
+
+    # 1. Quantity change (1 → 2 mice) — the BOGO promotion fires during
+    #    recalculation: one mouse free, discount visible in totals.
+    status, body, upd = mcp_tool_call(base_url, base_site, token, "update_checkout",
+                                      {"id": checkout_id,
+                                       "checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                                    "quantity": 2}]}})
+    check("update_checkout returns a parseable UCP payload", upd is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if upd is None:
+        return
+    assert_ucp_envelope(upd, "update_checkout (quantity)")
+    check("update echoes the same checkout id", upd.get("id") == checkout_id,
+          f"got {upd.get('id')!r}")
+    check("mouse quantity is now 2",
+          items_of(upd).get(SECOND_SKU, {}).get("quantity") == 2,
+          f"got {upd.get('line_items')!r}")
+    totals = totals_of(upd)
+    check(f"BOGO discount of {BOGO_DISCOUNT_MINOR} minor units appears in totals",
+          totals.get("discount") == BOGO_DISCOUNT_MINOR, f"got {totals!r}")
+    check(f"total is {SECOND_SKU_PRICE_MINOR} (2 mice, one free, no shipping yet)",
+          totals.get("total") == SECOND_SKU_PRICE_MINOR, f"got {totals!r}")
+    check("status is still incomplete before a destination is set",
+          upd.get("status") == "incomplete", f"got {upd.get('status')!r}")
+    ucp_schema_validate(upd, "update_checkout (quantity) response")
+
+    # 2. Destination (address + delivery mode) → derived ready_for_complete.
+    status, body, upd = mcp_tool_call(base_url, base_site, token, "update_checkout",
+                                      {"id": checkout_id,
+                                       "checkout": {"fulfillment": {
+                                           "destination": DESTINATION,
+                                           "delivery_mode": DELIVERY_MODE_STANDARD}}})
+    check("destination update returns a parseable UCP payload", upd is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if upd is None:
+        return
+    assert_ucp_envelope(upd, "update_checkout (destination)")
+    check("status transitions to ready_for_complete",
+          upd.get("status") == "ready_for_complete", f"got {upd.get('status')!r}")
+    fulfillment = upd.get("fulfillment") or {}
+    check("fulfillment echoes the applied destination",
+          (fulfillment.get("destination") or {}).get("city") == DESTINATION["city"],
+          f"got {fulfillment!r}")
+    check("fulfillment echoes the applied delivery mode",
+          fulfillment.get("delivery_mode") == DELIVERY_MODE_STANDARD, f"got {fulfillment!r}")
+    totals = totals_of(upd)
+    check(f"shipping of {SHIPPING_STANDARD_MINOR} minor units appears in totals",
+          totals.get("shipping") == SHIPPING_STANDARD_MINOR, f"got {totals!r}")
+    check("BOGO discount survives the destination update",
+          totals.get("discount") == BOGO_DISCOUNT_MINOR, f"got {totals!r}")
+    expected_total = SECOND_SKU_PRICE_MINOR + SHIPPING_STANDARD_MINOR
+    check(f"total is {expected_total} (discounted mice + standard shipping)",
+          totals.get("total") == expected_total, f"got {totals!r}")
+    ucp_schema_validate(upd, "update_checkout (destination) response")
+
+    # 3. The derived status is persisted on the entry (stateless re-read).
+    _, _, got = mcp_tool_call(base_url, base_site, token, "get_checkout", {"id": checkout_id})
+    check("get_checkout sees the persisted ready_for_complete status",
+          (got or {}).get("status") == "ready_for_complete",
+          f"got {(got or {}).get('status')!r}")
+
+    # 4. Declarative diff: desired state [mouse×2, laptop×1] adds the laptop.
+    #    The cart now tops $1,000, so the free_shipping_1000 promotion swaps
+    #    the delivery mode to free delivery — a second promotion visible via UCP.
+    status, body, upd = mcp_tool_call(base_url, base_site, token, "update_checkout",
+                                      {"id": checkout_id,
+                                       "checkout": {"line_items": [
+                                           {"item": {"id": SECOND_SKU}, "quantity": 2},
+                                           {"item": {"id": KNOWN_SKU}, "quantity": 1}]}})
+    check("add-item update returns a parseable UCP payload", upd is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if upd is not None:
+        items = items_of(upd)
+        check("laptop was added alongside the mice",
+              set(items) == {SECOND_SKU, KNOWN_SKU}, f"got {sorted(items)!r}")
+        totals = totals_of(upd)
+        check("BOGO discount still applies with the laptop in the cart",
+              totals.get("discount") == BOGO_DISCOUNT_MINOR, f"got {totals!r}")
+        check("free-shipping promotion swapped the delivery mode (cart >= $1,000)",
+              (upd.get("fulfillment") or {}).get("delivery_mode") == FREE_DELIVERY_MODE,
+              f"got {(upd.get('fulfillment') or {}).get('delivery_mode')!r}")
+        expected_total = KNOWN_SKU_PRICE_MINOR + SECOND_SKU_PRICE_MINOR  # mice pair BOGO'd, shipping free
+        check(f"total is {expected_total} (laptop + discounted mice, free shipping)",
+              totals.get("total") == expected_total, f"got {totals!r}")
+        check("status stays ready_for_complete",
+              upd.get("status") == "ready_for_complete", f"got {upd.get('status')!r}")
+
+    # 5. Declarative diff: dropping the laptop from the desired state removes it.
+    status, body, upd = mcp_tool_call(base_url, base_site, token, "update_checkout",
+                                      {"id": checkout_id,
+                                       "checkout": {"line_items": [
+                                           {"item": {"id": SECOND_SKU}, "quantity": 2}]}})
+    if upd is not None:
+        items = items_of(upd)
+        check("laptop was removed by its absence from the desired line_items",
+              set(items) == {SECOND_SKU}, f"got {sorted(items)!r}")
+        check("mouse discount still present after the removal",
+              totals_of(upd).get("discount") == BOGO_DISCOUNT_MINOR,
+              f"got {totals_of(upd)!r}")
+        check("status stays ready_for_complete after the removal",
+              upd.get("status") == "ready_for_complete", f"got {upd.get('status')!r}")
+
+    # 6. Unknown checkout id → UCP business error payload, never a transport error.
+    status, body, missing = mcp_tool_call(base_url, base_site, token, "update_checkout",
+                                          {"id": "ucp_chk_doesnotexist",
+                                           "checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                                        "quantity": 1}]}})
+    check("update_checkout unknown id still returns 200", status == 200, f"got {status}")
+    check("update_checkout unknown id is not an MCP isError result",
+          body.get("result", {}).get("isError") is not True, f"got {body.get('result')!r}")
+    if missing is not None:
+        assert_ucp_envelope(missing, "update_checkout (unknown id)", expected_status="error")
+        msgs = missing.get("messages") or []
+        check("unknown checkout id yields unrecoverable not_found message",
+              any(m.get("code") == "not_found" and m.get("severity") == "unrecoverable"
+                  for m in msgs), f"got {msgs!r}")
+
+    # 7. A checkout payload containing an id violates the binding → MCP isError.
+    status, body, _ = mcp_tool_call(base_url, base_site, token, "update_checkout",
+                                    {"id": checkout_id,
+                                     "checkout": {"id": checkout_id,
+                                                  "line_items": [{"item": {"id": SECOND_SKU},
+                                                                  "quantity": 2}]}})
+    check("checkout payload with an id is rejected as an isError tool result",
+          body.get("result", {}).get("isError") is True, f"got {body.get('result')!r}")
+
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 def main():
@@ -571,6 +738,7 @@ def main():
     elif token:
         test_catalog_mcp(base_url, args.base_site, token)
         test_checkout_create_get_mcp(base_url, args.base_site, token)
+        test_checkout_update_mcp(base_url, args.base_site, token)
     else:
         log(f"\n{Colors.RED}FATAL: no auth token — skipping capability sections{Colors.RESET}")
 
