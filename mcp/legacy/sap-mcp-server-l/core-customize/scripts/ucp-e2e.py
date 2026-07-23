@@ -22,7 +22,13 @@ Sections so far:
                  meta["idempotency-key"], idempotent replay returns the SAME
                  order with no second placeOrder) + cancel_checkout (idempotent,
                  terminal) (Phase 5)
-Later phases append order, promotions and knowledge sections.
+  7. Orders    — get_order (full UCP order for the just-placed purchase) +
+                 list_orders history incl. the Phase 5 fixture order 00005004
+                 (Phase 6)
+  8. Promotions— get_promotions: com.thinkshop.promotions custom capability,
+                 known rule/coupon codes (Phase 6)
+  9. Knowledge — search_knowledge / get_knowledge: com.thinkshop.knowledge
+                 custom capability over the Solr knowledgeIndex (Phase 6)
 Schema validation shells out to the `ucp-schema` CLI when installed (best
 effort; SKIP otherwise).
 
@@ -78,11 +84,14 @@ SECOND_SKU_PRICE_MINOR = 7999           # $79.99
 
 # UCP MCP binding tool names (pinned spec 2026-04-08). Grows phase by phase:
 # catalog (Phase 2) + create/get checkout (Phase 3) + update (Phase 4)
-# + complete/cancel (Phase 5).
+# + complete/cancel (Phase 5) + order and custom capabilities (Phase 6).
 EXPECTED_CATALOG_TOOLS = {"search_catalog", "lookup_catalog", "get_product"}
 EXPECTED_CHECKOUT_TOOLS = {"create_checkout", "get_checkout", "update_checkout",
                            "complete_checkout", "cancel_checkout"}
-EXPECTED_TOOLS = EXPECTED_CATALOG_TOOLS | EXPECTED_CHECKOUT_TOOLS
+EXPECTED_ORDER_TOOLS = {"get_order", "list_orders"}
+EXPECTED_CUSTOM_TOOLS = {"get_promotions", "search_knowledge", "get_knowledge"}
+EXPECTED_TOOLS = (EXPECTED_CATALOG_TOOLS | EXPECTED_CHECKOUT_TOOLS
+                  | EXPECTED_ORDER_TOOLS | EXPECTED_CUSTOM_TOOLS)
 
 # The single declared mock payment handler (design R9) — the only handler_id
 # complete_checkout accepts; any credential token is accepted for it.
@@ -103,6 +112,15 @@ SHIPPING_STANDARD_MINOR = 599            # $5.99
 # swaps the delivery mode to thinkshop-free-delivery on carts >= $1,000.
 BOGO_DISCOUNT_MINOR = SECOND_SKU_PRICE_MINOR    # one mouse free
 FREE_DELIVERY_MODE = "thinkshop-free-delivery"
+
+# The UCP purchase placed during Phase 5 verification — a durable fixture in
+# john.doe's order history alongside the THINK-000x impex orders.
+UCP_FIXTURE_ORDER = "00005004"
+# Known promotion rules/coupons (setup-promotions.groovy, published to Drools).
+KNOWN_PROMO_RULES = {"bogo_mouse", "free_shipping_1000"}
+KNOWN_COUPON = "LAPTOP10"
+# Known knowledge-base entry (sampledatamcp projectdata-50-knowledge.impex).
+KNOWN_KB_UID = "returns-policy"
 
 HARNESS_AGENT_PROFILE = {"profile": "https://ucp-e2e.invalid/.well-known/ucp"}
 
@@ -281,6 +299,16 @@ def test_profile(base_url, base_site):
           f"got {catalog_cap.get('version')!r}")
     check("profile advertises dev.ucp.shopping.checkout (Phase 5)",
           "dev.ucp.shopping.checkout" in cap_names, f"got {cap_names!r}")
+    check("profile advertises dev.ucp.shopping.order (Phase 6)",
+          "dev.ucp.shopping.order" in cap_names, f"got {cap_names!r}")
+    check("profile advertises the custom com.thinkshop.* capabilities (Phase 6)",
+          {"com.thinkshop.promotions", "com.thinkshop.knowledge"} <= set(cap_names),
+          f"got {cap_names!r}")
+    custom_caps = [c for c in caps if isinstance(c, dict)
+                   and str(c.get("name", "")).startswith("com.thinkshop.")]
+    check("custom capabilities carry dated calver versions",
+          custom_caps and all(UCP_VERSION_RE.match(c.get("version", "")) for c in custom_caps),
+          f"got {[(c.get('name'), c.get('version')) for c in custom_caps]!r}")
 
     services = body.get("services") or {}
     mcp_endpoint = (services.get("dev.ucp.shopping") or {}).get("mcp", {}).get("endpoint", "")
@@ -376,11 +404,12 @@ def test_catalog_mcp(base_url, base_site, token):
     status, _, _ = mcp_rpc(base_url, base_site, token, "notifications/initialized", notification=True)
     check("notification answered with 202", status == 202, f"got {status}")
 
-    # tools/list — exactly the tools shipped so far (catalog + checkout create/get).
+    # tools/list — exactly the tools shipped so far (catalog + checkout +
+    # order + custom com.thinkshop.* capabilities).
     status, _, body = mcp_rpc(base_url, base_site, token, "tools/list")
     tools = body.get("result", {}).get("tools", [])
     tool_names = {t.get("name") for t in tools if isinstance(t, dict)}
-    check("tools/list returns exactly the catalog + checkout tools",
+    check("tools/list returns exactly the catalog + checkout + order + custom tools",
           tool_names == EXPECTED_TOOLS, f"got {sorted(tool_names)!r}")
 
     # Unknown tool → JSON-RPC invalid-params error.
@@ -901,6 +930,193 @@ def test_checkout_complete_mcp(base_url, base_site, token):
     return order_id
 
 
+def test_orders_mcp(base_url, base_site, token, order_id):
+    """Phase 6: dev.ucp.shopping.order — get_order + list_orders (OrderFacade,
+    scoped to the authenticated customer)."""
+    log(f"\n{Colors.CYAN}── Order capability (MCP binding) ──{Colors.RESET}")
+
+    # get_order for the purchase the complete section just placed:
+    # 2 mice (BOGO fires) + standard shipping.
+    if order_id:
+        status, body, payload = mcp_tool_call(base_url, base_site, token,
+                                              "get_order", {"id": order_id})
+        check("get_order returns a parseable UCP payload", payload is not None,
+              f"status {status}, body {str(body)[:300]}")
+        if payload is not None:
+            assert_ucp_envelope(payload, "get_order")
+            order = payload.get("order") or {}
+            check("get_order echoes the order id", order.get("id") == order_id,
+                  f"got {order.get('id')!r}")
+            check("order has an ISO created_at timestamp",
+                  isinstance(order.get("created_at"), str) and "T" in order.get("created_at", ""),
+                  f"got {order.get('created_at')!r}")
+            # Mock placeOrder leaves no hybris status → UCP wire default "created".
+            check("just-placed order status is created",
+                  order.get("status") == "created", f"got {order.get('status')!r}")
+            check("order currency is USD", order.get("currency") == "USD",
+                  f"got {order.get('currency')!r}")
+            line_items = order.get("line_items") or []
+            check("order line items carry the purchased mice",
+                  len(line_items) == 1
+                  and line_items[0].get("item", {}).get("id") == SECOND_SKU
+                  and line_items[0].get("quantity") == 2,
+                  f"got {line_items!r}")
+            totals = {t.get("type"): t.get("amount") for t in order.get("totals") or []}
+            check(f"order BOGO discount of {BOGO_DISCOUNT_MINOR} survives onto the order detail",
+                  totals.get("discount") == BOGO_DISCOUNT_MINOR, f"got {totals!r}")
+            expected_total = SECOND_SKU_PRICE_MINOR + SHIPPING_STANDARD_MINOR
+            check(f"order total is {expected_total} (discounted mice + standard shipping)",
+                  totals.get("total") == expected_total, f"got {totals!r}")
+            check("order fulfillment echoes the delivery destination",
+                  ((order.get("fulfillment") or {}).get("destination") or {}).get("city")
+                  == DESTINATION["city"], f"got {order.get('fulfillment')!r}")
+            ucp_schema_validate(payload, "get_order response")
+    else:
+        skip("get_order for the placed order", "complete section did not yield an order id")
+
+    # Unknown order id → UCP business error payload, never a transport error.
+    status, body, missing = mcp_tool_call(base_url, base_site, token,
+                                          "get_order", {"id": "NO_SUCH_ORDER"})
+    check("get_order unknown id still returns 200", status == 200, f"got {status}")
+    check("get_order unknown id is not an MCP isError result",
+          body.get("result", {}).get("isError") is not True, f"got {body.get('result')!r}")
+    if missing is not None:
+        assert_ucp_envelope(missing, "get_order (unknown id)", expected_status="error")
+        msgs = missing.get("messages") or []
+        check("unknown order id yields unrecoverable not_found message",
+              any(m.get("code") == "not_found" and m.get("severity") == "unrecoverable"
+                  for m in msgs), f"got {msgs!r}")
+
+    # list_orders — the full history: the just-placed order plus the durable
+    # fixtures (Phase 5's UCP purchase 00005004 and the THINK-000x impex orders).
+    status, body, payload = mcp_tool_call(base_url, base_site, token,
+                                          "list_orders", {"page_size": 50})
+    check("list_orders returns a parseable UCP payload", payload is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if payload is not None:
+        assert_ucp_envelope(payload, "list_orders")
+        orders = payload.get("orders") or []
+        order_ids = [o.get("id") for o in orders]
+        check("list_orders returns the customer's history", len(orders) >= 3,
+              f"got {len(orders)} orders")
+        if order_id:
+            check("list_orders includes the just-placed order",
+                  order_id in order_ids, f"got {order_ids!r}")
+        check(f"list_orders includes the Phase 5 UCP purchase {UCP_FIXTURE_ORDER}",
+              UCP_FIXTURE_ORDER in order_ids, f"got {order_ids!r}")
+        check("list_orders includes the THINK-000x impex fixtures",
+              {"THINK-0001", "THINK-0003"} <= set(order_ids), f"got {order_ids!r}")
+        check("every history entry total is integer minor units",
+              all(isinstance(t.get("amount"), int)
+                  for o in orders for t in o.get("totals") or []),
+              f"got {[o.get('totals') for o in orders]!r}")
+        check("every history entry carries a status",
+              all(o.get("status") for o in orders), f"got {orders!r}")
+        check("list_orders includes pagination",
+              isinstance(payload.get("pagination"), dict), f"got {payload.get('pagination')!r}")
+        ucp_schema_validate(payload, "list_orders response")
+
+    # Pagination is honored: page_size 1 → exactly one summary.
+    status, body, page1 = mcp_tool_call(base_url, base_site, token,
+                                        "list_orders", {"page_size": 1})
+    check("list_orders honors page_size",
+          page1 is not None and len(page1.get("orders") or []) == 1,
+          f"got {page1 and page1.get('orders')!r}")
+
+
+def test_promotions_mcp(base_url, base_site, token):
+    """Phase 6: com.thinkshop.promotions — rule/coupon metadata via coremcp's
+    PromotionQueryService."""
+    log(f"\n{Colors.CYAN}── Promotions capability (com.thinkshop.promotions) ──{Colors.RESET}")
+
+    status, body, payload = mcp_tool_call(base_url, base_site, token, "get_promotions", {})
+    check("get_promotions returns a parseable UCP payload", payload is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if payload is None:
+        return
+    assert_ucp_envelope(payload, "get_promotions")
+    promos = payload.get("promotions") or []
+    promo_codes = {p.get("code") for p in promos if isinstance(p, dict)}
+    check("get_promotions returns promotion rules", len(promos) > 0,
+          "no rules — was setup-promotions.sh run?")
+    check(f"known rules {sorted(KNOWN_PROMO_RULES)} are listed",
+          KNOWN_PROMO_RULES <= promo_codes, f"got {sorted(promo_codes)!r}")
+    coupons = payload.get("coupons") or []
+    coupon_ids = {c.get("couponId") for c in coupons if isinstance(c, dict)}
+    check(f"known coupon {KNOWN_COUPON} is listed",
+          KNOWN_COUPON in coupon_ids, f"got {sorted(coupon_ids)!r}")
+    ucp_schema_validate(payload, "get_promotions response")
+
+    # include_coupons=false omits the coupons block entirely.
+    status, body, no_coupons = mcp_tool_call(base_url, base_site, token,
+                                             "get_promotions", {"include_coupons": False})
+    check("include_coupons=false omits the coupons block",
+          no_coupons is not None and "coupons" not in no_coupons,
+          f"got {no_coupons and sorted(no_coupons)!r}")
+
+
+def test_knowledge_mcp(base_url, base_site, token):
+    """Phase 6: com.thinkshop.knowledge — search/get over the Solr
+    knowledgeIndex via coremcp's KnowledgeSearchService."""
+    log(f"\n{Colors.CYAN}── Knowledge capability (com.thinkshop.knowledge) ──{Colors.RESET}")
+
+    # search_knowledge for the returns policy — a known KB fixture.
+    status, body, payload = mcp_tool_call(base_url, base_site, token,
+                                          "search_knowledge", {"query": "return policy"})
+    check("search_knowledge returns a parseable UCP payload", payload is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if payload is not None:
+        assert_ucp_envelope(payload, "search_knowledge")
+        results = payload.get("results") or []
+        check("search_knowledge returns results", len(results) > 0,
+              "no results — is the knowledgeIndex indexed?")
+        check("count matches the results array", payload.get("count") == len(results),
+              f"count {payload.get('count')!r} vs {len(results)} results")
+        uids = [r.get("uid") for r in results]
+        check(f"search_knowledge surfaces {KNOWN_KB_UID}", KNOWN_KB_UID in uids,
+              f"got {uids!r}")
+
+    # Category filter narrows to the requested category.
+    status, body, filtered = mcp_tool_call(base_url, base_site, token, "search_knowledge",
+                                           {"query": "policy", "category": "policy", "page_size": 10})
+    if filtered is not None:
+        results = filtered.get("results") or []
+        check("category filter returns only policy entries",
+              len(results) > 0 and all(r.get("category") == "policy" for r in results),
+              f"got {[(r.get('uid'), r.get('category')) for r in results]!r}")
+
+    # get_knowledge round-trip by uid.
+    status, body, entry_payload = mcp_tool_call(base_url, base_site, token,
+                                                "get_knowledge", {"uid": KNOWN_KB_UID})
+    check("get_knowledge returns a parseable UCP payload", entry_payload is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if entry_payload is not None:
+        assert_ucp_envelope(entry_payload, "get_knowledge")
+        entry = entry_payload.get("entry") or {}
+        check(f"get_knowledge returns the {KNOWN_KB_UID} entry",
+              entry.get("uid") == KNOWN_KB_UID, f"got {entry.get('uid')!r}")
+        check("entry carries title and body",
+              bool(entry.get("title")) and bool(entry.get("body")), f"got {sorted(entry)!r}")
+
+    # Unknown uid → UCP business error payload, never a transport error.
+    status, body, missing = mcp_tool_call(base_url, base_site, token,
+                                          "get_knowledge", {"uid": "no-such-entry"})
+    check("get_knowledge unknown uid still returns 200", status == 200, f"got {status}")
+    check("get_knowledge unknown uid is not an MCP isError result",
+          body.get("result", {}).get("isError") is not True, f"got {body.get('result')!r}")
+    if missing is not None:
+        assert_ucp_envelope(missing, "get_knowledge (unknown uid)", expected_status="error")
+        msgs = missing.get("messages") or []
+        check("unknown uid yields unrecoverable not_found message",
+              any(m.get("code") == "not_found" and m.get("severity") == "unrecoverable"
+                  for m in msgs), f"got {msgs!r}")
+
+    # Missing query is a client protocol bug → MCP isError.
+    status, body, _ = mcp_tool_call(base_url, base_site, token, "search_knowledge", {})
+    check("search_knowledge without a query is an isError tool result",
+          body.get("result", {}).get("isError") is True, f"got {body.get('result')!r}")
+
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 def main():
@@ -940,7 +1156,10 @@ def main():
         test_catalog_mcp(base_url, args.base_site, token)
         test_checkout_create_get_mcp(base_url, args.base_site, token)
         test_checkout_update_mcp(base_url, args.base_site, token)
-        test_checkout_complete_mcp(base_url, args.base_site, token)
+        order_id = test_checkout_complete_mcp(base_url, args.base_site, token)
+        test_orders_mcp(base_url, args.base_site, token, order_id)
+        test_promotions_mcp(base_url, args.base_site, token)
+        test_knowledge_mcp(base_url, args.base_site, token)
     else:
         log(f"\n{Colors.RED}FATAL: no auth token — skipping capability sections{Colors.RESET}")
 

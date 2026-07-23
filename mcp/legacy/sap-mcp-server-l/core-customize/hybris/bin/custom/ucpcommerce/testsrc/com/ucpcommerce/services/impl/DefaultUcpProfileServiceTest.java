@@ -2,6 +2,7 @@ package com.ucpcommerce.services.impl;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -71,13 +72,45 @@ public class DefaultUcpProfileServiceTest
 	{
 		final UcpProfile profile = profileService.buildProfile("electronics");
 
-		// Exactly the capabilities that work end-to-end so far (Phases 2 + 5).
-		assertEquals(2, profile.getCapabilities().size());
+		// Exactly the capabilities that work end-to-end so far (Phases 2, 5, 6).
+		assertEquals(5, profile.getCapabilities().size());
 		final UcpCapability checkout = capability(profile, "dev.ucp.shopping.checkout");
 		assertNotNull("checkout capability must be advertised once the lifecycle works", checkout);
 		assertEquals(PINNED_VERSION, checkout.getVersion());
 		assertNotNull(checkout.getSpec());
 		assertNotNull(checkout.getSchema());
+	}
+
+	@Test
+	public void testPhase6ProfileAdvertisesOrderCapability()
+	{
+		final UcpProfile profile = profileService.buildProfile("electronics");
+
+		final UcpCapability order = capability(profile, "dev.ucp.shopping.order");
+		assertNotNull("order capability must be advertised once get/history work", order);
+		assertEquals(PINNED_VERSION, order.getVersion());
+		assertNotNull(order.getSpec());
+		assertNotNull(order.getSchema());
+	}
+
+	@Test
+	public void testPhase6ProfileAdvertisesCustomThinkshopCapabilities()
+	{
+		// Custom reverse-domain capabilities (design R7): promotions + knowledge,
+		// versioned like the standard set but with no hosted spec/schema URLs.
+		final UcpProfile profile = profileService.buildProfile("electronics");
+
+		final UcpCapability promotions = capability(profile, "com.thinkshop.promotions");
+		assertNotNull("com.thinkshop.promotions must be advertised", promotions);
+		assertEquals(PINNED_VERSION, promotions.getVersion());
+		assertNull(promotions.getSpec());
+		assertNull(promotions.getSchema());
+
+		final UcpCapability knowledge = capability(profile, "com.thinkshop.knowledge");
+		assertNotNull("com.thinkshop.knowledge must be advertised", knowledge);
+		assertEquals(PINNED_VERSION, knowledge.getVersion());
+		assertNull(knowledge.getSpec());
+		assertNull(knowledge.getSchema());
 	}
 
 	private UcpCapability capability(final UcpProfile profile, final String name)
@@ -145,6 +178,11 @@ public class DefaultUcpProfileServiceTest
 		assertTrue("capabilities must serialize as an array", root.path("capabilities").isArray());
 		assertEquals("dev.ucp.shopping.catalog", root.path("capabilities").path(0).path("name").asText());
 		assertEquals("dev.ucp.shopping.checkout", root.path("capabilities").path(1).path("name").asText());
+		assertEquals("dev.ucp.shopping.order", root.path("capabilities").path(2).path("name").asText());
+		assertEquals("com.thinkshop.promotions", root.path("capabilities").path(3).path("name").asText());
+		assertEquals("com.thinkshop.knowledge", root.path("capabilities").path(4).path("name").asText());
+		assertTrue("custom capabilities omit spec URLs on the wire",
+			root.path("capabilities").path(3).path("spec").isMissingNode());
 		assertTrue("services must serialize as an object", root.path("services").isObject());
 		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp/mcp",
 			root.path("services").path("dev.ucp.shopping").path("mcp").path("endpoint").asText());

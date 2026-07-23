@@ -27,6 +27,12 @@ public class DefaultUcpProfileService implements UcpProfileService
 	private static final String CHECKOUT_CAPABILITY = "dev.ucp.shopping.checkout";
 	private static final String CHECKOUT_SPEC_URL = "https://ucp.dev/specification/checkout";
 	private static final String CHECKOUT_SCHEMA_URL = "https://ucp.dev/schemas/checkout.json";
+	private static final String ORDER_CAPABILITY = "dev.ucp.shopping.order";
+	private static final String ORDER_SPEC_URL = "https://ucp.dev/specification/order";
+	private static final String ORDER_SCHEMA_URL = "https://ucp.dev/schemas/order.json";
+	/** Custom reverse-domain capabilities (design R7) — no hosted spec/schema URLs. */
+	private static final String PROMOTIONS_CAPABILITY = "com.thinkshop.promotions";
+	private static final String KNOWLEDGE_CAPABILITY = "com.thinkshop.knowledge";
 
 	@Override
 	public UcpProfile buildProfile(final String baseSiteId)
@@ -48,6 +54,19 @@ public class DefaultUcpProfileService implements UcpProfileService
 		checkout.setSpec(CHECKOUT_SPEC_URL);
 		checkout.setSchema(CHECKOUT_SCHEMA_URL);
 		profile.getCapabilities().add(checkout);
+
+		// Order capability (Phase 6) — order get/history over OrderFacade,
+		// scoped to the authenticated customer.
+		final UcpCapability order = new UcpCapability(ORDER_CAPABILITY, version);
+		order.setSpec(ORDER_SPEC_URL);
+		order.setSchema(ORDER_SCHEMA_URL);
+		profile.getCapabilities().add(order);
+
+		// Custom reverse-domain capabilities (Phase 6, design R7): promotions
+		// metadata and knowledge-base content, reusing coremcp's services. No
+		// spec/schema URLs — nothing is hosted for these local capabilities.
+		profile.getCapabilities().add(new UcpCapability(PROMOTIONS_CAPABILITY, version));
+		profile.getCapabilities().add(new UcpCapability(KNOWLEDGE_CAPABILITY, version));
 
 		// MCP transport (Phase 2). The advertised endpoint must be the
 		// publicly reachable base (runbook §2.1) — configurable so an edge

@@ -70,11 +70,15 @@
         <property name="ucpMoneyConverter" ref="ucpMoneyConverter"/>
     </bean>
 
-    <!-- OrderData → the order block embedded in a completed checkout (Phase 5;
-         extended to the full UCP order schema by the order capability). -->
+    <!-- OrderData → UCP order objects: the minimal block embedded in a
+         completed checkout (Phase 5) plus the full order schema and history
+         summaries for the order capability (Phase 6). -->
     <alias name="defaultUcpOrderMarshaller" alias="ucpOrderMarshaller"/>
     <bean id="defaultUcpOrderMarshaller"
-          class="com.ucpcommerce.services.impl.UcpOrderMarshaller"/>
+          class="com.ucpcommerce.services.impl.UcpOrderMarshaller">
+        <property name="ucpCheckoutMarshaller" ref="ucpCheckoutMarshaller"/>
+        <property name="ucpMoneyConverter" ref="ucpMoneyConverter"/>
+    </bean>
 
     <alias name="defaultUcpCheckoutService" alias="ucpCheckoutService"/>
     <bean id="defaultUcpCheckoutService"
@@ -85,6 +89,19 @@
         <property name="cartLoaderStrategy" ref="cartLoaderStrategy"/>
         <property name="ucpCheckoutSessionService" ref="ucpCheckoutSessionService"/>
         <property name="ucpCheckoutMarshaller" ref="ucpCheckoutMarshaller"/>
+        <property name="ucpOrderMarshaller" ref="ucpOrderMarshaller"/>
+    </bean>
+
+    <!-- ===================================================================
+         Order capability (dev.ucp.shopping.order) — binding-agnostic
+         service over the standard OrderFacade (scoped to the authenticated
+         customer by the facade contract).
+         =================================================================== -->
+
+    <alias name="defaultUcpOrderService" alias="ucpOrderService"/>
+    <bean id="defaultUcpOrderService"
+          class="com.ucpcommerce.services.impl.DefaultUcpOrderService">
+        <property name="orderFacade" ref="orderFacade"/>
         <property name="ucpOrderMarshaller" ref="ucpOrderMarshaller"/>
     </bean>
 
@@ -141,6 +158,40 @@
         <property name="ucpCheckoutService" ref="ucpCheckoutService"/>
     </bean>
 
+    <alias name="defaultGetOrderTool" alias="getOrderTool"/>
+    <bean id="defaultGetOrderTool"
+          class="com.ucpcommerce.tools.impl.GetOrderTool">
+        <property name="ucpOrderService" ref="ucpOrderService"/>
+    </bean>
+
+    <alias name="defaultListOrdersTool" alias="listOrdersTool"/>
+    <bean id="defaultListOrdersTool"
+          class="com.ucpcommerce.tools.impl.ListOrdersTool">
+        <property name="ucpOrderService" ref="ucpOrderService"/>
+    </bean>
+
+    <!-- Custom reverse-domain capabilities (design R7) — thin wrappers over
+         coremcp's services (the <requires-extension name="coremcp"/> reuse),
+         referencing the aliases coremcp-spring.xml publishes. -->
+
+    <alias name="defaultGetPromotionsTool" alias="getPromotionsTool"/>
+    <bean id="defaultGetPromotionsTool"
+          class="com.ucpcommerce.tools.impl.GetPromotionsTool">
+        <property name="promotionQueryService" ref="promotionQueryService"/>
+    </bean>
+
+    <alias name="defaultSearchKnowledgeTool" alias="searchKnowledgeTool"/>
+    <bean id="defaultSearchKnowledgeTool"
+          class="com.ucpcommerce.tools.impl.SearchKnowledgeTool">
+        <property name="knowledgeSearchService" ref="knowledgeSearchService"/>
+    </bean>
+
+    <alias name="defaultGetKnowledgeTool" alias="getKnowledgeTool"/>
+    <bean id="defaultGetKnowledgeTool"
+          class="com.ucpcommerce.tools.impl.GetKnowledgeTool">
+        <property name="knowledgeSearchService" ref="knowledgeSearchService"/>
+    </bean>
+
     <alias name="defaultUcpMcpDispatcherService" alias="ucpMcpDispatcherService"/>
     <bean id="defaultUcpMcpDispatcherService"
           class="com.ucpcommerce.services.impl.DefaultUcpMcpDispatcherService">
@@ -154,6 +205,11 @@
                 <ref bean="updateCheckoutTool"/>
                 <ref bean="completeCheckoutTool"/>
                 <ref bean="cancelCheckoutTool"/>
+                <ref bean="getOrderTool"/>
+                <ref bean="listOrdersTool"/>
+                <ref bean="getPromotionsTool"/>
+                <ref bean="searchKnowledgeTool"/>
+                <ref bean="getKnowledgeTool"/>
             </list>
         </property>
     </bean>

@@ -15,13 +15,16 @@ untouched — UCP is a strictly additive, standards-based third surface.
 
 | Flow | Status |
 |------|--------|
-| `ucp-profile` — anonymous discovery document at `/.well-known/ucp` | Phase 1 (profile served nearly empty; entries added as capabilities land) |
-| `ucp-mcp-binding` — JSON-RPC tools endpoint | Phase 2+ |
-| `ucp-checkout` — checkout-session lifecycle over `UcpCheckoutSessionEntry` | Phase 3+ |
-| `ucp-rest-binding` — REST routes over the same services | Phase 7 |
+| [`ucp-profile`](ucp-profile/context.md) — anonymous discovery document at `/.well-known/ucp` | live — full capability set (catalog, checkout, order, `com.thinkshop.*`) + mcp transport + mock payment handler |
+| [`ucp-mcp-binding`](ucp-mcp-binding/context.md) — stateless JSON-RPC tools endpoint at `/{baseSiteId}/ucp/mcp` | live — 13 tools across all five capabilities |
+| [`ucp-checkout`](ucp-checkout/context.md) — checkout-session lifecycle over `UcpCheckoutSessionEntry` | live — create/get/update/complete (mock payment, idempotent)/cancel |
+| `ucp-rest-binding` — REST routes over the same services | Phase 7 (profile gains the `rest` transport entry only then) |
 
-(Per-flow `context.md`/`components.md`/`diagram.md` directories are created as
-each flow lands — docs before code, per the repo's extending checklist.)
+## Reference
+
+| Doc | Contents |
+|-----|----------|
+| [`reference/tools.md`](reference/tools.md) | Every exposed tool and capability: inputs, payload shapes, error taxonomy |
 
 ## ADRs
 

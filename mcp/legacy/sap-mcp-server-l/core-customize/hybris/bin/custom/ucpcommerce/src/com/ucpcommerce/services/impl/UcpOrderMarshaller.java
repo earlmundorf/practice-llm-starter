@@ -1,20 +1,42 @@
 package com.ucpcommerce.services.impl;
 
 import com.ucpcommerce.dto.UcpOrder;
+import com.ucpcommerce.dto.UcpTotal;
 
 import de.hybris.platform.commercefacades.order.data.OrderData;
+import de.hybris.platform.commercefacades.order.data.OrderHistoryData;
+
+import org.springframework.beans.factory.annotation.Required;
 
 import java.time.format.DateTimeFormatter;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 
 /**
- * Marshals a hybris {@code OrderData} into the UCP {@code order} block
- * embedded in a completed checkout (design S3). Minimal in Phase 5 — id (the
- * order code, which order get/history will accept) plus the placement
- * timestamp; the full UCP order schema lands with the order capability in
- * Phase 6, where this class is extended.
+ * Marshals hybris order data into UCP {@code order} objects. Three shapes:
+ * <ul>
+ *   <li>{@link #marshal(OrderData)} — the deliberately minimal
+ *       ({@code id} + {@code created_at}) block embedded in a completed
+ *       checkout (design S3). Kept minimal so Phase 5's stored completion
+ *       responses replay unchanged;</li>
+ *   <li>{@link #marshalFull(OrderData)} — the full UCP order schema for the
+ *       order capability's {@code get_order}: status, currency, line items,
+ *       totals and fulfillment, reusing {@link UcpCheckoutMarshaller}'s
+ *       line-item/totals/fulfillment mapping (it accepts
+ *       {@code AbstractOrderData} for exactly this);</li>
+ *   <li>{@link #marshalSummary(OrderHistoryData)} — one {@code list_orders}
+ *       history entry: id, created_at, status and the order total.</li>
+ * </ul>
+ * All money crosses the major→minor boundary only via the centralized
+ * {@link UcpMoneyConverter}.
  */
 public class UcpOrderMarshaller
 {
+	private UcpCheckoutMarshaller ucpCheckoutMarshaller;
+	private UcpMoneyConverter ucpMoneyConverter;
+
+	/** Minimal embedded order block ({@code id} + {@code created_at}). */
 	public UcpOrder marshal(final OrderData orderData)
 	{
 		if (orderData == null)
@@ -23,10 +45,82 @@ public class UcpOrderMarshaller
 		}
 		final UcpOrder order = new UcpOrder();
 		order.setId(orderData.getCode());
-		if (orderData.getCreated() != null)
+		order.setCreatedAt(iso(orderData.getCreated()));
+		return order;
+	}
+
+	/** Full UCP order schema for the order capability ({@code get_order}). */
+	public UcpOrder marshalFull(final OrderData orderData)
+	{
+		final UcpOrder order = marshal(orderData);
+		if (order == null)
 		{
-			order.setCreatedAt(DateTimeFormatter.ISO_INSTANT.format(orderData.getCreated().toInstant()));
+			return null;
+		}
+		order.setStatus(wireStatus(orderData.getStatus() != null ? orderData.getStatus().getCode() : null));
+		if (orderData.getTotalPrice() != null && orderData.getTotalPrice().getCurrencyIso() != null)
+		{
+			order.setCurrency(orderData.getTotalPrice().getCurrencyIso());
+		}
+		else if (orderData.getSubTotal() != null)
+		{
+			order.setCurrency(orderData.getSubTotal().getCurrencyIso());
+		}
+		// Same-package reuse of the checkout marshaller's AbstractOrderData
+		// mapping — one line-item/totals/fulfillment implementation for both
+		// checkout and order payloads.
+		order.setLineItems(ucpCheckoutMarshaller.marshalLineItems(orderData));
+		order.setTotals(ucpCheckoutMarshaller.marshalTotals(orderData));
+		order.setFulfillment(ucpCheckoutMarshaller.marshalFulfillment(orderData));
+		return order;
+	}
+
+	/** One order-history entry for {@code list_orders}. */
+	public UcpOrder marshalSummary(final OrderHistoryData historyData)
+	{
+		if (historyData == null)
+		{
+			return null;
+		}
+		final UcpOrder order = new UcpOrder();
+		order.setId(historyData.getCode());
+		order.setCreatedAt(iso(historyData.getPlaced()));
+		order.setStatus(wireStatus(historyData.getStatus() != null ? historyData.getStatus().getCode() : null));
+		if (historyData.getTotal() != null && historyData.getTotal().getValue() != null)
+		{
+			order.setCurrency(historyData.getTotal().getCurrencyIso());
+			order.setTotals(List.of(new UcpTotal(UcpTotal.TYPE_TOTAL, ucpMoneyConverter.toMinorUnits(
+				historyData.getTotal().getValue(), historyData.getTotal().getCurrencyIso()))));
 		}
 		return order;
+	}
+
+	/**
+	 * Hybris order-status codes are UPPERCASE; the UCP wire style is lowercase.
+	 * Orders placed through the mock {@code placeOrder} path carry no hybris
+	 * status at all (no fulfillment process runs on this demo platform) — a
+	 * just-placed order is {@code created} on the UCP wire (the mandatory first
+	 * order-lifecycle event in the spec).
+	 */
+	protected String wireStatus(final String hybrisStatusCode)
+	{
+		return hybrisStatusCode == null ? "created" : hybrisStatusCode.toLowerCase(Locale.ROOT);
+	}
+
+	private static String iso(final Date date)
+	{
+		return date == null ? null : DateTimeFormatter.ISO_INSTANT.format(date.toInstant());
+	}
+
+	@Required
+	public void setUcpCheckoutMarshaller(final UcpCheckoutMarshaller ucpCheckoutMarshaller)
+	{
+		this.ucpCheckoutMarshaller = ucpCheckoutMarshaller;
+	}
+
+	@Required
+	public void setUcpMoneyConverter(final UcpMoneyConverter ucpMoneyConverter)
+	{
+		this.ucpMoneyConverter = ucpMoneyConverter;
 	}
 }

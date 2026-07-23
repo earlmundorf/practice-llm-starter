@@ -110,6 +110,33 @@ else
   warn "agent /chat KB-grounded returned no reply: ${R:0:160}"
 fi
 
+# --- 11. UCP surface (ucpcommerce extension; no LLM involved) -----------------
+R=$(curl -sk "$BASE/.well-known/ucp")
+echo "$R" | grep -q "dev.ucp.shopping.checkout" && echo "$R" | grep -q "com.thinkshop.promotions" \
+  && ok "UCP profile (anonymous discovery, full capability set)" || bad "UCP profile: ${R:0:160}"
+
+ucp() { # token payload  (stateless UCP MCP binding — no session header)
+  curl -sk -X POST "$BASE/ucp/mcp" -H "Authorization: Bearer $1" -H "Content-Type: application/json" -d "$2"
+}
+ucptool() { # token name args
+  ucp "$1" "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{\"name\":\"$2\",\"arguments\":$3}}" \
+    | jqpy "b=json.load(sys.stdin);print(b['result']['content'][0]['text'])"
+}
+
+NUTOOLS=$(ucp "$CTOKEN" '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | jqpy "print(len(json.load(sys.stdin)['result']['tools']))")
+[ "$NUTOOLS" = "13" ] && ok "UCP tools/list returns 13 tools" || bad "UCP tools/list returned '$NUTOOLS' (expected 13)"
+
+R=$(ucptool "$CTOKEN" search_catalog '{"query":"laptop"}')
+echo "$R" | grep -q "LAPTOP_PRO_15" && echo "$R" | grep -q "129999" \
+  && ok "UCP search_catalog (minor-unit price 129999)" || bad "UCP search_catalog: ${R:0:160}"
+
+R=$(ucptool "$CTOKEN" get_promotions '{}')
+echo "$R" | grep -q "bogo_mouse\|free_shipping_1000" && ok "UCP get_promotions (com.thinkshop.promotions)" \
+  || warn "UCP get_promotions returned no known rules (setup-promotions run?): ${R:0:120}"
+
+R=$(ucptool "$CTOKEN" search_knowledge '{"query":"returns"}')
+echo "$R" | grep -qi "return" && ok "UCP search_knowledge (com.thinkshop.knowledge)" || bad "UCP search_knowledge: ${R:0:160}"
+
 echo
 echo "================================================="
 echo "SMOKE TEST: $PASS passed, $FAIL failed, $WARN warnings"
