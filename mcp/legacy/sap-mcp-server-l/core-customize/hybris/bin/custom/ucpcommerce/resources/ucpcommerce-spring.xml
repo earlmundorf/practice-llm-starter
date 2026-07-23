@@ -45,6 +45,41 @@
     </bean>
 
     <!-- ===================================================================
+         Checkout capability (dev.ucp.shopping.checkout) — persisted opaque
+         checkout id → cart code mapping (design R5) plus the binding-agnostic
+         checkout operations and the CartData → UCP checkout marshaller.
+         =================================================================== -->
+
+    <alias name="persistedUcpCheckoutSessionService" alias="ucpCheckoutSessionService"/>
+    <bean id="persistedUcpCheckoutSessionService"
+          class="com.ucpcommerce.services.impl.PersistedUcpCheckoutSessionService">
+        <property name="modelService" ref="modelService"/>
+        <property name="flexibleSearchService" ref="flexibleSearchService"/>
+        <property name="ttlMinutes" value="${ucpcommerce.checkout.session.ttl.minutes}"/>
+    </bean>
+
+    <!-- Sweeps abandoned expired checkout sessions (see
+         essentialdata-ucp-session-cleanup.impex for the CronJob/Trigger). -->
+    <bean id="ucpCheckoutSessionCleanupJob"
+          class="com.ucpcommerce.jobs.UcpCheckoutSessionCleanupJob"
+          parent="abstractJobPerformable"/>
+
+    <alias name="defaultUcpCheckoutMarshaller" alias="ucpCheckoutMarshaller"/>
+    <bean id="defaultUcpCheckoutMarshaller"
+          class="com.ucpcommerce.services.impl.UcpCheckoutMarshaller">
+        <property name="ucpMoneyConverter" ref="ucpMoneyConverter"/>
+    </bean>
+
+    <alias name="defaultUcpCheckoutService" alias="ucpCheckoutService"/>
+    <bean id="defaultUcpCheckoutService"
+          class="com.ucpcommerce.services.impl.DefaultUcpCheckoutService">
+        <property name="cartFacade" ref="cartFacade"/>
+        <property name="cartLoaderStrategy" ref="cartLoaderStrategy"/>
+        <property name="ucpCheckoutSessionService" ref="ucpCheckoutSessionService"/>
+        <property name="ucpCheckoutMarshaller" ref="ucpCheckoutMarshaller"/>
+    </bean>
+
+    <!-- ===================================================================
          UCP MCP binding — tool adapters + stateless JSON-RPC dispatcher.
          Tool names follow the UCP MCP capability bindings.
          =================================================================== -->
@@ -67,6 +102,18 @@
         <property name="ucpCatalogService" ref="ucpCatalogService"/>
     </bean>
 
+    <alias name="defaultCreateCheckoutTool" alias="createCheckoutTool"/>
+    <bean id="defaultCreateCheckoutTool"
+          class="com.ucpcommerce.tools.impl.CreateCheckoutTool">
+        <property name="ucpCheckoutService" ref="ucpCheckoutService"/>
+    </bean>
+
+    <alias name="defaultGetCheckoutTool" alias="getCheckoutTool"/>
+    <bean id="defaultGetCheckoutTool"
+          class="com.ucpcommerce.tools.impl.GetCheckoutTool">
+        <property name="ucpCheckoutService" ref="ucpCheckoutService"/>
+    </bean>
+
     <alias name="defaultUcpMcpDispatcherService" alias="ucpMcpDispatcherService"/>
     <bean id="defaultUcpMcpDispatcherService"
           class="com.ucpcommerce.services.impl.DefaultUcpMcpDispatcherService">
@@ -75,6 +122,8 @@
                 <ref bean="searchCatalogTool"/>
                 <ref bean="lookupCatalogTool"/>
                 <ref bean="getProductTool"/>
+                <ref bean="createCheckoutTool"/>
+                <ref bean="getCheckoutTool"/>
             </list>
         </property>
     </bean>

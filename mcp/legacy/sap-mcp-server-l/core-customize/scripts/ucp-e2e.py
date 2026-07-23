@@ -12,7 +12,10 @@ Sections so far:
   2. Auth      — password-grant bootstrap (design R8)
   3. Catalog   — tools/list, search_catalog / lookup_catalog / get_product with
                  integer minor-unit price assertions (Phase 2)
-Later phases append checkout / order / promotions / knowledge sections.
+  4. Checkout  — create_checkout / get_checkout round-trip against the
+                 persisted UcpCheckoutSessionEntry store (Phase 3)
+Later phases append update/complete/cancel, order, promotions and knowledge
+sections.
 Schema validation shells out to the `ucp-schema` CLI when installed (best
 effort; SKIP otherwise).
 
@@ -65,8 +68,11 @@ KNOWN_SKU_PRICE_MINOR = 129999          # $1299.99
 SECOND_SKU = "WIRELESS_GAMING_MOUSE"
 SECOND_SKU_PRICE_MINOR = 7999           # $79.99
 
-# UCP MCP catalog binding tool names (pinned spec 2026-04-08).
+# UCP MCP binding tool names (pinned spec 2026-04-08). Grows phase by phase:
+# catalog (Phase 2) + create/get checkout (Phase 3).
 EXPECTED_CATALOG_TOOLS = {"search_catalog", "lookup_catalog", "get_product"}
+EXPECTED_CHECKOUT_TOOLS = {"create_checkout", "get_checkout"}
+EXPECTED_TOOLS = EXPECTED_CATALOG_TOOLS | EXPECTED_CHECKOUT_TOOLS
 
 HARNESS_AGENT_PROFILE = {"profile": "https://ucp-e2e.invalid/.well-known/ucp"}
 
@@ -335,12 +341,12 @@ def test_catalog_mcp(base_url, base_site, token):
     status, _, _ = mcp_rpc(base_url, base_site, token, "notifications/initialized", notification=True)
     check("notification answered with 202", status == 202, f"got {status}")
 
-    # tools/list — exactly the catalog binding's tool names (Phase 2).
+    # tools/list — exactly the tools shipped so far (catalog + checkout create/get).
     status, _, body = mcp_rpc(base_url, base_site, token, "tools/list")
     tools = body.get("result", {}).get("tools", [])
     tool_names = {t.get("name") for t in tools if isinstance(t, dict)}
-    check("tools/list returns exactly the catalog tools",
-          tool_names == EXPECTED_CATALOG_TOOLS, f"got {sorted(tool_names)!r}")
+    check("tools/list returns exactly the catalog + checkout tools",
+          tool_names == EXPECTED_TOOLS, f"got {sorted(tool_names)!r}")
 
     # Unknown tool → JSON-RPC invalid-params error.
     status, body, _ = mcp_tool_call(base_url, base_site, token, "definitely_not_a_tool", {})
@@ -427,6 +433,106 @@ def test_catalog_mcp(base_url, base_site, token):
                   for m in msgs), f"got {msgs!r}")
 
 
+def test_checkout_create_get_mcp(base_url, base_site, token):
+    """Phase 3: create_checkout / get_checkout over the MCP binding (R5 store)."""
+    log(f"\n{Colors.CYAN}── Checkout capability: create/get (MCP binding) ──{Colors.RESET}")
+
+    buyer = {"first_name": "John", "last_name": "Doe", "email": CUSTOMER_EMAIL}
+    checkout_req = {
+        "line_items": [{"item": {"id": SECOND_SKU}, "quantity": 1}],
+        "buyer": buyer,
+    }
+
+    # create_checkout — the payload must NOT contain an id; the response mints one.
+    status, body, payload = mcp_tool_call(base_url, base_site, token,
+                                          "create_checkout", {"checkout": checkout_req})
+    check("create_checkout returns a parseable UCP payload", payload is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if payload is None:
+        return
+    check("create_checkout is not an MCP isError result",
+          body.get("result", {}).get("isError") is not True, f"got {body.get('result')!r}")
+    assert_ucp_envelope(payload, "create_checkout")
+
+    checkout_id = payload.get("id") or ""
+    check("create_checkout mints an opaque ucp_chk_ id",
+          checkout_id.startswith("ucp_chk_"), f"got {checkout_id!r}")
+    check("new checkout status is incomplete",
+          payload.get("status") == "incomplete", f"got {payload.get('status')!r}")
+    check("checkout currency is USD", payload.get("currency") == "USD",
+          f"got {payload.get('currency')!r}")
+
+    line_items = payload.get("line_items") or []
+    check("checkout has exactly one line item", len(line_items) == 1, f"got {len(line_items)}")
+    li = line_items[0] if line_items else {}
+    check(f"line item is {SECOND_SKU} qty 1",
+          li.get("item", {}).get("id") == SECOND_SKU and li.get("quantity") == 1,
+          f"got {li!r}")
+    check(f"line item unit price is {SECOND_SKU_PRICE_MINOR} minor units (storefront $79.99)",
+          li.get("item", {}).get("price") == SECOND_SKU_PRICE_MINOR,
+          f"got {li.get('item', {}).get('price')!r}")
+
+    totals = {t.get("type"): t.get("amount") for t in payload.get("totals") or []}
+    check(f"totals.subtotal is {SECOND_SKU_PRICE_MINOR} minor units",
+          totals.get("subtotal") == SECOND_SKU_PRICE_MINOR, f"got {totals!r}")
+    check("totals.total is an integer amount",
+          isinstance(totals.get("total"), int), f"got {totals!r}")
+    check("buyer is echoed back",
+          (payload.get("buyer") or {}).get("email") == CUSTOMER_EMAIL,
+          f"got {payload.get('buyer')!r}")
+    ucp_schema_validate(payload, "create_checkout response")
+
+    # get_checkout round-trip — separate stateless call, id addresses the resource.
+    status, body, got = mcp_tool_call(base_url, base_site, token,
+                                      "get_checkout", {"id": checkout_id})
+    check("get_checkout returns a parseable UCP payload", got is not None,
+          f"status {status}, body {str(body)[:300]}")
+    if got is not None:
+        assert_ucp_envelope(got, "get_checkout")
+        check("get_checkout echoes the same id", got.get("id") == checkout_id,
+              f"got {got.get('id')!r}")
+        check("get_checkout status is still incomplete",
+              got.get("status") == "incomplete", f"got {got.get('status')!r}")
+        got_totals = {t.get("type"): t.get("amount") for t in got.get("totals") or []}
+        check("get_checkout totals match the created checkout",
+              got_totals == totals, f"created {totals!r} vs got {got_totals!r}")
+        got_li = (got.get("line_items") or [{}])[0]
+        check("get_checkout line item round-trips",
+              got_li.get("item", {}).get("id") == SECOND_SKU and got_li.get("quantity") == 1,
+              f"got {got_li!r}")
+        check("get_checkout buyer is persisted on the entry",
+              (got.get("buyer") or {}).get("email") == CUSTOMER_EMAIL,
+              f"got {got.get('buyer')!r}")
+        ucp_schema_validate(got, "get_checkout response")
+
+    # Unknown checkout id → UCP business error payload, never a transport error.
+    status, body, missing = mcp_tool_call(base_url, base_site, token,
+                                          "get_checkout", {"id": "ucp_chk_doesnotexist"})
+    check("get_checkout unknown id still returns 200", status == 200, f"got {status}")
+    check("get_checkout unknown id is not an MCP isError result",
+          body.get("result", {}).get("isError") is not True, f"got {body.get('result')!r}")
+    if missing is not None:
+        assert_ucp_envelope(missing, "get_checkout (unknown id)", expected_status="error")
+        msgs = missing.get("messages") or []
+        check("unknown checkout id yields unrecoverable not_found message",
+              any(m.get("code") == "not_found" and m.get("severity") == "unrecoverable"
+                  for m in msgs), f"got {msgs!r}")
+
+    # create_checkout with only an unknown SKU → error payload, no id minted.
+    status, body, bad = mcp_tool_call(base_url, base_site, token, "create_checkout",
+                                      {"checkout": {"line_items": [{"item": {"id": "NO_SUCH_SKU"},
+                                                                    "quantity": 1}]}})
+    if bad is not None:
+        assert_ucp_envelope(bad, "create_checkout (unknown SKU)", expected_status="error")
+        check("failed create mints no checkout id", bad.get("id") is None,
+              f"got {bad.get('id')!r}")
+        msgs = bad.get("messages") or []
+        check("failed create reports the unknown item in messages[]",
+              any(m.get("code") in ("not_found", "invalid_request") for m in msgs), f"got {msgs!r}")
+
+    return checkout_id
+
+
 # ── Main ────────────────────────────────────────────────────────────────────
 
 def main():
@@ -464,6 +570,7 @@ def main():
         log(f"\n{Colors.YELLOW}NOTE{Colors.RESET} --transport rest is not implemented until Phase 7")
     elif token:
         test_catalog_mcp(base_url, args.base_site, token)
+        test_checkout_create_get_mcp(base_url, args.base_site, token)
     else:
         log(f"\n{Colors.RED}FATAL: no auth token — skipping capability sections{Colors.RESET}")
 
