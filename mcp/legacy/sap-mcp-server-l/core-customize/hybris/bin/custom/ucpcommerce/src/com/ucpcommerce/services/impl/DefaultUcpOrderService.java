@@ -4,9 +4,9 @@ import com.ucpcommerce.constants.UcpcommerceConstants;
 import com.ucpcommerce.dto.UcpEnvelope;
 import com.ucpcommerce.dto.UcpMessage;
 import com.ucpcommerce.dto.UcpOrder;
-import com.ucpcommerce.dto.UcpOrderResponse;
 import com.ucpcommerce.dto.UcpOrdersResponse;
 import com.ucpcommerce.dto.UcpPagination;
+import com.ucpcommerce.services.UcpCheckoutSessionService;
 import com.ucpcommerce.services.UcpOrderService;
 
 import de.hybris.platform.commercefacades.order.OrderFacade;
@@ -43,27 +43,31 @@ public class DefaultUcpOrderService implements UcpOrderService
 
 	private OrderFacade orderFacade;
 	private UcpOrderMarshaller ucpOrderMarshaller;
+	private UcpCheckoutSessionService ucpCheckoutSessionService;
 
 	@Override
-	public UcpOrderResponse getOrder(final String id)
+	public UcpOrder getOrder(final String id)
 	{
-		final UcpOrderResponse response = new UcpOrderResponse();
 		try
 		{
-			final UcpOrder order = ucpOrderMarshaller.marshalFull(orderFacade.getOrderDetailsForCode(id));
-			response.setUcp(envelope("success"));
-			response.setOrder(order);
+			// The order object IS the response (official order.json — no
+			// wrapper); checkout_id is recovered from the session store.
+			final UcpOrder order = ucpOrderMarshaller.marshalFull(orderFacade.getOrderDetailsForCode(id),
+				ucpCheckoutSessionService.findCheckoutIdForOrder(id));
+			order.setUcp(envelope("success"));
+			return order;
 		}
 		catch (final Exception e)
 		{
 			// Unknown id OR another customer's order — equally "not found" from
 			// this caller's perspective; business error, never a 500.
 			LOG.debug("get_order miss for id {}: {}", id, e.getMessage());
-			response.setUcp(envelope("error"));
-			response.setMessages(List.of(new UcpMessage("error", "not_found",
+			final UcpOrder error = new UcpOrder();
+			error.setUcp(envelope("error"));
+			error.setMessages(List.of(new UcpMessage("error", "not_found",
 				UcpMessage.SEVERITY_UNRECOVERABLE, "Order not found: " + id)));
+			return error;
 		}
-		return response;
 	}
 
 	@Override
@@ -146,6 +150,15 @@ public class DefaultUcpOrderService implements UcpOrderService
 		pagination.setPageSize(paginationData.getPageSize());
 		pagination.setTotalResults(paginationData.getTotalNumberOfResults());
 		pagination.setTotalPages(paginationData.getNumberOfPages());
+		// Official response pagination (pagination.json): has_next_page is
+		// required; the cursor (required when true) is the next page number.
+		final boolean hasNext = paginationData.getCurrentPage() + 1 < paginationData.getNumberOfPages();
+		pagination.setHasNextPage(hasNext);
+		if (hasNext)
+		{
+			pagination.setCursor(String.valueOf(paginationData.getCurrentPage() + 1));
+		}
+		pagination.setTotalCount(paginationData.getTotalNumberOfResults());
 		return pagination;
 	}
 
@@ -171,5 +184,11 @@ public class DefaultUcpOrderService implements UcpOrderService
 	public void setUcpOrderMarshaller(final UcpOrderMarshaller ucpOrderMarshaller)
 	{
 		this.ucpOrderMarshaller = ucpOrderMarshaller;
+	}
+
+	@Required
+	public void setUcpCheckoutSessionService(final UcpCheckoutSessionService ucpCheckoutSessionService)
+	{
+		this.ucpCheckoutSessionService = ucpCheckoutSessionService;
 	}
 }

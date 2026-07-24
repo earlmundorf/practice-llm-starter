@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Map;
+
 /**
  * The UCP {@code buyer} block (runbook §2.2). Accepted on create/update and
  * echoed back on every checkout response. Stored as JSON on
@@ -33,6 +35,24 @@ public class UcpBuyer
 
 	@JsonProperty("phone_number")
 	private String phoneNumber;
+
+	/**
+	 * Buyer consent preferences ({@code dev.ucp.shopping.buyer_consent}) —
+	 * persisted with the buyer block and echoed verbatim; the demo platform
+	 * records but does not act on them.
+	 */
+	@JsonProperty("consent")
+	private Map<String, Object> consent;
+
+	public Map<String, Object> getConsent()
+	{
+		return consent;
+	}
+
+	public void setConsent(final Map<String, Object> consent)
+	{
+		this.consent = consent;
+	}
 
 	public String getFirstName()
 	{

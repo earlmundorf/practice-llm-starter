@@ -2,11 +2,15 @@ package com.ucpcommerce.services.impl;
 
 import com.ucpcommerce.constants.UcpcommerceConstants;
 import com.ucpcommerce.dto.UcpCatalogResponse;
+import com.ucpcommerce.dto.UcpDescription;
 import com.ucpcommerce.dto.UcpEnvelope;
 import com.ucpcommerce.dto.UcpMessage;
 import com.ucpcommerce.dto.UcpPagination;
+import com.ucpcommerce.dto.UcpPrice;
+import com.ucpcommerce.dto.UcpPriceRange;
 import com.ucpcommerce.dto.UcpProduct;
 import com.ucpcommerce.dto.UcpProductResponse;
+import com.ucpcommerce.dto.UcpVariant;
 import com.ucpcommerce.services.UcpCatalogService;
 
 import de.hybris.platform.commercefacades.product.ProductFacade;
@@ -94,7 +98,16 @@ public class DefaultUcpCatalogService implements UcpCatalogService
 		{
 			try
 			{
-				products.add(toUcpProduct(productFacade.getProductForCodeAndOptions(id, PRODUCT_OPTIONS)));
+				final UcpProduct product = toUcpProduct(productFacade.getProductForCodeAndOptions(id, PRODUCT_OPTIONS));
+				// Lookup responses require the input correlation on each
+				// variant (catalog_lookup.json#lookup_variant): the requested
+				// id IS the variant id on this variantless catalog — exact.
+				for (final UcpVariant variant : product.getVariants())
+				{
+					variant.setInputs(List.of(new UcpVariant.InputCorrelation(id,
+						UcpVariant.InputCorrelation.MATCH_EXACT)));
+				}
+				products.add(product);
 			}
 			catch (final Exception e)
 			{
@@ -134,24 +147,48 @@ public class DefaultUcpCatalogService implements UcpCatalogService
 		return response;
 	}
 
+	/**
+	 * Official {@code product.json} shape: description as a formats object,
+	 * required {@code price_range}, and a single required variant mirroring
+	 * the (variantless) ThinkShop product — its id is the same id checkout
+	 * accepts. The flat {@code price}/{@code currency}/{@code availability}
+	 * convenience fields ride along as schema-tolerated extras.
+	 */
 	protected UcpProduct toUcpProduct(final ProductData productData)
 	{
 		final UcpProduct product = new UcpProduct();
 		product.setId(productData.getCode());
 		product.setTitle(productData.getName());
-		product.setDescription(productData.getSummary() != null
-			? productData.getSummary() : productData.getDescription());
+		final String descriptionText = productData.getSummary() != null
+			? productData.getSummary() : productData.getDescription();
+		final UcpDescription description = new UcpDescription(descriptionText != null ? descriptionText : "");
+		product.setDescription(description);
+
+		UcpPrice price = null;
 		if (productData.getPrice() != null)
 		{
 			// The one place catalog money crosses the major→minor boundary.
 			product.setPrice(ucpMoneyConverter.toMinorUnits(
 				productData.getPrice().getValue(), productData.getPrice().getCurrencyIso()));
 			product.setCurrency(productData.getPrice().getCurrencyIso());
+			price = new UcpPrice(product.getPrice(), product.getCurrency());
+			product.setPriceRange(new UcpPriceRange(price, price));
 		}
+
+		final UcpVariant variant = new UcpVariant();
+		variant.setId(productData.getCode());
+		variant.setSku(productData.getCode());
+		variant.setTitle(productData.getName());
+		variant.setDescription(description);
+		variant.setPrice(price);
 		if (productData.getStock() != null && productData.getStock().getStockLevelStatus() != null)
 		{
-			product.setAvailability(mapAvailability(productData.getStock().getStockLevelStatus().getCode()));
+			final String availability = mapAvailability(productData.getStock().getStockLevelStatus().getCode());
+			product.setAvailability(availability);
+			variant.setAvailability(new UcpVariant.Availability(
+				!"out_of_stock".equals(availability), availability));
 		}
+		product.setVariants(List.of(variant));
 		return product;
 	}
 
@@ -177,6 +214,15 @@ public class DefaultUcpCatalogService implements UcpCatalogService
 		pagination.setPageSize(paginationData.getPageSize());
 		pagination.setTotalResults(paginationData.getTotalNumberOfResults());
 		pagination.setTotalPages(paginationData.getNumberOfPages());
+		// Official response pagination (pagination.json): has_next_page is
+		// required; the cursor (required when true) is the next page number.
+		final boolean hasNext = paginationData.getCurrentPage() + 1 < paginationData.getNumberOfPages();
+		pagination.setHasNextPage(hasNext);
+		if (hasNext)
+		{
+			pagination.setCursor(String.valueOf(paginationData.getCurrentPage() + 1));
+		}
+		pagination.setTotalCount(paginationData.getTotalNumberOfResults());
 		return pagination;
 	}
 

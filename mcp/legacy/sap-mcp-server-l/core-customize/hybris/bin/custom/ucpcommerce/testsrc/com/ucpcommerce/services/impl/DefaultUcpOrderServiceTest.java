@@ -11,8 +11,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.ucpcommerce.dto.UcpMessage;
-import com.ucpcommerce.dto.UcpOrderResponse;
+import com.ucpcommerce.dto.UcpOrder;
 import com.ucpcommerce.dto.UcpOrdersResponse;
+import com.ucpcommerce.services.UcpCheckoutSessionService;
 
 import de.hybris.bootstrap.annotations.UnitTest;
 import de.hybris.platform.commercefacades.order.OrderFacade;
@@ -46,6 +47,9 @@ public class DefaultUcpOrderServiceTest
 	@Mock
 	private OrderFacade orderFacade;
 
+	@Mock
+	private UcpCheckoutSessionService checkoutSessionService;
+
 	@Before
 	public void setUp()
 	{
@@ -61,6 +65,14 @@ public class DefaultUcpOrderServiceTest
 		};
 		final UcpMoneyConverter moneyConverter = new UcpMoneyConverter();
 		checkoutMarshaller.setUcpMoneyConverter(moneyConverter);
+		checkoutMarshaller.setUcpProfileService(new DefaultUcpProfileService()
+		{
+			@Override
+			protected String getPinnedUcpVersion()
+			{
+				return PINNED_VERSION;
+			}
+		});
 		final UcpOrderMarshaller orderMarshaller = new UcpOrderMarshaller();
 		orderMarshaller.setUcpCheckoutMarshaller(checkoutMarshaller);
 		orderMarshaller.setUcpMoneyConverter(moneyConverter);
@@ -83,6 +95,7 @@ public class DefaultUcpOrderServiceTest
 		};
 		orderService.setOrderFacade(orderFacade);
 		orderService.setUcpOrderMarshaller(orderMarshaller);
+		orderService.setUcpCheckoutSessionService(checkoutSessionService);
 	}
 
 	private PriceData usd(final String major)
@@ -104,24 +117,28 @@ public class DefaultUcpOrderServiceTest
 	}
 
 	@Test
-	public void getOrderMarshalsTheFullOrder()
+	public void getOrderReturnsTheRawOrderWithEnvelopeAndProvenance()
 	{
+		// Official binding: the order object IS the response (no wrapper),
+		// with its ucp envelope and the originating checkout_id.
 		final OrderData orderData = new OrderData();
 		orderData.setCode("00005004");
 		orderData.setCreated(new Date());
 		orderData.setStatus(OrderStatus.COMPLETED);
 		orderData.setTotalPrice(usd("85.98"));
 		when(orderFacade.getOrderDetailsForCode("00005004")).thenReturn(orderData);
+		when(checkoutSessionService.findCheckoutIdForOrder("00005004")).thenReturn("ucp_chk_prov");
 
-		final UcpOrderResponse response = orderService.getOrder("00005004");
+		final UcpOrder order = orderService.getOrder("00005004");
 
-		assertEquals(PINNED_VERSION, response.getUcp().getVersion());
-		assertEquals("success", response.getUcp().getStatus());
-		assertNotNull(response.getOrder());
-		assertEquals("00005004", response.getOrder().getId());
-		assertEquals("completed", response.getOrder().getStatus());
-		assertEquals("USD", response.getOrder().getCurrency());
-		assertNull(response.getMessages());
+		assertEquals(PINNED_VERSION, order.getUcp().getVersion());
+		assertEquals("success", order.getUcp().getStatus());
+		assertEquals("00005004", order.getId());
+		assertEquals("ucp_chk_prov", order.getCheckoutId());
+		assertEquals("completed", order.getStatus());
+		assertEquals("USD", order.getCurrency());
+		assertNotNull("order.json requires fulfillment (empty object allowed)", order.getFulfillment());
+		assertNull(order.getMessages());
 	}
 
 	@Test
@@ -130,15 +147,15 @@ public class DefaultUcpOrderServiceTest
 		when(orderFacade.getOrderDetailsForCode("NOPE"))
 			.thenThrow(new UnknownIdentifierException("Order with code NOPE not found"));
 
-		final UcpOrderResponse response = orderService.getOrder("NOPE");
+		final UcpOrder order = orderService.getOrder("NOPE");
 
 		// Business error inside the payload — never an exception/500.
-		assertEquals("error", response.getUcp().getStatus());
-		assertNull(response.getOrder());
-		assertEquals(1, response.getMessages().size());
-		assertEquals("not_found", response.getMessages().get(0).getCode());
-		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, response.getMessages().get(0).getSeverity());
-		assertTrue(response.getMessages().get(0).getContent().contains("NOPE"));
+		assertEquals("error", order.getUcp().getStatus());
+		assertNull(order.getId());
+		assertEquals(1, order.getMessages().size());
+		assertEquals("not_found", order.getMessages().get(0).getCode());
+		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, order.getMessages().get(0).getSeverity());
+		assertTrue(order.getMessages().get(0).getContent().contains("NOPE"));
 	}
 
 	@Test

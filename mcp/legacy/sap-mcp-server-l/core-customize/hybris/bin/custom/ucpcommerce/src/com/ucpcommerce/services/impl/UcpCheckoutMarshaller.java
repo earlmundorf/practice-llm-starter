@@ -12,6 +12,7 @@ import com.ucpcommerce.dto.UcpMessage;
 import com.ucpcommerce.dto.UcpPayment;
 import com.ucpcommerce.dto.UcpProduct;
 import com.ucpcommerce.dto.UcpTotal;
+import com.ucpcommerce.services.UcpProfileService;
 
 import de.hybris.platform.commercefacades.order.data.AbstractOrderData;
 import de.hybris.platform.commercefacades.order.data.OrderEntryData;
@@ -36,6 +37,7 @@ import java.util.List;
 public class UcpCheckoutMarshaller
 {
 	private UcpMoneyConverter ucpMoneyConverter;
+	private UcpProfileService ucpProfileService;
 
 	/**
 	 * Marshal a cart into a success-enveloped checkout object.
@@ -300,10 +302,16 @@ public class UcpCheckoutMarshaller
 		return cart.getSubTotal() != null ? cart.getSubTotal().getCurrencyIso() : null;
 	}
 
+	/**
+	 * Checkout envelopes carry the {@code payment_handlers} registry — the
+	 * official {@code response_checkout_schema} requires it (the agent reads
+	 * the usable handlers off the checkout response, not the profile).
+	 */
 	protected UcpEnvelope envelope(final String status)
 	{
 		final UcpEnvelope envelope = new UcpEnvelope(getPinnedUcpVersion());
 		envelope.setStatus(status);
+		envelope.setPaymentHandlers(ucpProfileService.paymentHandlerRegistry());
 		return envelope;
 	}
 
@@ -316,5 +324,11 @@ public class UcpCheckoutMarshaller
 	public void setUcpMoneyConverter(final UcpMoneyConverter ucpMoneyConverter)
 	{
 		this.ucpMoneyConverter = ucpMoneyConverter;
+	}
+
+	@Required
+	public void setUcpProfileService(final UcpProfileService ucpProfileService)
+	{
+		this.ucpProfileService = ucpProfileService;
 	}
 }

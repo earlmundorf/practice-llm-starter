@@ -1,6 +1,10 @@
 package com.ucpcommerce.services;
 
+import com.ucpcommerce.dto.UcpPaymentHandler;
 import com.ucpcommerce.dto.UcpProfile;
+
+import java.util.List;
+import java.util.Map;
 
 /**
  * Builds the public UCP discovery profile served at
@@ -17,4 +21,13 @@ public interface UcpProfileService
 	 * @return the profile document to serialize as the response body
 	 */
 	UcpProfile buildProfile(String baseSiteId);
+
+	/**
+	 * The payment-handler registry (reverse-domain namespace → version
+	 * entries) — the same block the profile advertises. Checkout responses
+	 * embed it in their {@code ucp} envelope because the official
+	 * {@code response_checkout_schema} requires {@code payment_handlers}
+	 * there (the agent picks a handler off the response, not the profile).
+	 */
+	Map<String, List<UcpPaymentHandler>> paymentHandlerRegistry();
 }

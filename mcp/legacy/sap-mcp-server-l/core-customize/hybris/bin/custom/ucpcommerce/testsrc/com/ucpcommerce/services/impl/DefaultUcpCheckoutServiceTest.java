@@ -19,6 +19,7 @@ import com.ucpcommerce.dto.UcpCheckoutRequest;
 import com.ucpcommerce.dto.UcpCheckoutSession;
 import com.ucpcommerce.dto.UcpDestination;
 import com.ucpcommerce.dto.UcpDiscounts;
+import com.ucpcommerce.dto.UcpEnvelope;
 import com.ucpcommerce.dto.UcpFulfillment;
 import com.ucpcommerce.dto.UcpItemRef;
 import com.ucpcommerce.dto.UcpLineItemRequest;
@@ -75,6 +76,9 @@ public class DefaultUcpCheckoutServiceTest
 	private UserFacade userFacade;
 	@Mock
 	private VoucherFacade voucherFacade;
+
+	@Mock
+	private com.ucpcommerce.services.UcpIdempotencyService idempotencyService;
 	@Mock
 	private CartLoaderStrategy cartLoaderStrategy;
 	@Mock
@@ -94,6 +98,14 @@ public class DefaultUcpCheckoutServiceTest
 			}
 		};
 		marshaller.setUcpMoneyConverter(new UcpMoneyConverter());
+		marshaller.setUcpProfileService(new DefaultUcpProfileService()
+		{
+			@Override
+			protected String getPinnedUcpVersion()
+			{
+				return "2026-04-08";
+			}
+		});
 
 		final UcpOrderMarshaller orderMarshaller = new UcpOrderMarshaller();
 		orderMarshaller.setUcpCheckoutMarshaller(marshaller);
@@ -107,11 +119,22 @@ public class DefaultUcpCheckoutServiceTest
 			}
 		});
 
-		checkoutService = new DefaultUcpCheckoutService();
+		checkoutService = new DefaultUcpCheckoutService()
+		{
+			@Override
+			protected String getPinnedUcpVersion()
+			{
+				return "2026-04-08";
+			}
+		};
 		checkoutService.setCartFacade(cartFacade);
 		checkoutService.setCheckoutFacade(checkoutFacade);
 		checkoutService.setUserFacade(userFacade);
 		checkoutService.setVoucherFacade(voucherFacade);
+		checkoutService.setUcpIdempotencyService(idempotencyService);
+		when(idempotencyService.consult(anyString(), anyString(), anyString())).thenReturn(
+			new com.ucpcommerce.services.UcpIdempotencyService.Consultation(
+				com.ucpcommerce.services.UcpIdempotencyService.Outcome.NEW, null));
 		checkoutService.setCartLoaderStrategy(cartLoaderStrategy);
 		checkoutService.setUcpCheckoutSessionService(sessionService);
 		checkoutService.setUcpCheckoutMarshaller(marshaller);
@@ -416,6 +439,49 @@ public class DefaultUcpCheckoutServiceTest
 		verify(voucherFacade, never()).releaseVoucher(anyString());
 		assertEquals("success", checkout.getUcp().getStatus());
 		assertEquals(List.of("10OFF"), checkout.getDiscounts().getCodes());
+		// Official discount.json echo: applied[] entries with required
+		// title + amount (positive magnitude; 0 when the facade reports none).
+		assertEquals(1, checkout.getDiscounts().getApplied().size());
+		assertEquals("10OFF", checkout.getDiscounts().getApplied().get(0).getCode());
+		assertEquals("10OFF", checkout.getDiscounts().getApplied().get(0).getTitle());
+		assertEquals(Long.valueOf(0L), checkout.getDiscounts().getApplied().get(0).getAmount());
+	}
+
+	@Test
+	public void discountCodesMatchCaseInsensitively() throws Exception
+	{
+		// DSC-005 (discount.md): a case variant of an applied code neither
+		// releases nor re-applies it — and the echo keeps the canonical code.
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_INCOMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(sessionCart());
+		when(voucherFacade.getVouchersForCart()).thenReturn(List.of(appliedVoucher("10OFF")));
+
+		final UcpCheckout checkout = checkoutService.update(CHECKOUT_ID, discountsRequest("10off"));
+
+		verify(voucherFacade, never()).applyVoucher(anyString());
+		verify(voucherFacade, never()).releaseVoucher(anyString());
+		assertEquals(List.of("10OFF"), checkout.getDiscounts().getCodes());
+	}
+
+	@Test
+	public void caseVariantOfAnUnappliedCodeRetriesTheCanonicalForm() throws Exception
+	{
+		// Hybris coupon codes are stored canonically (uppercase): "10off"
+		// misses as-given, then the uppercase retry lands.
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_INCOMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(sessionCart());
+		when(voucherFacade.getVouchersForCart())
+			.thenReturn(List.of(), List.of(appliedVoucher("10OFF")));
+		doThrow(new VoucherOperationException("no such voucher"))
+			.when(voucherFacade).applyVoucher("10off");
+
+		final UcpCheckout checkout = checkoutService.update(CHECKOUT_ID, discountsRequest("10off"));
+
+		verify(voucherFacade).applyVoucher("10OFF");
+		assertEquals("success", checkout.getUcp().getStatus());
+		assertEquals("no invalid-code message when a case variant lands",
+			null, checkout.getMessages());
+		assertEquals(List.of("10OFF"), checkout.getDiscounts().getCodes());
 	}
 
 	@Test
@@ -440,8 +506,9 @@ public class DefaultUcpCheckoutServiceTest
 		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_INCOMPLETE, null));
 		when(checkoutFacade.getCheckoutCart()).thenReturn(sessionCart());
 		when(voucherFacade.getVouchersForCart()).thenReturn(List.of());
+		// Every case variant misses (the service retries upper/lower forms).
 		doThrow(new VoucherOperationException("no such voucher"))
-			.when(voucherFacade).applyVoucher("BOGUS");
+			.when(voucherFacade).applyVoucher(anyString());
 
 		final UcpCheckout checkout = checkoutService.update(CHECKOUT_ID, discountsRequest("BOGUS"));
 
@@ -484,7 +551,7 @@ public class DefaultUcpCheckoutServiceTest
 		final UcpCheckout checkout = checkoutService.update(CHECKOUT_ID, itemsRequest("X", 1));
 
 		assertEquals("error", checkout.getUcp().getStatus());
-		assertEquals("invalid_request", checkout.getMessages().get(0).getCode());
+		assertEquals("conflict", checkout.getMessages().get(0).getCode());
 		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, checkout.getMessages().get(0).getSeverity());
 		verify(cartLoaderStrategy, never()).loadCart(anyString());
 		verify(sessionService, never()).update(anyString(), anyString(), anyString());
@@ -754,7 +821,11 @@ public class DefaultUcpCheckoutServiceTest
 		assertEquals("New York", method.getDestinations().get(0).getAddressLocality());
 		assertEquals("US", method.getDestinations().get(0).getAddressCountry());
 		assertNull("nothing selected yet", method.getSelectedDestinationId());
-		assertNull("no groups before a destination is applied", method.getGroups());
+		// The group block is always present (clients index groups[0]); its
+		// options stay empty until a destination is applied.
+		assertEquals(1, method.getGroups().size());
+		assertTrue("no options before a destination is applied",
+			method.getGroups().get(0).getOptions().isEmpty());
 		assertEquals(UcpCheckout.STATUS_INCOMPLETE, checkout.getStatus());
 	}
 
@@ -888,15 +959,52 @@ public class DefaultUcpCheckoutServiceTest
 
 	private UcpCheckoutRequest completeRequest(final String handlerId)
 	{
+		return completeRequest(handlerId, "tok_any_token_accepted");
+	}
+
+	private UcpCheckoutRequest completeRequest(final String handlerId, final String token)
+	{
 		final UcpCheckoutRequest request = new UcpCheckoutRequest();
 		final UcpPayment payment = new UcpPayment();
 		final UcpPaymentInstrument instrument = new UcpPaymentInstrument();
 		instrument.setHandlerId(handlerId);
 		instrument.setType("card");
-		instrument.setCredential(Map.of("token", "tok_any_token_accepted"));
+		instrument.setCredential(Map.of("token", token));
 		payment.setInstruments(List.of(instrument));
 		request.setPayment(payment);
 		return request;
+	}
+
+	@Test
+	public void createRejectsAnUnsupportedRequestedUcpVersion()
+	{
+		// Version negotiation: a request pinned to a version this server does
+		// not implement is version_unsupported (HTTP 422 over REST).
+		final UcpCheckoutRequest request = itemsRequest("WIRELESS_GAMING_MOUSE", 1);
+		final UcpEnvelope requested = new UcpEnvelope("2099-01-01");
+		request.setUcp(requested);
+
+		final UcpCheckout checkout = checkoutService.create(request);
+
+		assertEquals("error", checkout.getUcp().getStatus());
+		assertEquals("version_unsupported", checkout.getMessages().get(0).getCode());
+		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, checkout.getMessages().get(0).getSeverity());
+	}
+
+	@Test
+	public void completeDeclinesTheFailTokenProbeWithoutAcceptingTheCompletion() throws Exception
+	{
+		// The mock handler's decline probe: fail_token → payment_declined
+		// (HTTP 402 over REST) BEFORE any state transition or order placement.
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_READY_FOR_COMPLETE, null));
+
+		final UcpCheckout checkout = checkoutService.complete(CHECKOUT_ID,
+			completeRequest(HANDLER_ID, "fail_token"), IDEMPOTENCY_KEY);
+
+		assertEquals("error", checkout.getUcp().getStatus());
+		assertEquals("payment_declined", checkout.getMessages().get(0).getCode());
+		verify(sessionService, never()).beginCompletion(anyString(), anyString());
+		verify(checkoutFacade, never()).placeOrder();
 	}
 
 	private OrderData orderData()
@@ -995,7 +1103,7 @@ public class DefaultUcpCheckoutServiceTest
 			completeRequest(HANDLER_ID), IDEMPOTENCY_KEY);
 
 		assertEquals("error", checkout.getUcp().getStatus());
-		assertEquals("invalid_request", checkout.getMessages().get(0).getCode());
+		assertEquals("conflict", checkout.getMessages().get(0).getCode());
 		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, checkout.getMessages().get(0).getSeverity());
 		verify(checkoutFacade, never()).placeOrder();
 	}
@@ -1111,7 +1219,7 @@ public class DefaultUcpCheckoutServiceTest
 
 		assertEquals("success", checkout.getUcp().getStatus());
 		assertEquals(UcpCheckout.STATUS_INCOMPLETE, checkout.getStatus());
-		assertEquals("invalid_request", checkout.getMessages().get(0).getCode());
+		assertEquals("not_ready", checkout.getMessages().get(0).getCode());
 		assertEquals(UcpMessage.SEVERITY_RECOVERABLE, checkout.getMessages().get(0).getSeverity());
 		verify(sessionService).update(CHECKOUT_ID, CART_CODE, UcpCheckout.STATUS_INCOMPLETE);
 		verify(sessionService, never()).beginCompletion(anyString(), anyString());
@@ -1146,7 +1254,7 @@ public class DefaultUcpCheckoutServiceTest
 			completeRequest(HANDLER_ID), IDEMPOTENCY_KEY);
 
 		assertEquals("error", checkout.getUcp().getStatus());
-		assertEquals("invalid_request", checkout.getMessages().get(0).getCode());
+		assertEquals("conflict", checkout.getMessages().get(0).getCode());
 		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, checkout.getMessages().get(0).getSeverity());
 		verify(checkoutFacade, never()).placeOrder();
 	}
@@ -1227,7 +1335,7 @@ public class DefaultUcpCheckoutServiceTest
 		final UcpCheckout checkout = checkoutService.cancel(CHECKOUT_ID, IDEMPOTENCY_KEY);
 
 		assertEquals("error", checkout.getUcp().getStatus());
-		assertEquals("invalid_request", checkout.getMessages().get(0).getCode());
+		assertEquals("conflict", checkout.getMessages().get(0).getCode());
 		assertEquals(UcpMessage.SEVERITY_UNRECOVERABLE, checkout.getMessages().get(0).getSeverity());
 		verify(sessionService, never()).update(anyString(), anyString(), anyString());
 	}

@@ -10,6 +10,7 @@ import com.ucpcommerce.services.UcpProfileService;
 import de.hybris.platform.util.Config;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Default profile builder. Shape corrected against the official discovery
@@ -25,6 +26,7 @@ public class DefaultUcpProfileService implements UcpProfileService
 	private static final String CATALOG_CAPABILITY = "dev.ucp.shopping.catalog";
 	private static final String CHECKOUT_CAPABILITY = "dev.ucp.shopping.checkout";
 	private static final String FULFILLMENT_CAPABILITY = "dev.ucp.shopping.fulfillment";
+	private static final String DISCOUNT_CAPABILITY = "dev.ucp.shopping.discount";
 	private static final String ORDER_CAPABILITY = "dev.ucp.shopping.order";
 	/** Custom reverse-domain capabilities (design R7) — no hosted spec/schema URLs. */
 	private static final String PROMOTIONS_CAPABILITY = "com.thinkshop.promotions";
@@ -57,6 +59,12 @@ public class DefaultUcpProfileService implements UcpProfileService
 		body.getCapabilities().put(FULFILLMENT_CAPABILITY,
 			List.of(capability(version, specBase + "/specification/fulfillment",
 				specBase + "/schemas/shopping/fulfillment.json", CHECKOUT_CAPABILITY)));
+		// Discount extension: declarative discounts.codes (case-insensitive)
+		// with the official applied[] echo — implemented by the checkout
+		// service's voucher/coupon integration.
+		body.getCapabilities().put(DISCOUNT_CAPABILITY,
+			List.of(capability(version, specBase + "/specification/discount",
+				specBase + "/schemas/shopping/discount.json", CHECKOUT_CAPABILITY)));
 		body.getCapabilities().put(ORDER_CAPABILITY,
 			List.of(capability(version, specBase + "/specification/order",
 				specBase + "/schemas/shopping/order.json", null)));
@@ -83,12 +91,23 @@ public class DefaultUcpProfileService implements UcpProfileService
 		// registered under its reverse-domain namespace. complete_checkout
 		// accepts any credential token for this handler id and runs the
 		// existing mock default-Visa flow — honestly declared as a mock.
-		final UcpPaymentHandler mockCard = new UcpPaymentHandler(UcpcommerceConstants.PAYMENT_HANDLER_ID,
-			"ThinkShop mock card (demo handler — any credential token is accepted, no real payment)");
-		mockCard.setVersion(version);
-		body.getPaymentHandlers().put(MOCK_HANDLER_NAMESPACE, List.of(mockCard));
+		body.getPaymentHandlers().putAll(paymentHandlerRegistry());
 
 		return profile;
+	}
+
+	@Override
+	public Map<String, List<UcpPaymentHandler>> paymentHandlerRegistry()
+	{
+		final UcpPaymentHandler mockCard = new UcpPaymentHandler(UcpcommerceConstants.PAYMENT_HANDLER_ID,
+			"ThinkShop mock card (demo handler — any credential token is accepted, no real payment)");
+		mockCard.setVersion(getPinnedUcpVersion());
+		// The ecosystem's well-known mock id, honestly declared as an alias of
+		// the same demo handler (the conformance suite hard-codes it).
+		final UcpPaymentHandler alias = new UcpPaymentHandler(UcpcommerceConstants.PAYMENT_HANDLER_ALIAS,
+			"Alias of thinkshop_mock_card (same demo mock — no real payment)");
+		alias.setVersion(getPinnedUcpVersion());
+		return Map.of(MOCK_HANDLER_NAMESPACE, List.of(mockCard, alias));
 	}
 
 	private static UcpCapability capability(final String version, final String spec, final String schema,

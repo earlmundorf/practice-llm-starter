@@ -9,9 +9,11 @@ import java.util.List;
 /**
  * The {@code discounts} block of a checkout payload — {@code codes[]} carries
  * merchant discount (voucher) codes. On a request the list is DECLARATIVE
- * like {@code line_items}: codes not yet applied are applied, applied codes
- * absent from the list are released, and an absent block leaves the applied
- * codes unchanged. On a response it echoes the currently applied codes.
+ * like {@code line_items}: codes not yet applied are applied (matched
+ * case-insensitively per {@code discount.md}), applied codes absent from the
+ * list are released, and an absent block leaves the applied codes unchanged.
+ * On a response it echoes the currently applied canonical codes plus the
+ * official {@code applied[]} entries ({@code discount.json}).
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -19,6 +21,10 @@ public class UcpDiscounts
 {
 	@JsonProperty("codes")
 	private List<String> codes;
+
+	/** Successfully applied discounts (response-only, {@code ucp_request: omit}). */
+	@JsonProperty("applied")
+	private List<UcpAppliedDiscount> applied;
 
 	public UcpDiscounts()
 	{
@@ -38,5 +44,15 @@ public class UcpDiscounts
 	public void setCodes(final List<String> codes)
 	{
 		this.codes = codes;
+	}
+
+	public List<UcpAppliedDiscount> getApplied()
+	{
+		return applied;
+	}
+
+	public void setApplied(final List<UcpAppliedDiscount> applied)
+	{
+		this.applied = applied;
 	}
 }

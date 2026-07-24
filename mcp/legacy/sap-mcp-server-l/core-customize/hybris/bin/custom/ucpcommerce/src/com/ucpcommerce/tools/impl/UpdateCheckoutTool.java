@@ -93,7 +93,8 @@ public class UpdateCheckoutTool implements UcpTool
 			checkoutArg.remove("id");
 		}
 		final UcpCheckoutRequest payload = objectMapper.convertValue(checkoutArg, UcpCheckoutRequest.class);
-		return objectMapper.writeValueAsString(ucpCheckoutService.update((String) args.get("id"), payload));
+		return objectMapper.writeValueAsString(ucpCheckoutService.update((String) args.get("id"), payload,
+			context != null ? context.getIdempotencyKey() : null));
 	}
 
 	@Required

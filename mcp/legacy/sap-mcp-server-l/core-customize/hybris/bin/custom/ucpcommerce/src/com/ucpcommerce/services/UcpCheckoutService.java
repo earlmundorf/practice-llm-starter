@@ -25,6 +25,13 @@ public interface UcpCheckoutService
 	UcpCheckout create(UcpCheckoutRequest payload);
 
 	/**
+	 * Create with OPTIONAL idempotency (official binding: any mutating call
+	 * may carry an Idempotency-Key): an identical retry replays the first
+	 * response, a same-key/different-payload retry is a conflict.
+	 */
+	UcpCheckout create(UcpCheckoutRequest payload, String idempotencyKey);
+
+	/**
 	 * Resolve a checkout id and re-marshal the backing cart. Unknown/expired
 	 * ids yield an {@code unrecoverable} {@code not_found} message payload.
 	 */
@@ -42,6 +49,9 @@ public interface UcpCheckoutService
 	 * become visible here.
 	 */
 	UcpCheckout update(String checkoutId, UcpCheckoutRequest payload);
+
+	/** Update with OPTIONAL idempotency — semantics as on create. */
+	UcpCheckout update(String checkoutId, UcpCheckoutRequest payload, String idempotencyKey);
 
 	/**
 	 * Complete the purchase (design S3): validate the payment instrument's

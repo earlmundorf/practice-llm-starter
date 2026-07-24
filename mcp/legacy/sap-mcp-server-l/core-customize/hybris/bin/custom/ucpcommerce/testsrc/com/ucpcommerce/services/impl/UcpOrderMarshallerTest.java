@@ -48,6 +48,14 @@ public class UcpOrderMarshallerTest
 		};
 		final UcpMoneyConverter moneyConverter = new UcpMoneyConverter();
 		checkoutMarshaller.setUcpMoneyConverter(moneyConverter);
+		checkoutMarshaller.setUcpProfileService(new DefaultUcpProfileService()
+		{
+			@Override
+			protected String getPinnedUcpVersion()
+			{
+				return PINNED_VERSION;
+			}
+		});
 
 		marshaller = new UcpOrderMarshaller();
 		marshaller.setUcpCheckoutMarshaller(checkoutMarshaller);
@@ -135,16 +143,24 @@ public class UcpOrderMarshallerTest
 	@Test
 	public void fullMarshalCarriesTheWholeOrderSchema()
 	{
-		final UcpOrder full = marshaller.marshalFull(order());
+		final UcpOrder full = marshaller.marshalFull(order(), "ucp_chk_prov");
 
 		assertEquals("00005004", full.getId());
+		assertEquals("order.json requires the originating checkout id",
+			"ucp_chk_prov", full.getCheckoutId());
 		assertNotNull(full.getCreatedAt());
 		assertEquals("hybris status codes are lowercased on the wire", "completed", full.getStatus());
 		assertEquals("USD", full.getCurrency());
 
 		assertEquals(1, full.getLineItems().size());
 		assertEquals("WIRELESS_GAMING_MOUSE", full.getLineItems().get(0).getItem().getId());
-		assertEquals(Long.valueOf(2L), full.getLineItems().get(0).getQuantity());
+		// ORDER line-item shape (order_line_item.json): quantity is an object
+		// and a derived status is required — always processing on this demo
+		// platform (no fulfillment process runs).
+		assertEquals(Long.valueOf(2L), full.getLineItems().get(0).getQuantity().getTotal());
+		assertEquals(Long.valueOf(2L), full.getLineItems().get(0).getQuantity().getOriginal());
+		assertEquals(Long.valueOf(0L), full.getLineItems().get(0).getQuantity().getFulfilled());
+		assertEquals("processing", full.getLineItems().get(0).getStatus());
 		assertEquals("unit price $79.99 must become 7999 minor units",
 			Long.valueOf(7999L), full.getLineItems().get(0).getItem().getPrice());
 
@@ -203,7 +219,23 @@ public class UcpOrderMarshallerTest
 	public void nullInputsMarshalToNull()
 	{
 		assertNull(marshaller.marshal(null));
-		assertNull(marshaller.marshalFull(null));
+		assertNull(marshaller.marshalFull(null, null));
 		assertNull(marshaller.marshalSummary(null));
+	}
+
+	@Test
+	public void fullMarshalAlwaysEmitsFulfillmentAndTolerateUnknownCheckout()
+	{
+		// order.json requires fulfillment — an address-less order still gets
+		// an (empty) object; an unknown provenance omits checkout_id.
+		final OrderData bare = order();
+		bare.setDeliveryAddress(null);
+		bare.setDeliveryMode(null);
+
+		final UcpOrder full = marshaller.marshalFull(bare, null);
+
+		assertNull(full.getCheckoutId());
+		assertNotNull("fulfillment must be present even when empty", full.getFulfillment());
+		assertNull(full.getFulfillment().getDestination());
 	}
 }

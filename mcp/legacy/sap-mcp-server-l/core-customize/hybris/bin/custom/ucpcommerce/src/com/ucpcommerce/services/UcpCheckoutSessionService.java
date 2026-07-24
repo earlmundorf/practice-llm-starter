@@ -72,4 +72,15 @@ public interface UcpCheckoutSessionService
 	 * {@link #beginCompletion}. No-op for unknown/expired ids.
 	 */
 	void recordCompletion(String checkoutId, String completionResponseJson, String orderCode);
+
+	/**
+	 * Provenance lookup for the order capability: the checkout id whose
+	 * completion placed the given order ({@code order.json} requires
+	 * {@code checkout_id}). Read-only — no {@code lastAccessedAt} touch, no
+	 * eviction.
+	 *
+	 * @return the checkout id, or null when no session recorded this order
+	 *         (legacy orders, or the entry has been swept)
+	 */
+	String findCheckoutIdForOrder(String orderCode);
 }

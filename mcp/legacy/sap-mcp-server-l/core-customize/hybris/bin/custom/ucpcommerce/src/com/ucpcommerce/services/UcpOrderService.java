@@ -1,6 +1,6 @@
 package com.ucpcommerce.services;
 
-import com.ucpcommerce.dto.UcpOrderResponse;
+import com.ucpcommerce.dto.UcpOrder;
 import com.ucpcommerce.dto.UcpOrdersResponse;
 
 import java.util.List;
@@ -17,9 +17,12 @@ public interface UcpOrderService
 {
 	/**
 	 * Full order detail for one order id (the hybris order code returned by
-	 * {@code complete_checkout} / {@code list_orders}).
+	 * {@code complete_checkout} / {@code list_orders}). The order object IS
+	 * the top-level response (official {@code order.json} — no wrapper), with
+	 * its {@code ucp} envelope set; a miss returns an error-enveloped payload
+	 * with {@code messages[]}.
 	 */
-	UcpOrderResponse getOrder(String id);
+	UcpOrder getOrder(String id);
 
 	/**
 	 * Paged order history for the authenticated customer.

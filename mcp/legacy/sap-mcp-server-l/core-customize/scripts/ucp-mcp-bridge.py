@@ -36,7 +36,9 @@ import argparse
 import hashlib
 import http.server
 import json
+import os
 import ssl
+import sys
 import threading
 import urllib.error
 import urllib.parse
@@ -71,13 +73,20 @@ class TokenSource:
             return self._token
 
 
+# Only the tools whose binding REQUIRES the key get one injected — a blanket
+# key on every call would make unrelated retries replay each other.
+_IDEMPOTENT_TOOLS = {"complete_checkout", "cancel_checkout"}
+
+
 def inject_idempotency_key(body):
-    """Add a deterministic params.meta["idempotency-key"] to tools/call requests."""
+    """Add a deterministic params.meta["idempotency-key"] to complete/cancel calls."""
     try:
         rpc = json.loads(body)
         if rpc.get("method") != "tools/call":
             return body
         params = rpc.setdefault("params", {})
+        if params.get("name") not in _IDEMPOTENT_TOOLS:
+            return body
         meta = params.get("meta") or params.get("_meta") or {}
         if not meta.get("idempotency-key"):
             seed = json.dumps([params.get("name"), params.get("arguments")], sort_keys=True)
@@ -90,14 +99,30 @@ def inject_idempotency_key(body):
 
 def main():
     parser = argparse.ArgumentParser(description="Auth-injecting MCP bridge for generic MCP chat clients")
-    parser.add_argument("--port", type=int, default=8183)
-    parser.add_argument("--upstream", default="https://localhost:9002")
-    parser.add_argument("--site", default="electronics")
-    parser.add_argument("--client-id", default="trusted_client")
-    parser.add_argument("--client-secret", default="secret")
-    parser.add_argument("--username", default="john.doe@thinkshop.com")
-    parser.add_argument("--password", default="1234")
+    parser.add_argument("--port", type=int, default=int(os.getenv("UCP_BRIDGE_PORT", "8183")))
+    parser.add_argument("--upstream", default=os.getenv("UCP_UPSTREAM", "https://localhost:9002"))
+    parser.add_argument("--site", default=os.getenv("UCP_SITE", "electronics"))
+    # Prefer a least-privilege OAuth client over trusted_client where one is
+    # configured; the checked-in values are the LOCAL DEMO defaults (repo
+    # rule: real credentials come from the environment).
+    parser.add_argument("--client-id", default=os.getenv("UCP_CLIENT_ID", "mobile_android"))
+    parser.add_argument("--client-secret", default=os.getenv("UCP_CLIENT_SECRET", "secret"))
+    parser.add_argument("--username", default=os.getenv("UCP_USERNAME", "john.doe@thinkshop.com"))
+    parser.add_argument("--password", default=os.getenv("UCP_PASSWORD", "1234"))
+    parser.add_argument("--auth-token", default=os.getenv("UCP_BRIDGE_AUTH_TOKEN"),
+                        help="Optional shared secret; when set, callers must send "
+                             "Authorization: Bearer <token> to the bridge")
     args = parser.parse_args()
+
+    if not args.auth_token:
+        print("=" * 72, file=sys.stderr)
+        print("WARNING: this bridge accepts UNAUTHENTICATED requests and injects a", file=sys.stderr)
+        print("         merchant bearer for the demo customer. Anyone who can reach", file=sys.stderr)
+        print("         it (e.g. through a tunnel) can browse AND PLACE ORDERS as", file=sys.stderr)
+        print("         that customer. Local demo use only — pass --auth-token (or", file=sys.stderr)
+        print("         UCP_BRIDGE_AUTH_TOKEN) to require a shared secret, and take", file=sys.stderr)
+        print("         any tunnel down when finished.", file=sys.stderr)
+        print("=" * 72, file=sys.stderr)
 
     mcp_url = f"{args.upstream}/occ/v2/{args.site}/ucp/mcp"
     tokens = TokenSource(args.upstream, args.client_id, args.client_secret,
@@ -122,6 +147,10 @@ def main():
             self._reply(200)  # stateless binding: session termination is a no-op
 
         def do_POST(self):
+            if args.auth_token:
+                supplied = (self.headers.get("Authorization") or "").removeprefix("Bearer ").strip()
+                if supplied != args.auth_token:
+                    return self._reply(401, json.dumps({"error": "bridge auth token required"}).encode())
             body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             body = inject_idempotency_key(body)
             for attempt in (1, 2):

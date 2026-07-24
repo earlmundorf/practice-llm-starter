@@ -51,6 +51,14 @@ public class UcpCheckoutMarshallerTest
 			}
 		};
 		marshaller.setUcpMoneyConverter(new UcpMoneyConverter());
+		marshaller.setUcpProfileService(new DefaultUcpProfileService()
+		{
+			@Override
+			protected String getPinnedUcpVersion()
+			{
+				return PINNED_VERSION;
+			}
+		});
 	}
 
 	private PriceData usd(final String major)
@@ -357,5 +365,23 @@ public class UcpCheckoutMarshallerTest
 		final Map<String, Long> totals = totalsByType(checkout);
 		assertEquals("zero subtotal is still reported", Long.valueOf(0L), totals.get(UcpTotal.TYPE_SUBTOTAL));
 		assertEquals(Long.valueOf(0L), totals.get(UcpTotal.TYPE_TOTAL));
+	}
+
+	@Test
+	public void envelopeCarriesPaymentHandlerRegistry()
+	{
+		// Official response_checkout_schema: the checkout's ucp envelope must
+		// embed the payment_handlers registry (the agent reads usable handlers
+		// off the response, not the profile).
+		final UcpCheckout checkout = marshaller.marshal("ucp_chk_abc", UcpCheckout.STATUS_INCOMPLETE,
+			cart(), null, null);
+
+		assertNotNull(checkout.getUcp().getPaymentHandlers());
+		assertTrue(checkout.getUcp().getPaymentHandlers().containsKey("com.thinkshop.mock_card"));
+		assertEquals("thinkshop_mock_card",
+			checkout.getUcp().getPaymentHandlers().get("com.thinkshop.mock_card").get(0).getId());
+
+		// Error payloads keep the registry too — same envelope builder.
+		assertNotNull(marshaller.error(List.of()).getUcp().getPaymentHandlers());
 	}
 }

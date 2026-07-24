@@ -10,7 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ucpcommerce.dto.UcpEnvelope;
-import com.ucpcommerce.dto.UcpOrderResponse;
+import com.ucpcommerce.dto.UcpOrder;
 import com.ucpcommerce.dto.UcpOrdersResponse;
 import com.ucpcommerce.services.UcpOrderService;
 
@@ -60,7 +60,7 @@ public class UcpOrderRestControllerTest
 	@Test
 	public void getOrderPassesThePathIdThrough() throws Exception
 	{
-		final UcpOrderResponse payload = new UcpOrderResponse();
+		final UcpOrder payload = new UcpOrder();
 		payload.setUcp(success());
 		when(ucpOrderService.getOrder("00005004")).thenReturn(payload);
 

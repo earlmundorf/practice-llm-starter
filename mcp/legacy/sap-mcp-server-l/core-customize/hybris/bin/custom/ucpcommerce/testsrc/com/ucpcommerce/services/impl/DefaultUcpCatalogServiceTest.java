@@ -14,6 +14,7 @@ import com.ucpcommerce.dto.UcpCatalogResponse;
 import com.ucpcommerce.dto.UcpMessage;
 import com.ucpcommerce.dto.UcpProduct;
 import com.ucpcommerce.dto.UcpProductResponse;
+import com.ucpcommerce.dto.UcpVariant;
 
 import de.hybris.bootstrap.annotations.UnitTest;
 import de.hybris.platform.basecommerce.enums.StockLevelStatus;
@@ -118,9 +119,27 @@ public class DefaultUcpCatalogServiceTest
 		assertEquals("USD", product.getCurrency());
 		assertEquals("in_stock", product.getAvailability());
 
+		// Official product.json conformance: description is a formats object,
+		// price_range and one variant (mirroring the variantless product) are
+		// required.
+		assertEquals("Summary of Laptop Pro 15", product.getDescription().getPlain());
+		assertEquals(Long.valueOf(129999L), product.getPriceRange().getMin().getAmount());
+		assertEquals(Long.valueOf(129999L), product.getPriceRange().getMax().getAmount());
+		assertEquals("USD", product.getPriceRange().getMin().getCurrency());
+		assertEquals(1, product.getVariants().size());
+		assertEquals("LAPTOP_PRO_15", product.getVariants().get(0).getId());
+		assertEquals(Long.valueOf(129999L), product.getVariants().get(0).getPrice().getAmount());
+		assertEquals(Boolean.TRUE, product.getVariants().get(0).getAvailability().getAvailable());
+		assertEquals("in_stock", product.getVariants().get(0).getAvailability().getStatus());
+
 		assertNotNull(response.getPagination());
 		assertEquals(Long.valueOf(1L), response.getPagination().getTotalResults());
 		assertEquals(Integer.valueOf(1), response.getPagination().getTotalPages());
+		// Official pagination.json response block: has_next_page required,
+		// cursor only when true.
+		assertEquals(Boolean.FALSE, response.getPagination().getHasNextPage());
+		assertNull(response.getPagination().getCursor());
+		assertEquals(Long.valueOf(1L), response.getPagination().getTotalCount());
 	}
 
 	@Test
@@ -176,7 +195,11 @@ public class DefaultUcpCatalogServiceTest
 		page.setResults(List.of(productData("OOS", "Gone", "9.99", StockLevelStatus.OUTOFSTOCK)));
 		when(productSearchFacade.textSearch(any(SearchStateData.class), any(PageableData.class))).thenReturn(page);
 
-		assertEquals("out_of_stock", catalogService.search("x", 0, 10).getProducts().get(0).getAvailability());
+		final UcpProduct product = catalogService.search("x", 0, 10).getProducts().get(0);
+		assertEquals("out_of_stock", product.getAvailability());
+		assertEquals("the variant mirrors the product's availability",
+			Boolean.FALSE, product.getVariants().get(0).getAvailability().getAvailable());
+		assertEquals("out_of_stock", product.getVariants().get(0).getAvailability().getStatus());
 	}
 
 	@Test
@@ -222,6 +245,11 @@ public class DefaultUcpCatalogServiceTest
 		assertEquals("success", response.getUcp().getStatus());
 		assertEquals(1, response.getProducts().size());
 		assertEquals("LAPTOP_PRO_15", response.getProducts().get(0).getId());
+		// Lookup variants must carry the input correlation (lookup_variant).
+		final UcpVariant.InputCorrelation input =
+			response.getProducts().get(0).getVariants().get(0).getInputs().get(0);
+		assertEquals("LAPTOP_PRO_15", input.getId());
+		assertEquals("exact", input.getMatch());
 		assertEquals(1, response.getMessages().size());
 		assertEquals("not_found", response.getMessages().get(0).getCode());
 		assertEquals(UcpMessage.SEVERITY_RECOVERABLE, response.getMessages().get(0).getSeverity());

@@ -9,6 +9,12 @@
  idempotent replay (Phase 5). Persisted (CCv2 multi-node safe) — the mirror
  of coremcp's McpSessionEntry, with lazy TTL eviction on access plus the
  ucpCheckoutSessionCleanupCronJob sweep for abandoned rows.
+
+ UcpIdempotencyRecord — one accepted mutating call per (user, operation,
+ Idempotency-Key): the request hash detects a SAME-key/DIFFERENT-payload
+ conflict (HTTP 409 per the official binding) and the stored response is
+ replayed verbatim for an identical retry (create/update; complete replays
+ from the session entry). Swept by the same cleanup cron.
 -->
 
 <items xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -80,6 +86,36 @@
                 </index>
                 <index name="ucpCheckoutLastAccessIdx">
                     <key attribute="lastAccessedAt"/>
+                </index>
+            </indexes>
+        </itemtype>
+
+        <itemtype code="UcpIdempotencyRecord"
+                  autocreate="true"
+                  generate="true">
+            <deployment table="UcpIdempotencyRecs" typecode="14004"/>
+            <attributes>
+                <attribute qualifier="cacheKey" type="java.lang.String">
+                    <description>Composite lookup key: userUid|operation|idempotencyKey.</description>
+                    <persistence type="property"/>
+                    <modifiers unique="true" optional="false"/>
+                </attribute>
+                <attribute qualifier="requestHash" type="java.lang.String">
+                    <description>SHA-256 of the canonical request payload — a same-key retry with a different hash is a 409 conflict.</description>
+                    <persistence type="property"/>
+                    <modifiers optional="false"/>
+                </attribute>
+                <attribute qualifier="responseJson" type="java.lang.String">
+                    <description>Serialized response replayed verbatim for an identical retry (create/update; null for complete — the session entry replays those).</description>
+                    <persistence type="property">
+                        <columntype database="mysql"><value>MEDIUMTEXT</value></columntype>
+                        <columntype><value>HYBRIS.LONG_STRING</value></columntype>
+                    </persistence>
+                </attribute>
+            </attributes>
+            <indexes>
+                <index name="ucpIdemCacheKeyIdx" unique="true">
+                    <key attribute="cacheKey"/>
                 </index>
             </indexes>
         </itemtype>

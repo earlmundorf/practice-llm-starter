@@ -1,7 +1,10 @@
 package com.ucpcommerce.services.impl;
 
 import com.coremcp.services.DeepLinkBuilder;
+import com.ucpcommerce.dto.UcpFulfillment;
+import com.ucpcommerce.dto.UcpLineItem;
 import com.ucpcommerce.dto.UcpOrder;
+import com.ucpcommerce.dto.UcpOrderLineItem;
 import com.ucpcommerce.dto.UcpTotal;
 
 import de.hybris.platform.commercefacades.order.data.OrderData;
@@ -10,6 +13,7 @@ import de.hybris.platform.commercefacades.order.data.OrderHistoryData;
 import org.springframework.beans.factory.annotation.Required;
 
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -59,14 +63,22 @@ public class UcpOrderMarshaller
 		return order;
 	}
 
-	/** Full UCP order schema for the order capability ({@code get_order}). */
-	public UcpOrder marshalFull(final OrderData orderData)
+	/**
+	 * Full UCP order schema for the order capability ({@code get_order}).
+	 *
+	 * @param orderData  the loaded hybris order
+	 * @param checkoutId the UCP checkout session the order was placed from,
+	 *                   or null when unknown (legacy orders / swept session) —
+	 *                   {@code checkout_id} is then omitted
+	 */
+	public UcpOrder marshalFull(final OrderData orderData, final String checkoutId)
 	{
 		final UcpOrder order = marshal(orderData);
 		if (order == null)
 		{
 			return null;
 		}
+		order.setCheckoutId(checkoutId);
 		order.setStatus(wireStatus(orderData.getStatus() != null ? orderData.getStatus().getCode() : null));
 		if (orderData.getTotalPrice() != null && orderData.getTotalPrice().getCurrencyIso() != null)
 		{
@@ -77,12 +89,37 @@ public class UcpOrderMarshaller
 			order.setCurrency(orderData.getSubTotal().getCurrencyIso());
 		}
 		// Same-package reuse of the checkout marshaller's AbstractOrderData
-		// mapping — one line-item/totals/fulfillment implementation for both
-		// checkout and order payloads.
-		order.setLineItems(ucpCheckoutMarshaller.marshalLineItems(orderData));
+		// mapping — one line-item/totals implementation for both checkout and
+		// order payloads; lines are then lifted to the ORDER line-item shape
+		// (quantity object + required derived status, order_line_item.json).
+		order.setLineItems(toOrderLineItems(ucpCheckoutMarshaller.marshalLineItems(orderData)));
 		order.setTotals(ucpCheckoutMarshaller.marshalTotals(orderData));
-		order.setFulfillment(ucpCheckoutMarshaller.marshalFulfillment(orderData));
+		// order.json requires fulfillment — an empty object when the order
+		// carries no address/mode (its expectations/events are all optional).
+		final UcpFulfillment fulfillment = ucpCheckoutMarshaller.marshalFulfillment(orderData);
+		order.setFulfillment(fulfillment != null ? fulfillment : new UcpFulfillment());
 		return order;
+	}
+
+	/**
+	 * Lift checkout-shaped lines to order lines: quantity becomes the
+	 * {@code {original,total,fulfilled}} block and every line is
+	 * {@code processing} (no fulfillment process runs on this demo platform).
+	 */
+	protected List<UcpOrderLineItem> toOrderLineItems(final List<UcpLineItem> lineItems)
+	{
+		final List<UcpOrderLineItem> orderLines = new ArrayList<>();
+		for (final UcpLineItem line : lineItems)
+		{
+			final UcpOrderLineItem orderLine = new UcpOrderLineItem();
+			orderLine.setId(line.getId());
+			orderLine.setItem(line.getItem());
+			orderLine.setTotals(line.getTotals());
+			orderLine.setQuantity(new UcpOrderLineItem.Quantity(line.getQuantity(), line.getQuantity(), 0L));
+			orderLine.setStatus(UcpOrderLineItem.STATUS_PROCESSING);
+			orderLines.add(orderLine);
+		}
+		return orderLines;
 	}
 
 	/** One order-history entry for {@code list_orders}. */

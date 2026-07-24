@@ -78,8 +78,8 @@ public class DefaultUcpProfileServiceTest
 	public void testProfileAdvertisesCheckoutCapability()
 	{
 		// Exactly the capabilities that work end-to-end: catalog, checkout,
-		// fulfillment (extension), order, promotions, knowledge.
-		assertEquals(6, profileService.buildProfile("electronics").getUcp().getCapabilities().size());
+		// fulfillment + discount (extensions), order, promotions, knowledge.
+		assertEquals(7, profileService.buildProfile("electronics").getUcp().getCapabilities().size());
 		final UcpCapability checkout = capability("dev.ucp.shopping.checkout");
 		assertNotNull("checkout capability must be advertised once the lifecycle works", checkout);
 		assertEquals(PINNED_VERSION, checkout.getVersion());
@@ -96,6 +96,17 @@ public class DefaultUcpProfileServiceTest
 		final UcpCapability fulfillment = capability("dev.ucp.shopping.fulfillment");
 		assertNotNull("fulfillment capability must be advertised", fulfillment);
 		assertEquals("dev.ucp.shopping.checkout", fulfillment.getExtendsCapability());
+	}
+
+	@Test
+	public void testProfileAdvertisesDiscountAsCheckoutExtension()
+	{
+		// Declarative discounts.codes + the official applied[] echo are
+		// implemented, so the discount extension is honestly advertised.
+		final UcpCapability discount = capability("dev.ucp.shopping.discount");
+		assertNotNull("discount capability must be advertised", discount);
+		assertEquals("dev.ucp.shopping.checkout", discount.getExtendsCapability());
+		assertNotNull(discount.getSchema());
 	}
 
 	@Test
@@ -164,19 +175,21 @@ public class DefaultUcpProfileServiceTest
 	}
 
 	@Test
-	public void testProfileDeclaresTheSingleMockPaymentHandler()
+	public void testProfileDeclaresTheMockPaymentHandlerAndItsAlias()
 	{
-		// One honest mock handler (design R9): thinkshop_mock_card, registered
-		// under its reverse-domain namespace with a LIST of handler entries —
-		// the registry shape the reference client's discovery step flattens.
+		// The honest mock handler (design R9) plus the ecosystem's well-known
+		// mock_payment_handler id as an alias of the same demo mock, both
+		// registered under one reverse-domain namespace with a LIST of
+		// entries — the registry shape the reference client flattens.
 		final UcpProfile profile = profileService.buildProfile("electronics");
 
 		assertEquals(1, profile.getUcp().getPaymentHandlers().size());
 		final List<com.ucpcommerce.dto.UcpPaymentHandler> handlers =
 			profile.getUcp().getPaymentHandlers().get("com.thinkshop.mock_card");
 		assertNotNull("mock handler registered under com.thinkshop.mock_card", handlers);
-		assertEquals(1, handlers.size());
+		assertEquals(2, handlers.size());
 		assertEquals("thinkshop_mock_card", handlers.get(0).getId());
+		assertEquals("mock_payment_handler", handlers.get(1).getId());
 		assertNotNull("handler declares a human-readable name", handlers.get(0).getName());
 	}
 

@@ -1,0 +1,20 @@
+{
+  "test_fixtures": {
+    "valid_item": {
+      "sku": "UCP_CONFORMANCE_ITEM",
+      "expected_price": 35.0,
+      "quantity": 1
+    },
+    "valid_discount_code": "10OFF",
+    "expected_discount_percentage": 10.0
+  },
+  "shipping_locations": {
+    "domestic_destination": {
+      "street": "100 Main St",
+      "city": "New York",
+      "state": "NY",
+      "postal_code": "10001",
+      "country": "US"
+    }
+  }
+}

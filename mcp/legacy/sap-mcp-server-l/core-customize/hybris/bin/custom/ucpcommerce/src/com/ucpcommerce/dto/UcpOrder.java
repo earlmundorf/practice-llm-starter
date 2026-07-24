@@ -12,10 +12,11 @@ import java.util.List;
  *   <li>embedded (minimal: {@code id} + {@code created_at}) in a completed
  *       checkout (design S3) — replayable from the stored completion
  *       response, so it stays deliberately small;</li>
- *   <li>full order schema (Phase 6 order capability): status, currency,
- *       line items, totals and fulfillment marshalled from the placed
- *       hybris order — or a summary (id/created_at/status/total) per
- *       order-history entry.</li>
+ *   <li>full order schema (Phase 6 order capability): the RAW top-level
+ *       response for {@code get_order} — the official binding returns the
+ *       order object itself (with its {@code ucp} envelope), no wrapper —
+ *       or a summary (id/created_at/status/total) per order-history
+ *       entry.</li>
  * </ul>
  * All optional fields are omitted when null ({@code NON_NULL}).
  */
@@ -23,9 +24,25 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class UcpOrder
 {
+	/**
+	 * Envelope for the top-level {@code get_order} response (official
+	 * {@code order.json} requires it on the order itself). Null — and thus
+	 * omitted — for the embedded completion block and history summaries.
+	 */
+	@JsonProperty("ucp")
+	private UcpEnvelope ucp;
+
 	/** The hybris order code — the id the client uses for order get/history. */
 	@JsonProperty("id")
 	private String id;
+
+	/**
+	 * The UCP checkout session this order was placed from ({@code order.json}
+	 * requires it). Recovered from the session store by order code; omitted
+	 * when unknown (legacy orders, or the session has been swept).
+	 */
+	@JsonProperty("checkout_id")
+	private String checkoutId;
 
 	@JsonProperty("created_at")
 	private String createdAt;
@@ -48,14 +65,49 @@ public class UcpOrder
 	@JsonProperty("currency")
 	private String currency;
 
+	/** Order-shaped line items (quantity object + status), full order only. */
 	@JsonProperty("line_items")
-	private List<UcpLineItem> lineItems;
+	private List<UcpOrderLineItem> lineItems;
 
 	@JsonProperty("totals")
 	private List<UcpTotal> totals;
 
 	@JsonProperty("fulfillment")
 	private UcpFulfillment fulfillment;
+
+	/** Business-error messages for a top-level error response ({@code get_order} miss). */
+	@JsonProperty("messages")
+	private List<UcpMessage> messages;
+
+	public UcpEnvelope getUcp()
+	{
+		return ucp;
+	}
+
+	public void setUcp(final UcpEnvelope ucp)
+	{
+		this.ucp = ucp;
+	}
+
+	public String getCheckoutId()
+	{
+		return checkoutId;
+	}
+
+	public void setCheckoutId(final String checkoutId)
+	{
+		this.checkoutId = checkoutId;
+	}
+
+	public List<UcpMessage> getMessages()
+	{
+		return messages;
+	}
+
+	public void setMessages(final List<UcpMessage> messages)
+	{
+		this.messages = messages;
+	}
 
 	public String getId()
 	{
@@ -107,12 +159,12 @@ public class UcpOrder
 		this.currency = currency;
 	}
 
-	public List<UcpLineItem> getLineItems()
+	public List<UcpOrderLineItem> getLineItems()
 	{
 		return lineItems;
 	}
 
-	public void setLineItems(final List<UcpLineItem> lineItems)
+	public void setLineItems(final List<UcpOrderLineItem> lineItems)
 	{
 		this.lineItems = lineItems;
 	}

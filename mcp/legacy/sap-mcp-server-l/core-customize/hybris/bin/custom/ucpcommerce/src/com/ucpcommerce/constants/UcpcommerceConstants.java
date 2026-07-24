@@ -28,6 +28,13 @@ public class UcpcommerceConstants extends GeneratedUcpcommerceConstants
 	 */
 	public static final String PAYMENT_HANDLER_ID = "thinkshop_mock_card";
 
+	/**
+	 * Well-known mock handler id the official conformance suite (and the
+	 * sample ecosystem) hard-codes — accepted as an ALIAS of the ThinkShop
+	 * mock handler and declared alongside it in the profile registry.
+	 */
+	public static final String PAYMENT_HANDLER_ALIAS = "mock_payment_handler";
+
 	private UcpcommerceConstants()
 	{
 		//empty
