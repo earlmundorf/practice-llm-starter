@@ -227,6 +227,27 @@ public class UcpCheckoutMarshallerTest
 	}
 
 	@Test
+	public void appliedVoucherCodesAreEchoedAsDiscountsCodes()
+	{
+		final CartData cart = cart();
+		cart.setAppliedVouchers(List.of("10OFF"));
+
+		final UcpCheckout checkout = marshaller.marshal("ucp_chk_abc", UcpCheckout.STATUS_INCOMPLETE,
+			cart, null, null);
+
+		assertEquals(List.of("10OFF"), checkout.getDiscounts().getCodes());
+	}
+
+	@Test
+	public void noDiscountsBlockWhenNoVouchersApplied()
+	{
+		final UcpCheckout checkout = marshaller.marshal("ucp_chk_abc", UcpCheckout.STATUS_INCOMPLETE,
+			cart(), null, null);
+
+		assertNull(checkout.getDiscounts());
+	}
+
+	@Test
 	public void buyerAndMessagesArePassedThrough()
 	{
 		final UcpBuyer buyer = new UcpBuyer();

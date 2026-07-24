@@ -957,6 +957,74 @@ def test_checkout_update(base_url, base_site, token):
              "no destinations offered (empty address book?)")
 
 
+def test_checkout_discounts(base_url, base_site, token):
+    """Discount (voucher) codes: declarative discounts.codes on update — apply,
+    echo, reject-invalid-as-recoverable, release. Demo coupon 10OFF (10% off)
+    is created by ucpcommerce's setup-ucp-demo-coupon.groovy + rule publish."""
+    log(f"\n{Colors.CYAN}── Checkout capability: discount codes ({TRANSPORT.upper()} binding) ──{Colors.RESET}")
+
+    def totals_of(payload):
+        return {t.get("type"): t.get("amount") for t in payload.get("totals") or []}
+
+    # Fresh single-mouse checkout — no automatic promotions at qty 1.
+    _, body, payload = ucp_call(base_url, base_site, token, "create_checkout",
+                                {"checkout": {"line_items": [{"item": {"id": SECOND_SKU},
+                                                              "quantity": 1}]}})
+    check("discounts: baseline checkout created", payload is not None and payload.get("id"),
+          f"body {str(body)[:200]}")
+    if payload is None or not payload.get("id"):
+        return
+    checkout_id = payload["id"]
+    check("discounts: no discounts block before any code is applied",
+          payload.get("discounts") is None, f"got {payload.get('discounts')!r}")
+
+    # Apply 10OFF declaratively.
+    _, body, upd = ucp_call(base_url, base_site, token, "update_checkout",
+                            {"id": checkout_id,
+                             "checkout": {"discounts": {"codes": ["10OFF"]}}})
+    check("discounts: update with 10OFF returns a payload", upd is not None,
+          f"body {str(body)[:200]}")
+    if upd is None:
+        return
+    check("discounts: applied code is echoed in discounts.codes",
+          (upd.get("discounts") or {}).get("codes") == ["10OFF"],
+          f"got {upd.get('discounts')!r}")
+    totals = totals_of(upd)
+    # The promotion engine floors 10% of $79.99 to $7.99 (currency digits).
+    expected_discount = -(SECOND_SKU_PRICE_MINOR // 10)
+    check(f"discounts: 10% coupon appears as {expected_discount} in totals",
+          totals.get("discount") == expected_discount, f"got {totals!r}")
+    check("discounts: totals block sums after the voucher",
+          (totals.get("subtotal") or 0) + (totals.get("discount") or 0)
+          + (totals.get("tax") or 0) + (totals.get("fulfillment") or 0)
+          == totals.get("total"), f"got {totals!r}")
+    check(f"discounts: total is {SECOND_SKU_PRICE_MINOR + expected_discount}",
+          totals.get("total") == SECOND_SKU_PRICE_MINOR + expected_discount, f"got {totals!r}")
+
+    # An unknown code is a recoverable message; the valid code stays applied.
+    _, body, upd = ucp_call(base_url, base_site, token, "update_checkout",
+                            {"id": checkout_id,
+                             "checkout": {"discounts": {"codes": ["10OFF", "BOGUS123"]}}})
+    messages = (upd or {}).get("messages") or []
+    check("discounts: unknown code yields a recoverable message",
+          any(m.get("severity") == "recoverable" for m in messages),
+          f"got {messages!r}")
+    check("discounts: valid code survives the partial failure",
+          ((upd or {}).get("discounts") or {}).get("codes") == ["10OFF"],
+          f"got {(upd or {}).get('discounts')!r}")
+
+    # Empty codes list releases everything (declarative end state).
+    _, body, upd = ucp_call(base_url, base_site, token, "update_checkout",
+                            {"id": checkout_id,
+                             "checkout": {"discounts": {"codes": []}}})
+    check("discounts: empty codes list releases the voucher",
+          (upd or {}).get("discounts") is None, f"got {(upd or {}).get('discounts')!r}")
+    totals = totals_of(upd or {})
+    check("discounts: totals drop the discount entry after release",
+          "discount" not in totals and totals.get("total") == SECOND_SKU_PRICE_MINOR,
+          f"got {totals!r}")
+
+
 def test_checkout_complete(base_url, base_site, token):
     """Phase 5: complete_checkout (mock payment + idempotency) and cancel_checkout."""
     log(f"\n{Colors.CYAN}── Checkout capability: complete/cancel ({TRANSPORT.upper()} binding) ──{Colors.RESET}")
@@ -1387,6 +1455,7 @@ def main():
         test_catalog(base_url, args.base_site, token)
         test_checkout_create_get(base_url, args.base_site, token)
         test_checkout_update(base_url, args.base_site, token)
+        test_checkout_discounts(base_url, args.base_site, token)
         order_id = test_checkout_complete(base_url, args.base_site, token)
         test_orders(base_url, args.base_site, token, order_id)
         test_promotions_mcp(base_url, args.base_site, token)

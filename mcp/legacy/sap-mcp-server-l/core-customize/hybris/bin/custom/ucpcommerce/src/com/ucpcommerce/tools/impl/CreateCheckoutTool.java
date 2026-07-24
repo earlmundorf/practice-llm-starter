@@ -32,7 +32,8 @@ public class CreateCheckoutTool implements UcpTool
 	@Override
 	public String getDescription()
 	{
-		return "Create a new checkout session from line items (and optional buyer). " +
+		return "Create a new checkout session from line items (and optional buyer, fulfillment, " +
+			"discounts {codes: [\"…\"]} — discount/voucher codes to apply). " +
 			"The checkout payload must NOT contain an id — the response returns checkout.id, " +
 			"which you must remember and pass to get_checkout and later checkout operations. " +
 			"All prices in the response are integer minor units.";

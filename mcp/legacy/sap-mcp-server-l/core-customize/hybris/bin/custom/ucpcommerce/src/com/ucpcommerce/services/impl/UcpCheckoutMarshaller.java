@@ -4,6 +4,7 @@ import com.ucpcommerce.constants.UcpcommerceConstants;
 import com.ucpcommerce.dto.UcpBuyer;
 import com.ucpcommerce.dto.UcpCheckout;
 import com.ucpcommerce.dto.UcpDestination;
+import com.ucpcommerce.dto.UcpDiscounts;
 import com.ucpcommerce.dto.UcpEnvelope;
 import com.ucpcommerce.dto.UcpFulfillment;
 import com.ucpcommerce.dto.UcpLineItem;
@@ -57,6 +58,7 @@ public class UcpCheckoutMarshaller
 		checkout.setTotals(marshalTotals(cart));
 		checkout.setBuyer(buyer);
 		checkout.setFulfillment(marshalFulfillment(cart));
+		checkout.setDiscounts(marshalDiscounts(cart));
 		// Base-schema conformance (ADR 0003): links is REQUIRED (empty like the
 		// sample server), and payment is echoed on every response because the
 		// reference client feeds response.payment into its next request. The
@@ -187,6 +189,24 @@ public class UcpCheckoutMarshaller
 			fulfillment.setDeliveryModeName(cart.getDeliveryMode().getName());
 		}
 		return fulfillment;
+	}
+
+	/** Echo of the applied discount (voucher) codes; null when none. */
+	protected UcpDiscounts marshalDiscounts(final AbstractOrderData cart)
+	{
+		if (cart == null || cart.getAppliedVouchers() == null || cart.getAppliedVouchers().isEmpty())
+		{
+			return null;
+		}
+		final List<String> codes = new ArrayList<>();
+		for (final String code : cart.getAppliedVouchers())
+		{
+			if (code != null && !code.isBlank() && !codes.contains(code))
+			{
+				codes.add(code);
+			}
+		}
+		return codes.isEmpty() ? null : new UcpDiscounts(codes);
 	}
 
 	protected UcpDestination marshalDestination(final AddressData address)

@@ -90,6 +90,7 @@
         <property name="cartFacade" ref="cartFacade"/>
         <property name="checkoutFacade" ref="checkoutFacade"/>
         <property name="userFacade" ref="userFacade"/>
+        <property name="voucherFacade" ref="voucherFacade"/>
         <property name="cartLoaderStrategy" ref="cartLoaderStrategy"/>
         <property name="ucpCheckoutSessionService" ref="ucpCheckoutSessionService"/>
         <property name="ucpCheckoutMarshaller" ref="ucpCheckoutMarshaller"/>

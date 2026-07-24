@@ -18,6 +18,7 @@ import com.ucpcommerce.dto.UcpCheckout;
 import com.ucpcommerce.dto.UcpCheckoutRequest;
 import com.ucpcommerce.dto.UcpCheckoutSession;
 import com.ucpcommerce.dto.UcpDestination;
+import com.ucpcommerce.dto.UcpDiscounts;
 import com.ucpcommerce.dto.UcpFulfillment;
 import com.ucpcommerce.dto.UcpItemRef;
 import com.ucpcommerce.dto.UcpLineItemRequest;
@@ -38,6 +39,9 @@ import de.hybris.platform.commercefacades.order.data.OrderEntryData;
 import de.hybris.platform.commercefacades.product.data.PriceData;
 import de.hybris.platform.commercefacades.product.data.ProductData;
 import de.hybris.platform.commercefacades.user.UserFacade;
+import de.hybris.platform.commercefacades.voucher.VoucherFacade;
+import de.hybris.platform.commercefacades.voucher.data.VoucherData;
+import de.hybris.platform.commercefacades.voucher.exceptions.VoucherOperationException;
 import de.hybris.platform.commercefacades.user.data.AddressData;
 import de.hybris.platform.commercefacades.user.data.CountryData;
 import de.hybris.platform.commerceservices.order.CommerceCartModificationException;
@@ -69,6 +73,8 @@ public class DefaultUcpCheckoutServiceTest
 	private CheckoutFacade checkoutFacade;
 	@Mock
 	private UserFacade userFacade;
+	@Mock
+	private VoucherFacade voucherFacade;
 	@Mock
 	private CartLoaderStrategy cartLoaderStrategy;
 	@Mock
@@ -105,6 +111,7 @@ public class DefaultUcpCheckoutServiceTest
 		checkoutService.setCartFacade(cartFacade);
 		checkoutService.setCheckoutFacade(checkoutFacade);
 		checkoutService.setUserFacade(userFacade);
+		checkoutService.setVoucherFacade(voucherFacade);
 		checkoutService.setCartLoaderStrategy(cartLoaderStrategy);
 		checkoutService.setUcpCheckoutSessionService(sessionService);
 		checkoutService.setUcpCheckoutMarshaller(marshaller);
@@ -378,6 +385,82 @@ public class DefaultUcpCheckoutServiceTest
 		}
 		request.setLineItems(lineItems);
 		return request;
+	}
+
+	private UcpCheckoutRequest discountsRequest(final String... codes)
+	{
+		final UcpCheckoutRequest request = new UcpCheckoutRequest();
+		request.setDiscounts(new UcpDiscounts(List.of(codes)));
+		return request;
+	}
+
+	private VoucherData appliedVoucher(final String code)
+	{
+		final VoucherData voucher = new VoucherData();
+		voucher.setVoucherCode(code);
+		return voucher;
+	}
+
+	@Test
+	public void updateAppliesNewDiscountCodesDeclaratively() throws Exception
+	{
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_INCOMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(sessionCart());
+		// First read = diff base (nothing applied); second read = the echo.
+		when(voucherFacade.getVouchersForCart())
+			.thenReturn(List.of(), List.of(appliedVoucher("10OFF")));
+
+		final UcpCheckout checkout = checkoutService.update(CHECKOUT_ID, discountsRequest("10OFF"));
+
+		verify(voucherFacade).applyVoucher("10OFF");
+		verify(voucherFacade, never()).releaseVoucher(anyString());
+		assertEquals("success", checkout.getUcp().getStatus());
+		assertEquals(List.of("10OFF"), checkout.getDiscounts().getCodes());
+	}
+
+	@Test
+	public void updateReleasesAppliedCodesAbsentFromTheDeclarativeList() throws Exception
+	{
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_INCOMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(sessionCart());
+		when(voucherFacade.getVouchersForCart())
+			.thenReturn(List.of(appliedVoucher("10OFF"), appliedVoucher("SUMMER")));
+
+		checkoutService.update(CHECKOUT_ID, discountsRequest("10OFF"));
+
+		verify(voucherFacade).releaseVoucher("SUMMER");
+		verify(voucherFacade, never()).releaseVoucher("10OFF");
+		// Already applied — a second apply would double-redeem.
+		verify(voucherFacade, never()).applyVoucher(anyString());
+	}
+
+	@Test
+	public void invalidDiscountCodeIsARecoverableMessageAndTheUpdateStillLands() throws Exception
+	{
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_INCOMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(sessionCart());
+		when(voucherFacade.getVouchersForCart()).thenReturn(List.of());
+		doThrow(new VoucherOperationException("no such voucher"))
+			.when(voucherFacade).applyVoucher("BOGUS");
+
+		final UcpCheckout checkout = checkoutService.update(CHECKOUT_ID, discountsRequest("BOGUS"));
+
+		assertEquals("success", checkout.getUcp().getStatus());
+		assertEquals("invalid_request", checkout.getMessages().get(0).getCode());
+		assertEquals(UcpMessage.SEVERITY_RECOVERABLE, checkout.getMessages().get(0).getSeverity());
+		verify(sessionService).update(CHECKOUT_ID, CART_CODE, UcpCheckout.STATUS_INCOMPLETE);
+	}
+
+	@Test
+	public void absentDiscountsBlockLeavesAppliedVouchersUntouched() throws Exception
+	{
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_INCOMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(sessionCart());
+
+		checkoutService.update(CHECKOUT_ID, itemsRequest("WIRELESS_GAMING_MOUSE", 1));
+
+		verify(voucherFacade, never()).applyVoucher(anyString());
+		verify(voucherFacade, never()).releaseVoucher(anyString());
 	}
 
 	@Test

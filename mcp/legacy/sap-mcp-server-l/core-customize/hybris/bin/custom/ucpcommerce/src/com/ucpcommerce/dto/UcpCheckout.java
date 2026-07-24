@@ -67,6 +67,10 @@ public class UcpCheckout
 	@JsonProperty("links")
 	private List<UcpLink> links;
 
+	/** Echo of the applied discount (voucher) codes — omitted when none. */
+	@JsonProperty("discounts")
+	private UcpDiscounts discounts;
+
 	/** The placed order — present only once the checkout is {@code completed} (S3). */
 	@JsonProperty("order")
 	private UcpOrder order;
@@ -172,6 +176,16 @@ public class UcpCheckout
 	public void setLinks(final List<UcpLink> links)
 	{
 		this.links = links;
+	}
+
+	public UcpDiscounts getDiscounts()
+	{
+		return discounts;
+	}
+
+	public void setDiscounts(final UcpDiscounts discounts)
+	{
+		this.discounts = discounts;
 	}
 
 	public UcpOrder getOrder()

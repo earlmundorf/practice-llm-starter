@@ -43,6 +43,9 @@ public class UpdateCheckoutTool implements UcpTool
 			"fulfillment {methods: [{id, type: \"shipping\", line_item_ids}]} to request destinations, then " +
 			"selected_destination_id to choose one, then groups: [{id, selected_option_id}] to choose a " +
 			"delivery option. A payload id is allowed only when it equals the top-level id. " +
+			"discounts {codes: [\"…\"]} — the DESIRED set of discount (voucher) codes, declarative like " +
+			"line_items (new codes applied, absent codes released; an invalid code is a recoverable " +
+			"message). Applied codes are echoed in response.discounts.codes. " +
 			"Status is derived server-side: it becomes ready_for_complete once the checkout has items, a " +
 			"destination and a delivery mode. Promotions are recalculated — discounts appear in totals. " +
 			"All prices in the response are integer minor units.";

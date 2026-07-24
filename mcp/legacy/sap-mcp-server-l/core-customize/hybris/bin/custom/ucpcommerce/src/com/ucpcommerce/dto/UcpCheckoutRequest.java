@@ -36,6 +36,10 @@ public class UcpCheckoutRequest
 	@JsonProperty("payment")
 	private UcpPayment payment;
 
+	/** Discount (voucher) codes — declarative like {@code line_items}. */
+	@JsonProperty("discounts")
+	private UcpDiscounts discounts;
+
 	public List<UcpLineItemRequest> getLineItems()
 	{
 		return lineItems;
@@ -74,5 +78,15 @@ public class UcpCheckoutRequest
 	public void setPayment(final UcpPayment payment)
 	{
 		this.payment = payment;
+	}
+
+	public UcpDiscounts getDiscounts()
+	{
+		return discounts;
+	}
+
+	public void setDiscounts(final UcpDiscounts discounts)
+	{
+		this.discounts = discounts;
 	}
 }

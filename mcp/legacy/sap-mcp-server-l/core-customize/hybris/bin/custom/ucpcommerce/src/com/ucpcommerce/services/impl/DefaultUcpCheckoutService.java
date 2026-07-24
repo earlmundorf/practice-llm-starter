@@ -7,6 +7,7 @@ import com.ucpcommerce.dto.UcpCheckout;
 import com.ucpcommerce.dto.UcpCheckoutRequest;
 import com.ucpcommerce.dto.UcpCheckoutSession;
 import com.ucpcommerce.dto.UcpDestination;
+import com.ucpcommerce.dto.UcpDiscounts;
 import com.ucpcommerce.dto.UcpFulfillment;
 import com.ucpcommerce.dto.UcpFulfillmentGroup;
 import com.ucpcommerce.dto.UcpFulfillmentMethod;
@@ -34,6 +35,9 @@ import de.hybris.platform.commercefacades.user.UserFacade;
 import de.hybris.platform.commercefacades.user.data.AddressData;
 import de.hybris.platform.commercefacades.user.data.CountryData;
 import de.hybris.platform.commercefacades.user.data.RegionData;
+import de.hybris.platform.commercefacades.voucher.VoucherFacade;
+import de.hybris.platform.commercefacades.voucher.data.VoucherData;
+import de.hybris.platform.commercefacades.voucher.exceptions.VoucherOperationException;
 import de.hybris.platform.commercewebservicescommons.strategies.CartLoaderStrategy;
 import de.hybris.platform.order.InvalidCartException;
 
@@ -78,6 +82,7 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 	private CartFacade cartFacade;
 	private CheckoutFacade checkoutFacade;
 	private UserFacade userFacade;
+	private VoucherFacade voucherFacade;
 	private CartLoaderStrategy cartLoaderStrategy;
 	private UcpCheckoutSessionService ucpCheckoutSessionService;
 	private UcpCheckoutMarshaller ucpCheckoutMarshaller;
@@ -108,7 +113,9 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 			return ucpCheckoutMarshaller.error(messages);
 		}
 
-		// A destination supplied on create is applied the same way as on update.
+		// Discount codes and a destination supplied on create are applied the
+		// same way as on update.
+		applyDiscounts(payload.getDiscounts(), messages);
 		applyFulfillment(payload.getFulfillment(), payload.getBuyer(), messages);
 
 		// The first successful addToCart created the session cart implicitly.
@@ -121,6 +128,7 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		final UcpCheckout checkout = ucpCheckoutMarshaller.marshal(session.getCheckoutId(), status, cart, buyer,
 			messages);
 		echoPayment(checkout, payload);
+		attachAppliedDiscounts(checkout);
 		attachFulfillmentNegotiation(checkout, payload.getFulfillment(), cart);
 		return checkout;
 	}
@@ -160,6 +168,7 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		final CartData cart = currentCart();
 		final UcpCheckout checkout = ucpCheckoutMarshaller.marshal(session.getCheckoutId(), session.getStatus(),
 			cart, parseBuyer(session.getBuyerJson()), List.of());
+		attachAppliedDiscounts(checkout);
 		attachFulfillmentNegotiation(checkout, null, cart);
 		return checkout;
 	}
@@ -218,6 +227,7 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 
 		if (payload != null)
 		{
+			applyDiscounts(payload.getDiscounts(), messages);
 			applyFulfillment(payload.getFulfillment(), buyer, messages);
 		}
 
@@ -229,6 +239,7 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 			cart.getEntries() == null ? 0 : cart.getEntries().size(), status);
 		final UcpCheckout checkout = ucpCheckoutMarshaller.marshal(checkoutId, status, cart, buyer, messages);
 		echoPayment(checkout, payload);
+		attachAppliedDiscounts(checkout);
 		attachFulfillmentNegotiation(checkout, payload != null ? payload.getFulfillment() : null, cart);
 		return checkout;
 	}
@@ -580,6 +591,101 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 	 * still applies. An empty list is rejected (a checkout keeps at least one
 	 * item until it is canceled) and leaves the cart untouched.
 	 */
+	/**
+	 * Applies the {@code discounts.codes} list declaratively, like
+	 * {@code line_items}: codes not yet applied are applied via the voucher
+	 * facade, applied codes absent from the list are released, and a null
+	 * block leaves the applied codes untouched. Per-code failures (unknown,
+	 * expired, not releasable) are recoverable messages — the rest of the
+	 * update still lands, never a 500.
+	 */
+	protected void applyDiscounts(final UcpDiscounts discounts, final List<UcpMessage> messages)
+	{
+		if (discounts == null || discounts.getCodes() == null)
+		{
+			return;
+		}
+		final List<String> requested = new ArrayList<>();
+		for (final String code : discounts.getCodes())
+		{
+			if (code != null && !code.isBlank() && !requested.contains(code.trim()))
+			{
+				requested.add(code.trim());
+			}
+		}
+		final List<String> applied = appliedVoucherCodes();
+		for (final String code : applied)
+		{
+			if (!requested.contains(code))
+			{
+				try
+				{
+					voucherFacade.releaseVoucher(code);
+				}
+				catch (final VoucherOperationException e)
+				{
+					LOG.warn("UCP discounts: could not release voucher '{}': {}", code, e.getMessage());
+					messages.add(new UcpMessage("warning", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
+						"Discount code '" + code + "' could not be removed"));
+				}
+			}
+		}
+		for (final String code : requested)
+		{
+			if (!applied.contains(code))
+			{
+				try
+				{
+					voucherFacade.applyVoucher(code);
+				}
+				catch (final VoucherOperationException e)
+				{
+					LOG.info("UCP discounts: voucher '{}' rejected: {}", code, e.getMessage());
+					messages.add(new UcpMessage("warning", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
+						"Discount code '" + code + "' is not valid for this checkout"));
+				}
+			}
+		}
+	}
+
+	/**
+	 * Overlays the applied-codes echo from the voucher facade — authoritative
+	 * for both the coupon-backed facade (this platform aliases
+	 * {@code defaultCouponFacade} as {@code voucherFacade}) and classic
+	 * vouchers, unlike {@code cartData.appliedVouchers} which only the classic
+	 * voucher populator fills.
+	 */
+	protected void attachAppliedDiscounts(final UcpCheckout checkout)
+	{
+		final List<String> codes = appliedVoucherCodes();
+		if (!codes.isEmpty())
+		{
+			checkout.setDiscounts(new UcpDiscounts(codes));
+		}
+	}
+
+	/** Voucher codes currently applied to the session cart. */
+	protected List<String> appliedVoucherCodes()
+	{
+		final List<String> codes = new ArrayList<>();
+		try
+		{
+			for (final VoucherData voucher : voucherFacade.getVouchersForCart())
+			{
+				final String code = voucher.getVoucherCode() != null ? voucher.getVoucherCode() : voucher.getCode();
+				if (code != null && !codes.contains(code))
+				{
+					codes.add(code);
+				}
+			}
+		}
+		catch (final RuntimeException e)
+		{
+			LOG.warn("UCP discounts: could not read applied vouchers: {}", e.getMessage());
+		}
+		return codes;
+	}
+
 	protected void applyLineItemDiffs(final List<UcpLineItemRequest> requested, final List<UcpMessage> messages)
 	{
 		if (requested.isEmpty())
@@ -1183,6 +1289,12 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 	public void setUserFacade(final UserFacade userFacade)
 	{
 		this.userFacade = userFacade;
+	}
+
+	@Required
+	public void setVoucherFacade(final VoucherFacade voucherFacade)
+	{
+		this.voucherFacade = voucherFacade;
 	}
 
 	@Required

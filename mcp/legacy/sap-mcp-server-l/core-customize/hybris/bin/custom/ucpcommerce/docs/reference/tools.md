@@ -32,14 +32,24 @@ Transports (both advertised in the profile's `services.dev.ucp.shopping`):
 
 | Tool | Input | Returns |
 |------|-------|---------|
-| `create_checkout` | `checkout` {line_items*, buyer?, fulfillment?} — MUST NOT contain an `id` | `{ucp, id: ucp_chk_…, status, currency, line_items[], totals[], buyer?, fulfillment?}` |
+| `create_checkout` | `checkout` {line_items*, buyer?, fulfillment?, discounts?} — MUST NOT contain an `id` | `{ucp, id: ucp_chk_…, status, currency, line_items[], totals[], buyer?, fulfillment?, discounts?}` |
 | `get_checkout` | `id`* | current checkout (completed checkouts replay the stored terminal payload incl. `order`) |
-| `update_checkout` | `id`*, `checkout` (declarative `line_items`, `buyer`, `fulfillment.destination` + `delivery_mode`) | recalculated checkout; status derived (`ready_for_complete` = items + address + mode) |
+| `update_checkout` | `id`*, `checkout` (declarative `line_items`, `buyer`, `fulfillment.destination` + `delivery_mode`, `discounts.codes`) | recalculated checkout; status derived (`ready_for_complete` = items + address + mode) |
 | `complete_checkout` | `id`*, `checkout.payment.instruments[{handler_id, type, credential}]`, `meta["idempotency-key"]`* | `{…, status: completed, order: {id, created_at}}`; same-key replay returns the SAME order |
 | `cancel_checkout` | `id`*, `meta["idempotency-key"]`* | `{…, status: canceled}` — idempotent, terminal |
 
 Only `handler_id` `thinkshop_mock_card` is accepted (the profile's single
 declared mock handler); any credential token passes and is never read/stored.
+
+`discounts.codes` is declarative like `line_items`: new codes are applied via
+the platform voucher facade, applied codes absent from the list are released,
+and an absent block leaves them unchanged. An invalid code is a recoverable
+message (the rest of the update still lands); applied codes are echoed in
+`response.discounts.codes` and their amounts appear in the `discount` totals
+entry. Demo code: `10OFF` (10% off the cart) — a `SingleCodeCoupon` + rule
+created by `resources/ucpcommerce/demo/setup-ucp-demo-coupon.groovy` (this
+platform's `voucherFacade` is the coupon-framework facade), published to
+Drools with `scripts/publish-promotions.groovy`.
 
 **`meta["idempotency-key"]` is not a tool argument.** It travels in the
 JSON-RPC request's `params.meta` (or `params._meta`), outside the
