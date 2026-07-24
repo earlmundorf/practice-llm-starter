@@ -50,6 +50,23 @@ public class UcpCheckout
 	@JsonProperty("fulfillment")
 	private UcpFulfillment fulfillment;
 
+	/**
+	 * Echo of the payment configuration (instruments only). The base checkout
+	 * schema carries an optional {@code payment} block and the reference
+	 * client feeds {@code response.payment} straight into its next update
+	 * request — so every checkout response includes one (ADR 0003).
+	 */
+	@JsonProperty("payment")
+	private UcpPayment payment;
+
+	/**
+	 * Links to be displayed by the platform (privacy policy, ToS…). REQUIRED
+	 * by the base checkout schema; ThinkShop emits an empty array like the
+	 * sample server (ADR 0003).
+	 */
+	@JsonProperty("links")
+	private List<UcpLink> links;
+
 	/** The placed order — present only once the checkout is {@code completed} (S3). */
 	@JsonProperty("order")
 	private UcpOrder order;
@@ -135,6 +152,26 @@ public class UcpCheckout
 	public void setFulfillment(final UcpFulfillment fulfillment)
 	{
 		this.fulfillment = fulfillment;
+	}
+
+	public UcpPayment getPayment()
+	{
+		return payment;
+	}
+
+	public void setPayment(final UcpPayment payment)
+	{
+		this.payment = payment;
+	}
+
+	public List<UcpLink> getLinks()
+	{
+		return links;
+	}
+
+	public void setLinks(final List<UcpLink> links)
+	{
+		this.links = links;
 	}
 
 	public UcpOrder getOrder()

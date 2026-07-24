@@ -52,6 +52,15 @@ public class UcpOrderMarshallerTest
 		marshaller = new UcpOrderMarshaller();
 		marshaller.setUcpCheckoutMarshaller(checkoutMarshaller);
 		marshaller.setUcpMoneyConverter(moneyConverter);
+		final com.coremcp.services.DeepLinkBuilder deepLinkBuilder = new com.coremcp.services.DeepLinkBuilder()
+		{
+			@Override
+			public String orderUrl(final String code)
+			{
+				return "http://storefront.test/orders/" + code;
+			}
+		};
+		marshaller.setDeepLinkBuilder(deepLinkBuilder);
 	}
 
 	private PriceData usd(final String major)
@@ -105,14 +114,17 @@ public class UcpOrderMarshallerTest
 	}
 
 	@Test
-	public void embeddedMarshalStaysMinimal()
+	public void embeddedMarshalIsTheSpecOrderConfirmation()
 	{
-		// The completed-checkout embedded block must not grow — Phase 5's
-		// stored completion responses replay exactly as recorded.
+		// The completed-checkout embedded block is the spec's
+		// OrderConfirmation: id + permalink_url (required — the reference
+		// client reads it) + created_at; nothing heavier. Responses stored
+		// before permalink_url existed replay as recorded (ADR 0003).
 		final UcpOrder embedded = marshaller.marshal(order());
 
 		assertEquals("00005004", embedded.getId());
 		assertNotNull(embedded.getCreatedAt());
+		assertEquals("http://storefront.test/orders/00005004", embedded.getPermalinkUrl());
 		assertNull(embedded.getStatus());
 		assertNull(embedded.getCurrency());
 		assertNull(embedded.getLineItems());
@@ -138,9 +150,11 @@ public class UcpOrderMarshallerTest
 
 		final Map<String, Long> totals = totalsByType(full);
 		assertEquals(Long.valueOf(15998L), totals.get(UcpTotal.TYPE_SUBTOTAL));
-		assertEquals(Long.valueOf(7999L), totals.get(UcpTotal.TYPE_DISCOUNT));
-		assertEquals(Long.valueOf(599L), totals.get(UcpTotal.TYPE_SHIPPING));
+		assertEquals("discounts are negative on the wire (ADR 0003)",
+			Long.valueOf(-7999L), totals.get(UcpTotal.TYPE_DISCOUNT));
+		assertEquals(Long.valueOf(599L), totals.get(UcpTotal.TYPE_FULFILLMENT));
 		assertEquals(Long.valueOf(8598L), totals.get(UcpTotal.TYPE_TOTAL));
+		assertEquals("http://storefront.test/orders/00005004", full.getPermalinkUrl());
 
 		assertNotNull(full.getFulfillment());
 		assertEquals("New York", full.getFulfillment().getDestination().getCity());

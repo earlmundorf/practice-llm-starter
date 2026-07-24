@@ -8,10 +8,17 @@ import com.ucpcommerce.dto.UcpCheckoutRequest;
 import com.ucpcommerce.dto.UcpCheckoutSession;
 import com.ucpcommerce.dto.UcpDestination;
 import com.ucpcommerce.dto.UcpFulfillment;
+import com.ucpcommerce.dto.UcpFulfillmentGroup;
+import com.ucpcommerce.dto.UcpFulfillmentMethod;
+import com.ucpcommerce.dto.UcpFulfillmentOption;
+import com.ucpcommerce.dto.UcpLineItem;
 import com.ucpcommerce.dto.UcpLineItemRequest;
 import com.ucpcommerce.dto.UcpMessage;
 import com.ucpcommerce.dto.UcpOrder;
+import com.ucpcommerce.dto.UcpPayment;
 import com.ucpcommerce.dto.UcpPaymentInstrument;
+import com.ucpcommerce.dto.UcpShippingDestination;
+import com.ucpcommerce.dto.UcpTotal;
 import com.ucpcommerce.services.UcpCheckoutService;
 import com.ucpcommerce.services.UcpCheckoutSessionService;
 
@@ -75,6 +82,7 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 	private UcpCheckoutSessionService ucpCheckoutSessionService;
 	private UcpCheckoutMarshaller ucpCheckoutMarshaller;
 	private UcpOrderMarshaller ucpOrderMarshaller;
+	private UcpMoneyConverter ucpMoneyConverter;
 
 	@Override
 	public UcpCheckout create(final UcpCheckoutRequest payload)
@@ -110,7 +118,11 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		final UcpCheckoutSession session = ucpCheckoutSessionService.create(cart.getCode(), status, toJson(buyer));
 		LOG.info("UCP create_checkout: {} → cart {} ({} entries, status {})", session.getCheckoutId(),
 			cart.getCode(), cart.getEntries() == null ? 0 : cart.getEntries().size(), status);
-		return ucpCheckoutMarshaller.marshal(session.getCheckoutId(), status, cart, buyer, messages);
+		final UcpCheckout checkout = ucpCheckoutMarshaller.marshal(session.getCheckoutId(), status, cart, buyer,
+			messages);
+		echoPayment(checkout, payload);
+		attachFulfillmentNegotiation(checkout, payload.getFulfillment(), cart);
+		return checkout;
 	}
 
 	@Override
@@ -145,8 +157,11 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "not_found",
 				UcpMessage.SEVERITY_UNRECOVERABLE, "Checkout " + checkoutId + " is no longer available")));
 		}
-		return ucpCheckoutMarshaller.marshal(session.getCheckoutId(), session.getStatus(),
-			currentCart(), parseBuyer(session.getBuyerJson()), List.of());
+		final CartData cart = currentCart();
+		final UcpCheckout checkout = ucpCheckoutMarshaller.marshal(session.getCheckoutId(), session.getStatus(),
+			cart, parseBuyer(session.getBuyerJson()), List.of());
+		attachFulfillmentNegotiation(checkout, null, cart);
+		return checkout;
 	}
 
 	@Override
@@ -212,7 +227,10 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		ucpCheckoutSessionService.update(checkoutId, cart.getCode(), status);
 		LOG.info("UCP update_checkout: {} → cart {} ({} entries, status {})", checkoutId, cart.getCode(),
 			cart.getEntries() == null ? 0 : cart.getEntries().size(), status);
-		return ucpCheckoutMarshaller.marshal(checkoutId, status, cart, buyer, messages);
+		final UcpCheckout checkout = ucpCheckoutMarshaller.marshal(checkoutId, status, cart, buyer, messages);
+		echoPayment(checkout, payload);
+		attachFulfillmentNegotiation(checkout, payload != null ? payload.getFulfillment() : null, cart);
+		return checkout;
 	}
 
 	@Override
@@ -293,10 +311,12 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		if (!UcpCheckout.STATUS_READY_FOR_COMPLETE.equals(derived))
 		{
 			ucpCheckoutSessionService.update(checkoutId, cart.getCode(), derived);
-			return ucpCheckoutMarshaller.marshal(checkoutId, derived, cart, buyer,
+			final UcpCheckout notReady = ucpCheckoutMarshaller.marshal(checkoutId, derived, cart, buyer,
 				List.of(new UcpMessage("error", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
 					"Checkout is not ready to complete: it needs at least one item, a delivery "
 						+ "destination and a delivery mode (current status: " + derived + ")")));
+			attachFulfillmentNegotiation(notReady, null, cart);
+			return notReady;
 		}
 
 		// Accepted: S5 ready_for_complete → complete_in_progress, key stored.
@@ -332,6 +352,7 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		// atomic entry save (status, order code, replayable response).
 		final UcpCheckout completed = ucpCheckoutMarshaller.marshal(checkoutId,
 			UcpCheckout.STATUS_COMPLETED, order, buyer, List.of());
+		echoPayment(completed, payload);
 		completed.setOrder(ucpOrderMarshaller.marshal(order));
 		ucpCheckoutSessionService.recordCompletion(checkoutId, toJson(completed), order.getCode());
 		LOG.info("UCP complete_checkout: {} completed as order {}", checkoutId, order.getCode());
@@ -644,10 +665,19 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 	}
 
 	/**
-	 * Apply the {@code fulfillment} block to the loaded cart: set the
-	 * destination as the delivery address, then the delivery mode — explicit
-	 * when supplied, otherwise auto-selected (cheapest supported mode) once a
-	 * destination is present. Failures are {@code recoverable} messages.
+	 * Apply the {@code fulfillment} block to the loaded cart. Two request
+	 * shapes are honored (ADR 0003):
+	 * <ul>
+	 *   <li>the spec negotiation flow — {@code methods[]} with
+	 *       {@code selected_destination_id} (a saved-address id offered in a
+	 *       previous response) and {@code groups[].selected_option_id}
+	 *       (option ids are hybris delivery-mode codes);</li>
+	 *   <li>the legacy ThinkShop shorthand — an inline {@code destination}
+	 *       plus optional {@code delivery_mode}, kept for backward compat.</li>
+	 * </ul>
+	 * When a destination is applied and no mode was chosen either way, the
+	 * cheapest supported mode is auto-selected. Failures are
+	 * {@code recoverable} messages.
 	 */
 	protected void applyFulfillment(final UcpFulfillment fulfillment, final UcpBuyer buyer,
 		final List<UcpMessage> messages)
@@ -655,6 +685,31 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		if (fulfillment == null)
 		{
 			return;
+		}
+		// Spec negotiation: select a previously offered saved destination by
+		// id — resolved server-side against the customer's address book (the
+		// coremcp addressId flow).
+		final UcpFulfillmentMethod method = firstMethod(fulfillment);
+		if (method != null && method.getSelectedDestinationId() != null
+			&& !method.getSelectedDestinationId().isBlank())
+		{
+			final AddressData byId = new AddressData();
+			byId.setId(method.getSelectedDestinationId());
+			try
+			{
+				if (!checkoutFacade.setDeliveryAddress(byId))
+				{
+					messages.add(new UcpMessage("error", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
+						"Unknown fulfillment destination id: " + method.getSelectedDestinationId()));
+				}
+			}
+			catch (final Exception e)
+			{
+				LOG.debug("UCP checkout: could not select destination {}: {}",
+					method.getSelectedDestinationId(), e.getMessage());
+				messages.add(new UcpMessage("error", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
+					"Could not select destination " + method.getSelectedDestinationId() + ": " + e.getMessage()));
+			}
 		}
 		if (fulfillment.getDestination() != null)
 		{
@@ -683,7 +738,21 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 					"Could not set delivery destination: " + e.getMessage()));
 			}
 		}
-		final String requestedMode = fulfillment.getDeliveryMode();
+		// Delivery mode: the legacy explicit code wins, else the negotiation's
+		// selected option id (option ids ARE delivery-mode codes), else
+		// auto-selection once a destination is present.
+		String requestedMode = fulfillment.getDeliveryMode();
+		if ((requestedMode == null || requestedMode.isBlank()) && method != null && method.getGroups() != null)
+		{
+			for (final UcpFulfillmentGroup group : method.getGroups())
+			{
+				if (group != null && group.getSelectedOptionId() != null && !group.getSelectedOptionId().isBlank())
+				{
+					requestedMode = group.getSelectedOptionId();
+					break;
+				}
+			}
+		}
 		if (requestedMode != null && !requestedMode.isBlank())
 		{
 			try
@@ -755,6 +824,227 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 			messages.add(new UcpMessage("warning", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
 				"Could not select a delivery mode: " + e.getMessage()));
 		}
+	}
+
+	/** First method of a request fulfillment block, or null. */
+	private static UcpFulfillmentMethod firstMethod(final UcpFulfillment fulfillment)
+	{
+		if (fulfillment == null || fulfillment.getMethods() == null || fulfillment.getMethods().isEmpty())
+		{
+			return null;
+		}
+		return fulfillment.getMethods().get(0);
+	}
+
+	/**
+	 * Echo the request's payment instruments onto the response (the reference
+	 * client feeds {@code response.payment} into its next update request —
+	 * ADR 0003). The marshaller already defaulted an empty instruments block.
+	 */
+	protected void echoPayment(final UcpCheckout checkout, final UcpCheckoutRequest payload)
+	{
+		final List<UcpPaymentInstrument> instruments =
+			payload != null && payload.getPayment() != null ? payload.getPayment().getInstruments() : null;
+		if (instruments != null && !instruments.isEmpty())
+		{
+			checkout.setPayment(new UcpPayment(instruments));
+		}
+	}
+
+	/**
+	 * Attach the spec fulfillment negotiation state (ADR 0003) to a response,
+	 * rebuilt statelessly from the request + cart + address book on every
+	 * call:
+	 * <ul>
+	 *   <li>a method is present when the request negotiated one OR the cart
+	 *       already has a delivery address (so get_checkout keeps echoing the
+	 *       negotiated state);</li>
+	 *   <li>{@code destinations[]} are the customer's saved addresses; the
+	 *       applied cart address is appended when it matches none of them
+	 *       (the cart holds a clone with its own id);</li>
+	 *   <li>{@code groups[].options[]} (the supported delivery modes, cheapest
+	 *       first) appear once a destination is applied —
+	 *       {@code selected_option_id} echoes the cart's current mode.</li>
+	 * </ul>
+	 */
+	protected void attachFulfillmentNegotiation(final UcpCheckout checkout, final UcpFulfillment requested,
+		final CartData cart)
+	{
+		final UcpFulfillmentMethod requestMethod = firstMethod(requested);
+		final AddressData applied = cart != null ? cart.getDeliveryAddress() : null;
+		if (requestMethod == null && applied == null)
+		{
+			return;
+		}
+
+		final UcpFulfillmentMethod method = new UcpFulfillmentMethod();
+		method.setId(requestMethod != null && requestMethod.getId() != null
+			? requestMethod.getId() : "method_1");
+		method.setType(requestMethod != null && requestMethod.getType() != null
+			? requestMethod.getType() : UcpFulfillmentMethod.TYPE_SHIPPING);
+		final List<String> allLineItemIds = new ArrayList<>();
+		if (checkout.getLineItems() != null)
+		{
+			for (final UcpLineItem lineItem : checkout.getLineItems())
+			{
+				allLineItemIds.add(lineItem.getId());
+			}
+		}
+		method.setLineItemIds(requestMethod != null && requestMethod.getLineItemIds() != null
+			&& !requestMethod.getLineItemIds().isEmpty() ? requestMethod.getLineItemIds() : allLineItemIds);
+
+		// Offer the saved addresses as destinations.
+		final List<UcpShippingDestination> destinations = new ArrayList<>();
+		try
+		{
+			final List<AddressData> book = userFacade.getAddressBook();
+			if (book != null)
+			{
+				for (final AddressData address : book)
+				{
+					if (address != null && address.getId() != null)
+					{
+						destinations.add(toDestination(address));
+					}
+				}
+			}
+		}
+		catch (final Exception e)
+		{
+			LOG.debug("UCP checkout: could not read the address book: {}", e.getMessage());
+		}
+		String selectedDestinationId = null;
+		if (applied != null)
+		{
+			for (final UcpShippingDestination destination : destinations)
+			{
+				if (sameAddress(destination, applied))
+				{
+					selectedDestinationId = destination.getId();
+					break;
+				}
+			}
+			if (selectedDestinationId == null && applied.getId() != null)
+			{
+				// Applied via the legacy inline-destination path — the cart's
+				// address clone is not in the book; offer it as itself.
+				final UcpShippingDestination current = toDestination(applied);
+				destinations.add(current);
+				selectedDestinationId = current.getId();
+			}
+		}
+		if (!destinations.isEmpty())
+		{
+			method.setDestinations(destinations);
+		}
+		method.setSelectedDestinationId(selectedDestinationId);
+
+		// Options exist once a destination is applied (delivery modes depend
+		// on the address).
+		if (applied != null)
+		{
+			final UcpFulfillmentGroup group = new UcpFulfillmentGroup();
+			String groupId = "group_1";
+			if (requestMethod != null && requestMethod.getGroups() != null
+				&& !requestMethod.getGroups().isEmpty() && requestMethod.getGroups().get(0) != null
+				&& requestMethod.getGroups().get(0).getId() != null)
+			{
+				groupId = requestMethod.getGroups().get(0).getId();
+			}
+			group.setId(groupId);
+			group.setLineItemIds(method.getLineItemIds());
+			group.setOptions(deliveryModeOptions());
+			group.setSelectedOptionId(cart.getDeliveryMode() != null ? cart.getDeliveryMode().getCode() : null);
+			method.setGroups(List.of(group));
+		}
+
+		final UcpFulfillment fulfillment = checkout.getFulfillment() != null
+			? checkout.getFulfillment() : new UcpFulfillment();
+		fulfillment.setMethods(List.of(method));
+		checkout.setFulfillment(fulfillment);
+	}
+
+	/** The supported delivery modes as fulfillment options, cheapest first. */
+	protected List<UcpFulfillmentOption> deliveryModeOptions()
+	{
+		final List<UcpFulfillmentOption> options = new ArrayList<>();
+		try
+		{
+			final List<DeliveryModeData> modes = new ArrayList<>(checkoutFacade.getSupportedDeliveryModes());
+			modes.sort((a, b) -> costOf(a).compareTo(costOf(b)));
+			for (final DeliveryModeData mode : modes)
+			{
+				if (mode == null || mode.getCode() == null)
+				{
+					continue;
+				}
+				final UcpFulfillmentOption option = new UcpFulfillmentOption();
+				option.setId(mode.getCode());
+				option.setTitle(mode.getName() != null ? mode.getName() : mode.getCode());
+				option.setDescription(mode.getDescription());
+				Long amount = Long.valueOf(0L);
+				if (mode.getDeliveryCost() != null && mode.getDeliveryCost().getValue() != null)
+				{
+					amount = ucpMoneyConverter.toMinorUnits(mode.getDeliveryCost().getValue(),
+						mode.getDeliveryCost().getCurrencyIso());
+				}
+				option.setTotals(List.of(new UcpTotal(UcpTotal.TYPE_SUBTOTAL, amount),
+					new UcpTotal(UcpTotal.TYPE_TOTAL, amount)));
+				options.add(option);
+			}
+		}
+		catch (final Exception e)
+		{
+			LOG.debug("UCP checkout: could not list delivery modes: {}", e.getMessage());
+		}
+		return options;
+	}
+
+	private static BigDecimal costOf(final DeliveryModeData mode)
+	{
+		return mode != null && mode.getDeliveryCost() != null && mode.getDeliveryCost().getValue() != null
+			? mode.getDeliveryCost().getValue() : BigDecimal.ZERO;
+	}
+
+	/** Map a hybris address onto the spec ShippingDestination (PostalAddress + id). */
+	protected UcpShippingDestination toDestination(final AddressData address)
+	{
+		final UcpShippingDestination destination = new UcpShippingDestination();
+		destination.setId(address.getId());
+		destination.setStreetAddress(address.getLine1());
+		destination.setExtendedAddress(address.getLine2());
+		destination.setAddressLocality(address.getTown());
+		if (address.getRegion() != null)
+		{
+			destination.setAddressRegion(address.getRegion().getIsocodeShort() != null
+				? address.getRegion().getIsocodeShort() : address.getRegion().getIsocode());
+		}
+		if (address.getCountry() != null)
+		{
+			destination.setAddressCountry(address.getCountry().getIsocode());
+		}
+		destination.setPostalCode(address.getPostalCode());
+		destination.setFirstName(address.getFirstName());
+		destination.setLastName(address.getLastName());
+		destination.setPhoneNumber(address.getPhone());
+		return destination;
+	}
+
+	/**
+	 * Field-wise match between an offered destination and the cart's applied
+	 * delivery address — the cart holds a CLONE of the selected book address
+	 * with its own id, so ids never match across the two.
+	 */
+	private static boolean sameAddress(final UcpShippingDestination destination, final AddressData applied)
+	{
+		return equalsIgnoreCaseSafe(destination.getStreetAddress(), applied.getLine1())
+			&& equalsIgnoreCaseSafe(destination.getPostalCode(), applied.getPostalCode())
+			&& equalsIgnoreCaseSafe(destination.getAddressLocality(), applied.getTown());
+	}
+
+	private static boolean equalsIgnoreCaseSafe(final String a, final String b)
+	{
+		return a == null ? b == null : a.equalsIgnoreCase(b);
 	}
 
 	/**
@@ -917,5 +1207,11 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 	public void setUcpOrderMarshaller(final UcpOrderMarshaller ucpOrderMarshaller)
 	{
 		this.ucpOrderMarshaller = ucpOrderMarshaller;
+	}
+
+	@Required
+	public void setUcpMoneyConverter(final UcpMoneyConverter ucpMoneyConverter)
+	{
+		this.ucpMoneyConverter = ucpMoneyConverter;
 	}
 }

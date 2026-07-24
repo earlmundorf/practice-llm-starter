@@ -19,6 +19,16 @@ public class UcpPayment
 	@JsonProperty("instruments")
 	private List<UcpPaymentInstrument> instruments;
 
+	public UcpPayment()
+	{
+		// for Jackson
+	}
+
+	public UcpPayment(final List<UcpPaymentInstrument> instruments)
+	{
+		this.instruments = instruments;
+	}
+
 	public List<UcpPaymentInstrument> getInstruments()
 	{
 		return instruments;

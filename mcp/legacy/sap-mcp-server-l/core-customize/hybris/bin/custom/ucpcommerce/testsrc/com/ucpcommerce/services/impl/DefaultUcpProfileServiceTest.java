@@ -9,13 +9,22 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ucpcommerce.dto.UcpCapability;
 import com.ucpcommerce.dto.UcpProfile;
+import com.ucpcommerce.dto.UcpServiceEntry;
 
 import de.hybris.bootstrap.annotations.UnitTest;
 
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.List;
 
+
+/**
+ * Profile shape pinned against the OFFICIAL discovery schema and the sample
+ * server's live output (ADR 0003): everything inside a top-level {@code ucp}
+ * object; {@code services}/{@code capabilities}/{@code payment_handlers} are
+ * registries — maps keyed by reverse-domain name with LIST values.
+ */
 @UnitTest
 public class DefaultUcpProfileServiceTest
 {
@@ -55,11 +64,9 @@ public class DefaultUcpProfileServiceTest
 	}
 
 	@Test
-	public void testPhase2ProfileAdvertisesCatalogCapability()
+	public void testProfileAdvertisesCatalogCapability()
 	{
-		final UcpProfile profile = profileService.buildProfile("electronics");
-
-		final UcpCapability catalog = capability(profile, "dev.ucp.shopping.catalog");
+		final UcpCapability catalog = capability("dev.ucp.shopping.catalog");
 		assertNotNull("catalog capability must be advertised", catalog);
 		assertEquals("capability version is the pinned dated calver string",
 			PINNED_VERSION, catalog.getVersion());
@@ -68,13 +75,12 @@ public class DefaultUcpProfileServiceTest
 	}
 
 	@Test
-	public void testPhase5ProfileAdvertisesCheckoutCapability()
+	public void testProfileAdvertisesCheckoutCapability()
 	{
-		final UcpProfile profile = profileService.buildProfile("electronics");
-
-		// Exactly the capabilities that work end-to-end so far (Phases 2, 5, 6).
-		assertEquals(5, profile.getCapabilities().size());
-		final UcpCapability checkout = capability(profile, "dev.ucp.shopping.checkout");
+		// Exactly the capabilities that work end-to-end: catalog, checkout,
+		// fulfillment (extension), order, promotions, knowledge.
+		assertEquals(6, profileService.buildProfile("electronics").getUcp().getCapabilities().size());
+		final UcpCapability checkout = capability("dev.ucp.shopping.checkout");
 		assertNotNull("checkout capability must be advertised once the lifecycle works", checkout);
 		assertEquals(PINNED_VERSION, checkout.getVersion());
 		assertNotNull(checkout.getSpec());
@@ -82,11 +88,20 @@ public class DefaultUcpProfileServiceTest
 	}
 
 	@Test
-	public void testPhase6ProfileAdvertisesOrderCapability()
+	public void testProfileAdvertisesFulfillmentAsCheckoutExtension()
 	{
-		final UcpProfile profile = profileService.buildProfile("electronics");
+		// The negotiation flow (methods → destinations → groups/options) is an
+		// extension capability that composes onto checkout — declared with the
+		// official "extends" pointer like the sample server does.
+		final UcpCapability fulfillment = capability("dev.ucp.shopping.fulfillment");
+		assertNotNull("fulfillment capability must be advertised", fulfillment);
+		assertEquals("dev.ucp.shopping.checkout", fulfillment.getExtendsCapability());
+	}
 
-		final UcpCapability order = capability(profile, "dev.ucp.shopping.order");
+	@Test
+	public void testProfileAdvertisesOrderCapability()
+	{
+		final UcpCapability order = capability("dev.ucp.shopping.order");
 		assertNotNull("order capability must be advertised once get/history work", order);
 		assertEquals(PINNED_VERSION, order.getVersion());
 		assertNotNull(order.getSpec());
@@ -94,66 +109,75 @@ public class DefaultUcpProfileServiceTest
 	}
 
 	@Test
-	public void testPhase6ProfileAdvertisesCustomThinkshopCapabilities()
+	public void testProfileAdvertisesCustomThinkshopCapabilities()
 	{
 		// Custom reverse-domain capabilities (design R7): promotions + knowledge,
 		// versioned like the standard set but with no hosted spec/schema URLs.
-		final UcpProfile profile = profileService.buildProfile("electronics");
-
-		final UcpCapability promotions = capability(profile, "com.thinkshop.promotions");
+		final UcpCapability promotions = capability("com.thinkshop.promotions");
 		assertNotNull("com.thinkshop.promotions must be advertised", promotions);
 		assertEquals(PINNED_VERSION, promotions.getVersion());
 		assertNull(promotions.getSpec());
 		assertNull(promotions.getSchema());
 
-		final UcpCapability knowledge = capability(profile, "com.thinkshop.knowledge");
+		final UcpCapability knowledge = capability("com.thinkshop.knowledge");
 		assertNotNull("com.thinkshop.knowledge must be advertised", knowledge);
 		assertEquals(PINNED_VERSION, knowledge.getVersion());
 		assertNull(knowledge.getSpec());
 		assertNull(knowledge.getSchema());
 	}
 
-	private UcpCapability capability(final UcpProfile profile, final String name)
+	private UcpCapability capability(final String name)
 	{
-		return profile.getCapabilities().stream()
-			.filter(c -> name.equals(c.getName()))
-			.findFirst().orElse(null);
+		final List<UcpCapability> entries =
+			profileService.buildProfile("electronics").getUcp().getCapabilities().get(name);
+		return entries == null || entries.isEmpty() ? null : entries.get(0);
+	}
+
+	private UcpServiceEntry transport(final UcpProfile profile, final String transport)
+	{
+		final List<UcpServiceEntry> entries = profile.getUcp().getServices().get("dev.ucp.shopping");
+		assertNotNull("dev.ucp.shopping service must be registered", entries);
+		return entries.stream().filter(e -> transport.equals(e.getTransport())).findFirst().orElse(null);
 	}
 
 	@Test
-	public void testPhase2ProfileAdvertisesMcpTransportForBaseSite()
+	public void testProfileAdvertisesMcpTransportForBaseSite()
 	{
 		final UcpProfile profile = profileService.buildProfile("electronics");
 
-		assertTrue(profile.getServices().containsKey("dev.ucp.shopping"));
-		assertNotNull("mcp transport must be advertised", profile.getServices().get("dev.ucp.shopping").getMcp());
-		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp/mcp",
-			profile.getServices().get("dev.ucp.shopping").getMcp().getEndpoint());
+		final UcpServiceEntry mcp = transport(profile, "mcp");
+		assertNotNull("mcp transport must be advertised", mcp);
+		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp/mcp", mcp.getEndpoint());
+		assertEquals(PINNED_VERSION, mcp.getVersion());
 	}
 
 	@Test
-	public void testPhase7ProfileAdvertisesRestTransportBase()
+	public void testProfileAdvertisesRestTransportBase()
 	{
 		// The rest entry is the BASE the client prefixes to resource paths
 		// (/checkout-sessions, /catalog/search, /orders — ADR 0002).
 		final UcpProfile profile = profileService.buildProfile("electronics");
 
-		assertNotNull("rest transport must be advertised once the REST routes work",
-			profile.getServices().get("dev.ucp.shopping").getRest());
-		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp",
-			profile.getServices().get("dev.ucp.shopping").getRest().getEndpoint());
+		final UcpServiceEntry rest = transport(profile, "rest");
+		assertNotNull("rest transport must be advertised once the REST routes work", rest);
+		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp", rest.getEndpoint());
 	}
 
 	@Test
-	public void testPhase5ProfileDeclaresTheSingleMockPaymentHandler()
+	public void testProfileDeclaresTheSingleMockPaymentHandler()
 	{
-		// One honest mock handler (design R9): thinkshop_mock_card, nothing else.
+		// One honest mock handler (design R9): thinkshop_mock_card, registered
+		// under its reverse-domain namespace with a LIST of handler entries —
+		// the registry shape the reference client's discovery step flattens.
 		final UcpProfile profile = profileService.buildProfile("electronics");
 
-		assertEquals(1, profile.getPaymentHandlers().size());
-		assertEquals("thinkshop_mock_card", profile.getPaymentHandlers().get(0).getId());
-		assertNotNull("handler declares a human-readable name",
-			profile.getPaymentHandlers().get(0).getName());
+		assertEquals(1, profile.getUcp().getPaymentHandlers().size());
+		final List<com.ucpcommerce.dto.UcpPaymentHandler> handlers =
+			profile.getUcp().getPaymentHandlers().get("com.thinkshop.mock_card");
+		assertNotNull("mock handler registered under com.thinkshop.mock_card", handlers);
+		assertEquals(1, handlers.size());
+		assertEquals("thinkshop_mock_card", handlers.get(0).getId());
+		assertNotNull("handler declares a human-readable name", handlers.get(0).getName());
 	}
 
 	@Test
@@ -174,33 +198,45 @@ public class DefaultUcpProfileServiceTest
 			}
 		};
 		assertEquals("https://store.example.com/occ/v2/electronics/ucp/mcp",
-			slashService.buildProfile("electronics").getServices().get("dev.ucp.shopping").getMcp().getEndpoint());
+			transport(slashService.buildProfile("electronics"), "mcp").getEndpoint());
 	}
 
 	@Test
-	public void testSerializedShapeMatchesDiscoveryContract() throws Exception
+	public void testSerializedShapeMatchesOfficialDiscoverySchema() throws Exception
 	{
-		// Pin the wire shape: ucp.version + top-level snake_case blocks always present.
+		// Pin the wire shape against the official profile.json / sample server:
+		// {"ucp": {version, services: {ns: [...]}, capabilities: {ns: [...]},
+		//  payment_handlers: {ns: [...]}}} — registries, NOT top-level arrays.
 		final String json = objectMapper.writeValueAsString(profileService.buildProfile("electronics"));
 		final JsonNode root = objectMapper.readTree(json);
+		final JsonNode ucp = root.path("ucp");
 
-		assertEquals(PINNED_VERSION, root.path("ucp").path("version").asText());
-		assertTrue("ucp block must be an object", root.path("ucp").isObject());
-		assertTrue("capabilities must serialize as an array", root.path("capabilities").isArray());
-		assertEquals("dev.ucp.shopping.catalog", root.path("capabilities").path(0).path("name").asText());
-		assertEquals("dev.ucp.shopping.checkout", root.path("capabilities").path(1).path("name").asText());
-		assertEquals("dev.ucp.shopping.order", root.path("capabilities").path(2).path("name").asText());
-		assertEquals("com.thinkshop.promotions", root.path("capabilities").path(3).path("name").asText());
-		assertEquals("com.thinkshop.knowledge", root.path("capabilities").path(4).path("name").asText());
-		assertTrue("custom capabilities omit spec URLs on the wire",
-			root.path("capabilities").path(3).path("spec").isMissingNode());
-		assertTrue("services must serialize as an object", root.path("services").isObject());
-		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp/mcp",
-			root.path("services").path("dev.ucp.shopping").path("mcp").path("endpoint").asText());
-		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp",
-			root.path("services").path("dev.ucp.shopping").path("rest").path("endpoint").asText());
-		assertTrue("payment_handlers must serialize as an array", root.path("payment_handlers").isArray());
-		assertEquals("thinkshop_mock_card", root.path("payment_handlers").path(0).path("id").asText());
+		assertTrue("profile body must live inside the ucp object", ucp.isObject());
+		assertEquals(PINNED_VERSION, ucp.path("version").asText());
+		assertTrue("no top-level capabilities outside ucp", root.path("capabilities").isMissingNode());
+		assertTrue("no top-level payment_handlers outside ucp", root.path("payment_handlers").isMissingNode());
+
+		assertTrue("capabilities is a registry object", ucp.path("capabilities").isObject());
+		assertTrue(ucp.path("capabilities").path("dev.ucp.shopping.checkout").isArray());
+		assertTrue("capability entries carry no name field (the key is the name)",
+			ucp.path("capabilities").path("dev.ucp.shopping.checkout").path(0).path("name").isMissingNode());
+		assertEquals("dev.ucp.shopping.checkout",
+			ucp.path("capabilities").path("dev.ucp.shopping.fulfillment").path(0).path("extends").asText());
+
+		assertTrue("services is a registry object", ucp.path("services").isObject());
+		final JsonNode shopping = ucp.path("services").path("dev.ucp.shopping");
+		assertTrue("service entries are a list of transports", shopping.isArray());
+		assertEquals("rest", shopping.path(0).path("transport").asText());
+		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp", shopping.path(0).path("endpoint").asText());
+		assertEquals("mcp", shopping.path(1).path("transport").asText());
+		assertEquals(PUBLIC_BASE_URL + "/occ/v2/electronics/ucp/mcp", shopping.path(1).path("endpoint").asText());
+
+		assertTrue("payment_handlers is a registry object", ucp.path("payment_handlers").isObject());
+		final JsonNode handlers = ucp.path("payment_handlers").path("com.thinkshop.mock_card");
+		assertTrue(handlers.isArray());
+		assertEquals("thinkshop_mock_card", handlers.path(0).path("id").asText());
+		assertTrue("handler config serializes (empty object for the mock)",
+			handlers.path(0).path("config").isObject());
 	}
 
 	@Test

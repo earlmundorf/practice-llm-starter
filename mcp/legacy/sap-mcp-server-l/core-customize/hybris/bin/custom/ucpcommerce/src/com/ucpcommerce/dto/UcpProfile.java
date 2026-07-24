@@ -1,8 +1,8 @@
 package com.ucpcommerce.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,63 +11,88 @@ import java.util.Map;
  * The public UCP discovery document served at
  * {@code GET /occ/v2/{baseSiteId}/.well-known/ucp}.
  *
- * Shape follows the task runbook's discovery-manifest contract (§2.1): a
- * {@code ucp} version block plus top-level {@code capabilities} /
- * {@code services} / {@code payment_handlers}. All three collections are
- * always serialized (empty until the corresponding phase lands) — the profile
- * only ever advertises what actually works.
+ * Shape verified against the official discovery schema
+ * ({@code ucp/source/schemas/profile.json}: {@code $defs.base.required =
+ * ["ucp"]}) and the reference sample server's live output: the whole profile
+ * body lives INSIDE a top-level {@code ucp} object, and {@code services},
+ * {@code capabilities} and {@code payment_handlers} are all registries —
+ * maps keyed by reverse-domain name whose values are LISTS of version
+ * entries. (The earlier top-level-arrays shape was a provisional judgment
+ * call — see ADR 0003.)
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class UcpProfile
 {
 	@JsonProperty("ucp")
-	private UcpEnvelope ucp;
+	private Body ucp = new Body();
 
-	@JsonProperty("capabilities")
-	private List<UcpCapability> capabilities = new ArrayList<>();
-
-	@JsonProperty("services")
-	private Map<String, UcpServiceEntry> services = new LinkedHashMap<>();
-
-	@JsonProperty("payment_handlers")
-	private List<UcpPaymentHandler> paymentHandlers = new ArrayList<>();
-
-	public UcpEnvelope getUcp()
+	public Body getUcp()
 	{
 		return ucp;
 	}
 
-	public void setUcp(final UcpEnvelope ucp)
+	public void setUcp(final Body ucp)
 	{
 		this.ucp = ucp;
 	}
 
-	public List<UcpCapability> getCapabilities()
+	/** The {@code ucp} object — the profile body (business schema). */
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	public static class Body
 	{
-		return capabilities;
-	}
+		@JsonProperty("version")
+		private String version;
 
-	public void setCapabilities(final List<UcpCapability> capabilities)
-	{
-		this.capabilities = capabilities;
-	}
+		/** Service registry keyed by reverse-domain name → transport entries. */
+		@JsonProperty("services")
+		private Map<String, List<UcpServiceEntry>> services = new LinkedHashMap<>();
 
-	public Map<String, UcpServiceEntry> getServices()
-	{
-		return services;
-	}
+		/** Capability registry keyed by reverse-domain name → version entries. */
+		@JsonProperty("capabilities")
+		private Map<String, List<UcpCapability>> capabilities = new LinkedHashMap<>();
 
-	public void setServices(final Map<String, UcpServiceEntry> services)
-	{
-		this.services = services;
-	}
+		/** Payment-handler registry keyed by reverse-domain name → handler entries. */
+		@JsonProperty("payment_handlers")
+		private Map<String, List<UcpPaymentHandler>> paymentHandlers = new LinkedHashMap<>();
 
-	public List<UcpPaymentHandler> getPaymentHandlers()
-	{
-		return paymentHandlers;
-	}
+		public String getVersion()
+		{
+			return version;
+		}
 
-	public void setPaymentHandlers(final List<UcpPaymentHandler> paymentHandlers)
-	{
-		this.paymentHandlers = paymentHandlers;
+		public void setVersion(final String version)
+		{
+			this.version = version;
+		}
+
+		public Map<String, List<UcpServiceEntry>> getServices()
+		{
+			return services;
+		}
+
+		public void setServices(final Map<String, List<UcpServiceEntry>> services)
+		{
+			this.services = services;
+		}
+
+		public Map<String, List<UcpCapability>> getCapabilities()
+		{
+			return capabilities;
+		}
+
+		public void setCapabilities(final Map<String, List<UcpCapability>> capabilities)
+		{
+			this.capabilities = capabilities;
+		}
+
+		public Map<String, List<UcpPaymentHandler>> getPaymentHandlers()
+		{
+			return paymentHandlers;
+		}
+
+		public void setPaymentHandlers(final Map<String, List<UcpPaymentHandler>> paymentHandlers)
+		{
+			this.paymentHandlers = paymentHandlers;
+		}
 	}
 }

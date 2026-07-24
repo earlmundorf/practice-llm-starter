@@ -74,10 +74,14 @@ public class CompleteCheckoutTool implements UcpTool
 		final Map<String, Object> checkoutArg = (Map<String, Object>) args.get("checkout");
 		if (checkoutArg.containsKey("id"))
 		{
-			// Binding spec: the checkout payload MUST NOT contain an id — the
-			// top-level id parameter addresses the resource.
-			throw new IllegalArgumentException(
-				"checkout payload must not contain an id; pass the id as the top-level parameter");
+			// Corrected rule (ADR 0003): an id MATCHING the top-level parameter
+			// is accepted (SDK request shape); a mismatch is a protocol bug.
+			if (!args.get("id").equals(checkoutArg.get("id")))
+			{
+				throw new IllegalArgumentException(
+					"checkout payload id does not match the top-level id parameter");
+			}
+			checkoutArg.remove("id");
 		}
 		final String idempotencyKey = context != null ? context.getIdempotencyKey() : null;
 		if (idempotencyKey == null || idempotencyKey.isBlank())

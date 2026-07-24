@@ -114,10 +114,45 @@ public class UcpCheckoutMarshallerTest
 		assertEquals("Wireless Gaming Mouse", mouse.getItem().getTitle());
 		assertEquals("unit price $79.99 must become 7999 minor units",
 			Long.valueOf(7999L), mouse.getItem().getPrice());
-		assertEquals(1, mouse.getTotals().size());
+		// subtotal + total per line, as the sample server emits (ADR 0003).
+		assertEquals(2, mouse.getTotals().size());
 		assertEquals(UcpTotal.TYPE_SUBTOTAL, mouse.getTotals().get(0).getType());
 		assertEquals("line total $159.98 must become 15998 minor units",
 			Long.valueOf(15998L), mouse.getTotals().get(0).getAmount());
+		assertEquals(UcpTotal.TYPE_TOTAL, mouse.getTotals().get(1).getType());
+		assertEquals(Long.valueOf(15998L), mouse.getTotals().get(1).getAmount());
+	}
+
+	@Test
+	public void everyCheckoutCarriesLinksAndAPaymentEcho()
+	{
+		// Base-schema conformance (ADR 0003): links is REQUIRED (empty like the
+		// sample server) and payment defaults to an empty instruments block —
+		// the reference client feeds response.payment into its next request.
+		final UcpCheckout checkout = marshaller.marshal("ucp_chk_abc", UcpCheckout.STATUS_INCOMPLETE,
+			cart(), null, null);
+
+		assertNotNull(checkout.getLinks());
+		assertTrue(checkout.getLinks().isEmpty());
+		assertNotNull(checkout.getPayment());
+		assertNotNull(checkout.getPayment().getInstruments());
+		assertTrue(checkout.getPayment().getInstruments().isEmpty());
+	}
+
+	@Test
+	public void totalIsAlwaysTheLastTotalsEntry()
+	{
+		// Clients read totals[-1] as the running total (the reference client
+		// logs it after every step).
+		final CartData cart = cart();
+		cart.setTotalDiscounts(usd("79.99"));
+		cart.setDeliveryCost(usd("5.99"));
+		cart.setTotalPrice(usd("1385.97"));
+
+		final UcpCheckout checkout = marshaller.marshal("ucp_chk_abc", UcpCheckout.STATUS_INCOMPLETE,
+			cart, null, null);
+		final List<UcpTotal> totals = checkout.getTotals();
+		assertEquals(UcpTotal.TYPE_TOTAL, totals.get(totals.size() - 1).getType());
 	}
 
 	@Test
@@ -129,12 +164,15 @@ public class UcpCheckoutMarshallerTest
 		assertEquals(Long.valueOf(145997L), totals.get(UcpTotal.TYPE_SUBTOTAL));
 		assertEquals(Long.valueOf(145997L), totals.get(UcpTotal.TYPE_TOTAL));
 		assertNull("no discount entry when nothing is discounted", totals.get(UcpTotal.TYPE_DISCOUNT));
-		assertNull("no shipping entry before a delivery mode is set", totals.get(UcpTotal.TYPE_SHIPPING));
+		assertNull("no fulfillment entry before a delivery mode is set",
+			totals.get(UcpTotal.TYPE_FULFILLMENT));
 	}
 
 	@Test
-	public void discountAppearsInTotalsWhenTheCartHasOne()
+	public void discountAppearsInTotalsAsANegativeAmount()
 	{
+		// Official total.json (ADR 0003): discount entries carry a NEGATIVE
+		// amount (exclusiveMaximum: 0); hybris reports the magnitude positive.
 		final CartData cart = cart();
 		cart.setTotalDiscounts(usd("79.99"));
 		cart.setTotalPrice(usd("1379.98"));
@@ -142,8 +180,8 @@ public class UcpCheckoutMarshallerTest
 		final Map<String, Long> totals = totalsByType(
 			marshaller.marshal("ucp_chk_abc", UcpCheckout.STATUS_INCOMPLETE, cart, null, null));
 
-		assertEquals("discounts are reported as a positive minor-unit amount",
-			Long.valueOf(7999L), totals.get(UcpTotal.TYPE_DISCOUNT));
+		assertEquals("discounts are reported as a NEGATIVE minor-unit amount",
+			Long.valueOf(-7999L), totals.get(UcpTotal.TYPE_DISCOUNT));
 		assertEquals(Long.valueOf(137998L), totals.get(UcpTotal.TYPE_TOTAL));
 	}
 
@@ -229,8 +267,8 @@ public class UcpCheckoutMarshallerTest
 		assertEquals("Standard Delivery", checkout.getFulfillment().getDeliveryModeName());
 
 		final Map<String, Long> totals = totalsByType(checkout);
-		assertEquals("delivery cost $5.99 must become 599 minor units",
-			Long.valueOf(599L), totals.get(UcpTotal.TYPE_SHIPPING));
+		assertEquals("delivery cost $5.99 must become 599 minor units under type fulfillment (ADR 0003)",
+			Long.valueOf(599L), totals.get(UcpTotal.TYPE_FULFILLMENT));
 		assertEquals(Long.valueOf(146596L), totals.get(UcpTotal.TYPE_TOTAL));
 	}
 

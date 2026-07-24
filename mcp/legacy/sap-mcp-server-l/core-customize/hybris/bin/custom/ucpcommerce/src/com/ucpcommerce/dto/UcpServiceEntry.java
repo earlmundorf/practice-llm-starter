@@ -4,37 +4,96 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * One value in the profile's {@code services} map (keyed by service name,
- * e.g. {@code dev.ucp.shopping}) — declares the transport endpoints a client
- * may use. The {@code mcp} entry is added in Phase 2, {@code rest} in Phase 7;
- * each transport is advertised only once it actually works.
+ * One transport entry in the profile's {@code services} registry (the values
+ * under a reverse-domain service name are a LIST of these, per the official
+ * discovery schema / sample server — ADR 0003):
+ *
+ * <pre>
+ * "services": {
+ *   "dev.ucp.shopping": [
+ *     { "version": "2026-04-08", "transport": "rest", "endpoint": "…/ucp" },
+ *     { "version": "2026-04-08", "transport": "mcp",  "endpoint": "…/ucp/mcp" }
+ *   ]
+ * }
+ * </pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class UcpServiceEntry
 {
-	@JsonProperty("mcp")
-	private UcpTransportEndpoint mcp;
+	@JsonProperty("version")
+	private String version;
 
-	@JsonProperty("rest")
-	private UcpTransportEndpoint rest;
+	@JsonProperty("spec")
+	private String spec;
 
-	public UcpTransportEndpoint getMcp()
+	@JsonProperty("transport")
+	private String transport;
+
+	@JsonProperty("endpoint")
+	private String endpoint;
+
+	@JsonProperty("schema")
+	private String schema;
+
+	public UcpServiceEntry()
 	{
-		return mcp;
+		// for Jackson
 	}
 
-	public void setMcp(final UcpTransportEndpoint mcp)
+	public UcpServiceEntry(final String version, final String transport, final String endpoint)
 	{
-		this.mcp = mcp;
+		this.version = version;
+		this.transport = transport;
+		this.endpoint = endpoint;
 	}
 
-	public UcpTransportEndpoint getRest()
+	public String getVersion()
 	{
-		return rest;
+		return version;
 	}
 
-	public void setRest(final UcpTransportEndpoint rest)
+	public void setVersion(final String version)
 	{
-		this.rest = rest;
+		this.version = version;
+	}
+
+	public String getSpec()
+	{
+		return spec;
+	}
+
+	public void setSpec(final String spec)
+	{
+		this.spec = spec;
+	}
+
+	public String getTransport()
+	{
+		return transport;
+	}
+
+	public void setTransport(final String transport)
+	{
+		this.transport = transport;
+	}
+
+	public String getEndpoint()
+	{
+		return endpoint;
+	}
+
+	public void setEndpoint(final String endpoint)
+	{
+		this.endpoint = endpoint;
+	}
+
+	public String getSchema()
+	{
+		return schema;
+	}
+
+	public void setSchema(final String schema)
+	{
+		this.schema = schema;
 	}
 }

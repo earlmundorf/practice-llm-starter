@@ -89,6 +89,18 @@ public class DefaultUcpCheckoutServiceTest
 		};
 		marshaller.setUcpMoneyConverter(new UcpMoneyConverter());
 
+		final UcpOrderMarshaller orderMarshaller = new UcpOrderMarshaller();
+		orderMarshaller.setUcpCheckoutMarshaller(marshaller);
+		orderMarshaller.setUcpMoneyConverter(new UcpMoneyConverter());
+		orderMarshaller.setDeepLinkBuilder(new com.coremcp.services.DeepLinkBuilder()
+		{
+			@Override
+			public String orderUrl(final String code)
+			{
+				return "http://storefront.test/orders/" + code;
+			}
+		});
+
 		checkoutService = new DefaultUcpCheckoutService();
 		checkoutService.setCartFacade(cartFacade);
 		checkoutService.setCheckoutFacade(checkoutFacade);
@@ -96,7 +108,8 @@ public class DefaultUcpCheckoutServiceTest
 		checkoutService.setCartLoaderStrategy(cartLoaderStrategy);
 		checkoutService.setUcpCheckoutSessionService(sessionService);
 		checkoutService.setUcpCheckoutMarshaller(marshaller);
-		checkoutService.setUcpOrderMarshaller(new UcpOrderMarshaller());
+		checkoutService.setUcpOrderMarshaller(orderMarshaller);
+		checkoutService.setUcpMoneyConverter(new UcpMoneyConverter());
 	}
 
 	private CartData sessionCart()
@@ -593,6 +606,161 @@ public class DefaultUcpCheckoutServiceTest
 			&& UcpMessage.SEVERITY_RECOVERABLE.equals(m.getSeverity())));
 		assertEquals("no mode applied → still incomplete",
 			UcpCheckout.STATUS_INCOMPLETE, checkout.getStatus());
+	}
+
+	// ── Spec fulfillment negotiation (ADR 0003) ────────────────────────────
+
+	private AddressData bookAddress(final String id, final String line1, final String town, final String postal)
+	{
+		final AddressData address = new AddressData();
+		address.setId(id);
+		address.setFirstName("John");
+		address.setLastName("Doe");
+		address.setLine1(line1);
+		address.setTown(town);
+		address.setPostalCode(postal);
+		final CountryData country = new CountryData();
+		country.setIsocode("US");
+		address.setCountry(country);
+		return address;
+	}
+
+	private UcpCheckoutRequest methodsRequest(final String selectedDestinationId, final String selectedOptionId)
+	{
+		final UcpCheckoutRequest request = new UcpCheckoutRequest();
+		final UcpFulfillment fulfillment = new UcpFulfillment();
+		final com.ucpcommerce.dto.UcpFulfillmentMethod method = new com.ucpcommerce.dto.UcpFulfillmentMethod();
+		method.setId("method_1");
+		method.setType("shipping");
+		method.setLineItemIds(List.of("li_0"));
+		method.setSelectedDestinationId(selectedDestinationId);
+		if (selectedOptionId != null)
+		{
+			final com.ucpcommerce.dto.UcpFulfillmentGroup group = new com.ucpcommerce.dto.UcpFulfillmentGroup();
+			group.setId("group_1");
+			group.setLineItemIds(List.of("li_0"));
+			group.setSelectedOptionId(selectedOptionId);
+			method.setGroups(List.of(group));
+		}
+		fulfillment.setMethods(List.of(method));
+		request.setFulfillment(fulfillment);
+		return request;
+	}
+
+	@Test
+	public void negotiationTriggerOffersSavedAddressesAsDestinations()
+	{
+		// OOTB reference-client step 4: PUT methods with NO destination →
+		// the response offers the customer's saved addresses.
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_INCOMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(sessionCart());
+		when(userFacade.getAddressBook()).thenReturn(
+			List.of(bookAddress("addr1", "100 Main St", "New York", "10001"),
+				bookAddress("addr2", "456 Oak Ave", "Metropolis", "10012")));
+
+		final UcpCheckout checkout = checkoutService.update(CHECKOUT_ID, methodsRequest(null, null));
+
+		verify(checkoutFacade, never()).setDeliveryAddress(any());
+		final com.ucpcommerce.dto.UcpFulfillmentMethod method = checkout.getFulfillment().getMethods().get(0);
+		assertEquals("method_1", method.getId());
+		assertEquals("shipping", method.getType());
+		assertEquals(2, method.getDestinations().size());
+		assertEquals("addr1", method.getDestinations().get(0).getId());
+		assertEquals("PostalAddress field mapping", "100 Main St",
+			method.getDestinations().get(0).getStreetAddress());
+		assertEquals("New York", method.getDestinations().get(0).getAddressLocality());
+		assertEquals("US", method.getDestinations().get(0).getAddressCountry());
+		assertNull("nothing selected yet", method.getSelectedDestinationId());
+		assertNull("no groups before a destination is applied", method.getGroups());
+		assertEquals(UcpCheckout.STATUS_INCOMPLETE, checkout.getStatus());
+	}
+
+	@Test
+	public void negotiationSelectedDestinationAppliesAddressAndOffersOptions()
+	{
+		// OOTB step 5: PUT selected_destination_id → address applied by id,
+		// response gains groups[].options[] (delivery modes, cheapest first).
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_INCOMPLETE, null));
+		when(checkoutFacade.setDeliveryAddress(any())).thenReturn(true);
+		final CartData applied = withDestination(sessionCart());
+		when(checkoutFacade.getCheckoutCart()).thenReturn(applied);
+		when(userFacade.getAddressBook()).thenReturn(
+			List.of(bookAddress("addr1", "100 Main St", "New York", "10001")));
+
+		final DeliveryModeData express = new DeliveryModeData();
+		express.setCode("thinkshop-express");
+		express.setName("Express Delivery");
+		final PriceData expressCost = new PriceData();
+		expressCost.setValue(new BigDecimal("14.99"));
+		expressCost.setCurrencyIso("USD");
+		express.setDeliveryCost(expressCost);
+		final DeliveryModeData standard = new DeliveryModeData();
+		standard.setCode("thinkshop-standard");
+		standard.setName("Standard Delivery");
+		final PriceData standardCost = new PriceData();
+		standardCost.setValue(new BigDecimal("5.99"));
+		standardCost.setCurrencyIso("USD");
+		standard.setDeliveryCost(standardCost);
+		org.mockito.Mockito.doReturn(List.of(express, standard))
+			.when(checkoutFacade).getSupportedDeliveryModes();
+
+		final UcpCheckout checkout = checkoutService.update(CHECKOUT_ID, methodsRequest("addr1", null));
+
+		final org.mockito.ArgumentCaptor<AddressData> byId =
+			org.mockito.ArgumentCaptor.forClass(AddressData.class);
+		verify(checkoutFacade).setDeliveryAddress(byId.capture());
+		assertEquals("selected by saved-address id", "addr1", byId.getValue().getId());
+
+		final com.ucpcommerce.dto.UcpFulfillmentMethod method = checkout.getFulfillment().getMethods().get(0);
+		assertEquals("the applied cart address matches the offered book entry",
+			"addr1", method.getSelectedDestinationId());
+		final com.ucpcommerce.dto.UcpFulfillmentGroup group = method.getGroups().get(0);
+		assertEquals("group_1", group.getId());
+		assertEquals("options are the supported modes, cheapest FIRST",
+			"thinkshop-standard", group.getOptions().get(0).getId());
+		assertEquals(Long.valueOf(599L), group.getOptions().get(0).getTotals().get(1).getAmount());
+		assertEquals("thinkshop-express", group.getOptions().get(1).getId());
+		assertEquals(Long.valueOf(1499L), group.getOptions().get(1).getTotals().get(1).getAmount());
+		assertEquals("the cart's current mode is echoed as the selected option",
+			"thinkshop-standard", group.getSelectedOptionId());
+	}
+
+	@Test
+	public void negotiationSelectedOptionSetsTheDeliveryMode()
+	{
+		// OOTB step 6: PUT groups[].selected_option_id → option ids ARE
+		// delivery-mode codes.
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_INCOMPLETE, null));
+		when(checkoutFacade.setDeliveryMode("thinkshop-express")).thenReturn(true);
+		when(checkoutFacade.getCheckoutCart()).thenReturn(withDestination(sessionCart()));
+
+		checkoutService.update(CHECKOUT_ID, methodsRequest("addr1", "thinkshop-express"));
+
+		verify(checkoutFacade).setDeliveryMode("thinkshop-express");
+	}
+
+	@Test
+	public void paymentInstrumentsAreEchoedAndDefaultEmpty() throws Exception
+	{
+		// The reference client feeds response.payment into its next request —
+		// every checkout response carries a payment block (ADR 0003).
+		when(sessionService.get(CHECKOUT_ID)).thenReturn(session(UcpCheckout.STATUS_INCOMPLETE, null));
+		when(checkoutFacade.getCheckoutCart()).thenReturn(sessionCart());
+
+		final UcpCheckout noInstruments = checkoutService.update(CHECKOUT_ID, new UcpCheckoutRequest());
+		assertNotNull(noInstruments.getPayment());
+		assertTrue(noInstruments.getPayment().getInstruments().isEmpty());
+
+		final UcpCheckoutRequest withInstrument = new UcpCheckoutRequest();
+		final UcpPayment payment = new UcpPayment();
+		final UcpPaymentInstrument instrument = new UcpPaymentInstrument();
+		instrument.setHandlerId("thinkshop_mock_card");
+		payment.setInstruments(List.of(instrument));
+		withInstrument.setPayment(payment);
+
+		final UcpCheckout echoed = checkoutService.update(CHECKOUT_ID, withInstrument);
+		assertEquals(1, echoed.getPayment().getInstruments().size());
+		assertEquals("thinkshop_mock_card", echoed.getPayment().getInstruments().get(0).getHandlerId());
 	}
 
 	@Test

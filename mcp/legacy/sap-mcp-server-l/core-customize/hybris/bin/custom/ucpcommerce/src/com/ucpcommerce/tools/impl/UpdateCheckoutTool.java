@@ -39,7 +39,10 @@ public class UpdateCheckoutTool implements UcpTool
 			"quantities adjusted, new items added); buyer — replaces the stored buyer; " +
 			"fulfillment {destination {first_name, last_name, line1, line2, city, region, postal_code, " +
 			"country, phone_number}, delivery_mode} — sets the shipping destination (delivery_mode is " +
-			"optional; the cheapest supported mode is auto-selected). The payload must NOT contain an id. " +
+			"optional; the cheapest supported mode is auto-selected); or the spec negotiation flow: " +
+			"fulfillment {methods: [{id, type: \"shipping\", line_item_ids}]} to request destinations, then " +
+			"selected_destination_id to choose one, then groups: [{id, selected_option_id}] to choose a " +
+			"delivery option. A payload id is allowed only when it equals the top-level id. " +
 			"Status is derived server-side: it becomes ready_for_complete once the checkout has items, a " +
 			"destination and a delivery mode. Promotions are recalculated — discounts appear in totals. " +
 			"All prices in the response are integer minor units.";
@@ -76,10 +79,15 @@ public class UpdateCheckoutTool implements UcpTool
 		final Map<String, Object> checkoutArg = (Map<String, Object>) args.get("checkout");
 		if (checkoutArg.containsKey("id"))
 		{
-			// Binding spec: the checkout payload MUST NOT contain an id — the
-			// top-level id parameter addresses the resource.
-			throw new IllegalArgumentException(
-				"checkout payload must not contain an id; pass the id as the top-level parameter");
+			// Corrected rule (ADR 0003): the SDK update-request shape carries
+			// an id, so an id MATCHING the top-level parameter is accepted; a
+			// mismatch is still a client protocol bug.
+			if (!args.get("id").equals(checkoutArg.get("id")))
+			{
+				throw new IllegalArgumentException(
+					"checkout payload id does not match the top-level id parameter");
+			}
+			checkoutArg.remove("id");
 		}
 		final UcpCheckoutRequest payload = objectMapper.convertValue(checkoutArg, UcpCheckoutRequest.class);
 		return objectMapper.writeValueAsString(ucpCheckoutService.update((String) args.get("id"), payload));

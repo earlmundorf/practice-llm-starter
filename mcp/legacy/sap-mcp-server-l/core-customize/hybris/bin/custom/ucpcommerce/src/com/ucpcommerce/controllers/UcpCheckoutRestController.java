@@ -40,9 +40,13 @@ import java.util.Map;
  * The {@code Idempotency-Key} header maps to the same service parameter the
  * MCP tools take from {@code meta["idempotency-key"]}; the service itself
  * enforces its presence on complete/cancel (Phase 5 decision), so a missing
- * header is an {@link IllegalArgumentException} → HTTP 400 here. The checkout
- * payload MUST NOT contain an {@code id} on any route — the URL addresses the
- * resource (same rule the MCP tools enforce).
+ * header is an {@link IllegalArgumentException} → HTTP 400 here.
+ *
+ * Payload {@code id} rule (corrected in ADR 0003): the SDK's
+ * {@code CheckoutUpdateRequest} carries an {@code id} and the official
+ * reference client sends it on every update, so a body id MATCHING the path
+ * id is accepted; a MISMATCHED id (or any id on create) is still a client
+ * protocol bug → 400.
  */
 @Controller
 @RequestMapping(value = "/{baseSiteId}")
@@ -60,7 +64,7 @@ public class UcpCheckoutRestController extends AbstractUcpRestController
 	{
 		try
 		{
-			return json(ucpCheckoutService.create(parseCheckoutPayload(body)), response);
+			return json(ucpCheckoutService.create(parseCheckoutPayload(body, null)), response);
 		}
 		catch (final IllegalArgumentException e)
 		{
@@ -93,7 +97,7 @@ public class UcpCheckoutRestController extends AbstractUcpRestController
 	{
 		try
 		{
-			return json(ucpCheckoutService.update(checkoutId, parseCheckoutPayload(body)), response);
+			return json(ucpCheckoutService.update(checkoutId, parseCheckoutPayload(body, checkoutId)), response);
 		}
 		catch (final IllegalArgumentException e)
 		{
@@ -111,7 +115,8 @@ public class UcpCheckoutRestController extends AbstractUcpRestController
 	{
 		try
 		{
-			return json(ucpCheckoutService.complete(checkoutId, parseCheckoutPayload(body), idempotencyKey),
+			return json(
+				ucpCheckoutService.complete(checkoutId, parseCheckoutPayload(body, checkoutId), idempotencyKey),
 				response);
 		}
 		catch (final IllegalArgumentException e)
@@ -142,10 +147,13 @@ public class UcpCheckoutRestController extends AbstractUcpRestController
 
 	/**
 	 * Parse the raw request body into the shared inbound checkout DTO,
-	 * enforcing the binding's payload-must-not-carry-an-id rule before
-	 * conversion (the MCP tools' rule, applied at the same layer).
+	 * enforcing the payload-id rule (ADR 0003) before conversion: an id equal
+	 * to the addressed resource is accepted (the SDK update-request shape),
+	 * anything else — an id on create, or a mismatch — is a protocol bug.
+	 *
+	 * @param expectedId the path id the body may echo, or null on create
 	 */
-	private UcpCheckoutRequest parseCheckoutPayload(final String body)
+	private UcpCheckoutRequest parseCheckoutPayload(final String body, final String expectedId)
 	{
 		final Map<String, Object> raw;
 		try
@@ -164,8 +172,16 @@ public class UcpCheckoutRestController extends AbstractUcpRestController
 		}
 		if (raw.containsKey("id"))
 		{
-			throw new IllegalArgumentException(
-				"checkout payload must not contain an id; the URL path addresses the resource");
+			if (expectedId == null)
+			{
+				throw new IllegalArgumentException(
+					"checkout payload must not contain an id on create; the response mints one");
+			}
+			if (!expectedId.equals(raw.get("id")))
+			{
+				throw new IllegalArgumentException("checkout payload id does not match the URL path id");
+			}
+			raw.remove("id");
 		}
 		try
 		{

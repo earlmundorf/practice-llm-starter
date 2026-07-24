@@ -49,11 +49,17 @@ REST-first (official tooling works day one) vs MCP-first vs both at once.
   (`/occ/v2/{baseSiteId}/.well-known/ucp`, `ROLE_ANONYMOUS`) as a local-testing
   concession (design R6); production requires an edge rewrite from the domain
   root (see docs/README.md).
-- The Phase 1 profile shape follows the task runbook's discovery-manifest
+- ~~The Phase 1 profile shape follows the task runbook's discovery-manifest
   contract (`ucp.version` + top-level `capabilities`/`services`/
   `payment_handlers`); it is provisional until verified against the cloned
   pinned `ucp-schema` repo — any correction is confined to the profile DTOs
-  and their tests.
+  and their tests.~~ **Resolved (2026-07-23, post-Phase-7):** the official
+  repos were cloned and the provisional shapes were verified — several did
+  NOT match. The corrections (profile registries inside the `ucp` object,
+  negative discounts, `fulfillment` totals type, the fulfillment negotiation
+  flow, `order.permalink_url`, payload-id tolerance) are recorded in
+  **ADR 0003**; the prediction held that corrections stayed confined to
+  DTOs/marshalling + tests + harness assertions.
 - Official REST-first tooling (reference client, conformance suite) applies at
   the REST-binding phase rather than day one; until then verification is the
   transport-flagged `scripts/ucp-e2e.py` harness plus `ucp-schema validate`.

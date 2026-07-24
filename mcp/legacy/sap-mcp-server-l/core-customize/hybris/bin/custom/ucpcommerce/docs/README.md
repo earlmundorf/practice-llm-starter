@@ -86,21 +86,48 @@ What is verified automatically against a running local server:
 - `ucp-schema validate` runs best-effort when the CLI is installed;
   otherwise those checks report SKIP.
 
-### External follow-up: official conformance suite / reference client
+### Official reference client: PASSING (2026-07-23)
 
-The official UCP [`conformance`](https://github.com/Universal-Commerce-Protocol/conformance)
-suite and [`samples`](https://github.com/Universal-Commerce-Protocol/samples)
-REST reference client have **not** been run against this server — the
-implementation environment had no network access to clone/run them. When
-running them, note the two documented local concessions:
+Google's out-of-the-box happy-path client from
+[`samples`](https://github.com/Universal-Commerce-Protocol/samples)
+(`rest/python/client/flower_shop/simple_happy_path_client.py`; pins:
+samples `f59d963`, python-sdk `c1ffd1b`, ucp spec `f9bf815`) completes a
+**full purchase** against this server: discovery → create → item update →
+discount attempt (warns, ThinkShop has no `10OFF` code) → **fulfillment
+negotiation** (address-book destinations offered, delivery-mode options,
+selection) → `complete` with `thinkshop_mock_card` → order placed with a
+dereferenceable `permalink_url` (verified run: order `00010016`, mouse +
+2× laptop, 267997 minor units).
 
-- **Non-root profile path** (R6): pass the explicit profile URL
-  `https://localhost:9002/occ/v2/electronics/.well-known/ucp` (or front the
-  server with the edge rewrite above).
-- **Bearer-token auth** (R8): inject the password-grant `Authorization`
-  header (john.doe@thinkshop.com) — the tooling's auth-header/env injection
-  point is required since real UCP clients do not present merchant OAuth
-  tokens.
+One command reproduces it (server running, Solr indexed, `uv` installed,
+official repos cloned under `working-docs/ucp-client/` as siblings):
 
-Record the results here once run. Until then, the verified substitute is the
-both-transport e2e parity described above (see ADR 0002 — Consequences).
+```bash
+./scripts/run-ucp-reference-client.sh
+```
+
+The script keeps the client **byte-identical except three documented
+constant substitutions** (the two flower-shop demo SKUs → ThinkShop SKUs,
+`mock_payment_handler` → `thinkshop_mock_card`) and runs it against
+`scripts/ucp-local-proxy.py` — a stdlib-only localhost proxy that is the
+documented dev stand-in for the two production concessions:
+
+- **Root-path discovery** (R6): the proxy serves `/.well-known/ucp` and
+  `/checkout-sessions/…` from one base, mapping onto the OCC paths —
+  locally what an edge rewrite does in production.
+- **Bearer-token auth** (R8): the proxy injects the password-grant
+  `Authorization` header (john.doe@thinkshop.com) and skips TLS verification
+  for the self-signed local cert — locally what an agent gateway does in
+  production.
+
+The wire-shape corrections this exercise produced (profile registries
+inside `ucp`, negative discounts, `fulfillment` totals type, the
+negotiation flow, `payment`/`links` echo, `order.permalink_url`,
+matching-payload-id tolerance) are recorded in **ADR 0003**. A captured
+request/response log of a passing run (copy-pasteable curls) lives in the
+task artifacts (`reference-client-happy-path.md`); regenerate one anytime
+with `UCP_CLIENT_EXPORT=<path> ./scripts/run-ucp-reference-client.sh`.
+
+The official
+[`conformance`](https://github.com/Universal-Commerce-Protocol/conformance)
+suite remains the outstanding external check.

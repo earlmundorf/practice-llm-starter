@@ -30,6 +30,17 @@ public class UcpOrder
 	@JsonProperty("created_at")
 	private String createdAt;
 
+	/**
+	 * Permalink to the order on the merchant site — REQUIRED by the SDK's
+	 * {@code OrderConfirmation} (the reference client reads
+	 * {@code order.permalink_url} after a successful complete). Points at the
+	 * ThinkShop storefront order page via coremcp's {@code DeepLinkBuilder}.
+	 * Completion responses stored before this field existed replay without it
+	 * (ADR 0003).
+	 */
+	@JsonProperty("permalink_url")
+	private String permalinkUrl;
+
 	/** Lowercased hybris order-status code (e.g. {@code created}, {@code completed}). */
 	@JsonProperty("status")
 	private String status;
@@ -64,6 +75,16 @@ public class UcpOrder
 	public void setCreatedAt(final String createdAt)
 	{
 		this.createdAt = createdAt;
+	}
+
+	public String getPermalinkUrl()
+	{
+		return permalinkUrl;
+	}
+
+	public void setPermalinkUrl(final String permalinkUrl)
+	{
+		this.permalinkUrl = permalinkUrl;
 	}
 
 	public String getStatus()

@@ -78,6 +78,10 @@
           class="com.ucpcommerce.services.impl.UcpOrderMarshaller">
         <property name="ucpCheckoutMarshaller" ref="ucpCheckoutMarshaller"/>
         <property name="ucpMoneyConverter" ref="ucpMoneyConverter"/>
+        <!-- coremcp's storefront deep-link builder — the order permalink_url
+             (required by the spec's OrderConfirmation, ADR 0003) points at the
+             ThinkShop storefront order page. -->
+        <property name="deepLinkBuilder" ref="deepLinkBuilder"/>
     </bean>
 
     <alias name="defaultUcpCheckoutService" alias="ucpCheckoutService"/>
@@ -90,6 +94,7 @@
         <property name="ucpCheckoutSessionService" ref="ucpCheckoutSessionService"/>
         <property name="ucpCheckoutMarshaller" ref="ucpCheckoutMarshaller"/>
         <property name="ucpOrderMarshaller" ref="ucpOrderMarshaller"/>
+        <property name="ucpMoneyConverter" ref="ucpMoneyConverter"/>
     </bean>
 
     <!-- ===================================================================

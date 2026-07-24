@@ -277,55 +277,79 @@ def test_profile(base_url, base_site):
           headers.get("Access-Control-Allow-Origin") == "*",
           f"got {headers.get('Access-Control-Allow-Origin')!r}")
 
+    # Shape corrected against the official discovery schema + sample server
+    # (ADR 0003): everything lives INSIDE the top-level ucp object, and
+    # services/capabilities/payment_handlers are REGISTRIES — maps keyed by
+    # reverse-domain name whose values are LISTS of version entries. This is
+    # exactly what the OOTB reference client parses
+    # (ucp_data.get("payment_handlers", {}).values()).
     ucp = body.get("ucp")
     check("profile has ucp block", isinstance(ucp, dict), f"got {ucp!r}")
-    version = (ucp or {}).get("version", "")
+    ucp = ucp or {}
+    version = ucp.get("version", "")
     check("ucp.version is a dated calver string",
           bool(UCP_VERSION_RE.match(version)), f"got {version!r}")
 
-    check("profile has capabilities array",
-          isinstance(body.get("capabilities"), list), f"got {body.get('capabilities')!r}")
-    check("profile has services object",
-          isinstance(body.get("services"), dict), f"got {body.get('services')!r}")
-    check("profile has payment_handlers array",
-          isinstance(body.get("payment_handlers"), list), f"got {body.get('payment_handlers')!r}")
+    check("no top-level capabilities outside the ucp object",
+          "capabilities" not in body, f"got {sorted(body)!r}")
+    check("ucp.capabilities is a registry object (dict of lists)",
+          isinstance(ucp.get("capabilities"), dict)
+          and all(isinstance(v, list) for v in (ucp.get("capabilities") or {}).values()),
+          f"got {ucp.get('capabilities')!r}")
+    check("ucp.services is a registry object",
+          isinstance(ucp.get("services"), dict), f"got {ucp.get('services')!r}")
+    check("ucp.payment_handlers is a registry object (dict of lists)",
+          isinstance(ucp.get("payment_handlers"), dict)
+          and all(isinstance(v, list) for v in (ucp.get("payment_handlers") or {}).values()),
+          f"got {ucp.get('payment_handlers')!r}")
 
-    # The profile only advertises what works. Phase 2 added the catalog
-    # capability + the mcp transport; Phase 5 adds the checkout capability
-    # and the single mock payment handler.
-    caps = body.get("capabilities") or []
-    cap_names = [c.get("name") for c in caps if isinstance(c, dict)]
+    caps = ucp.get("capabilities") or {}
     check("profile advertises dev.ucp.shopping.catalog",
-          "dev.ucp.shopping.catalog" in cap_names, f"got {cap_names!r}")
-    catalog_cap = next((c for c in caps if isinstance(c, dict)
-                        and c.get("name") == "dev.ucp.shopping.catalog"), {})
+          "dev.ucp.shopping.catalog" in caps, f"got {sorted(caps)!r}")
+    catalog_cap = (caps.get("dev.ucp.shopping.catalog") or [{}])[0]
     check("catalog capability version is a dated calver string",
           bool(UCP_VERSION_RE.match(catalog_cap.get("version", ""))),
           f"got {catalog_cap.get('version')!r}")
-    check("profile advertises dev.ucp.shopping.checkout (Phase 5)",
-          "dev.ucp.shopping.checkout" in cap_names, f"got {cap_names!r}")
-    check("profile advertises dev.ucp.shopping.order (Phase 6)",
-          "dev.ucp.shopping.order" in cap_names, f"got {cap_names!r}")
-    check("profile advertises the custom com.thinkshop.* capabilities (Phase 6)",
-          {"com.thinkshop.promotions", "com.thinkshop.knowledge"} <= set(cap_names),
-          f"got {cap_names!r}")
-    custom_caps = [c for c in caps if isinstance(c, dict)
-                   and str(c.get("name", "")).startswith("com.thinkshop.")]
+    check("capability entries carry no name field (the registry key is the name)",
+          "name" not in catalog_cap, f"got {catalog_cap!r}")
+    check("profile advertises dev.ucp.shopping.checkout",
+          "dev.ucp.shopping.checkout" in caps, f"got {sorted(caps)!r}")
+    fulfillment_cap = (caps.get("dev.ucp.shopping.fulfillment") or [{}])[0]
+    check("profile advertises dev.ucp.shopping.fulfillment extending checkout",
+          fulfillment_cap.get("extends") == "dev.ucp.shopping.checkout",
+          f"got {fulfillment_cap!r}")
+    check("profile advertises dev.ucp.shopping.order",
+          "dev.ucp.shopping.order" in caps, f"got {sorted(caps)!r}")
+    check("profile advertises the custom com.thinkshop.* capabilities",
+          {"com.thinkshop.promotions", "com.thinkshop.knowledge"} <= set(caps),
+          f"got {sorted(caps)!r}")
+    custom_caps = [e for name in ("com.thinkshop.promotions", "com.thinkshop.knowledge")
+                   for e in caps.get(name) or []]
     check("custom capabilities carry dated calver versions",
           custom_caps and all(UCP_VERSION_RE.match(c.get("version", "")) for c in custom_caps),
-          f"got {[(c.get('name'), c.get('version')) for c in custom_caps]!r}")
+          f"got {custom_caps!r}")
 
-    services = body.get("services") or {}
-    mcp_endpoint = (services.get("dev.ucp.shopping") or {}).get("mcp", {}).get("endpoint", "")
+    # Service registry: dev.ucp.shopping → a LIST of transport entries.
+    shopping = (ucp.get("services") or {}).get("dev.ucp.shopping") or []
+    check("dev.ucp.shopping service entries are a list of transports",
+          isinstance(shopping, list) and len(shopping) >= 2, f"got {shopping!r}")
+    transports = {e.get("transport"): e for e in shopping if isinstance(e, dict)}
+    mcp_endpoint = (transports.get("mcp") or {}).get("endpoint", "")
     check("profile advertises the mcp transport endpoint",
           mcp_endpoint.endswith(f"/occ/v2/{base_site}/ucp/mcp"), f"got {mcp_endpoint!r}")
-    rest_endpoint = (services.get("dev.ucp.shopping") or {}).get("rest", {}).get("endpoint", "")
-    check("profile advertises the rest transport base endpoint (Phase 7)",
+    rest_endpoint = (transports.get("rest") or {}).get("endpoint", "")
+    check("profile advertises the rest transport base endpoint",
           rest_endpoint.endswith(f"/occ/v2/{base_site}/ucp"), f"got {rest_endpoint!r}")
-    handlers = body.get("payment_handlers") or []
-    handler_ids = [h.get("id") for h in handlers if isinstance(h, dict)]
+
+    # Payment-handler registry: flatten the values exactly like the OOTB
+    # reference client's discovery step does, then match on id.
+    flattened = [h for handlers in (ucp.get("payment_handlers") or {}).values()
+                 for h in handlers if isinstance(h, dict)]
+    handler_ids = [h.get("id") for h in flattened]
     check(f"profile declares exactly the mock payment handler {PAYMENT_HANDLER_ID}",
           handler_ids == [PAYMENT_HANDLER_ID], f"got {handler_ids!r}")
+    check("the mock handler carries a human-readable name (the client logs it)",
+          bool((flattened or [{}])[0].get("name")), f"got {flattened!r}")
 
     ucp_schema_validate(body, "profile")
     return body
@@ -734,10 +758,14 @@ def test_checkout_update(base_url, base_site, token):
           items_of(upd).get(SECOND_SKU, {}).get("quantity") == 2,
           f"got {upd.get('line_items')!r}")
     totals = totals_of(upd)
-    check(f"BOGO discount of {BOGO_DISCOUNT_MINOR} minor units appears in totals",
-          totals.get("discount") == BOGO_DISCOUNT_MINOR, f"got {totals!r}")
+    # Discounts are NEGATIVE on the wire (official total.json — ADR 0003).
+    check(f"BOGO discount of {-BOGO_DISCOUNT_MINOR} minor units appears in totals",
+          totals.get("discount") == -BOGO_DISCOUNT_MINOR, f"got {totals!r}")
     check(f"total is {SECOND_SKU_PRICE_MINOR} (2 mice, one free, no shipping yet)",
           totals.get("total") == SECOND_SKU_PRICE_MINOR, f"got {totals!r}")
+    check("total is the LAST totals entry (clients read totals[-1])",
+          (upd.get("totals") or [{}])[-1].get("type") == "total",
+          f"got {upd.get('totals')!r}")
     check("status is still incomplete before a destination is set",
           upd.get("status") == "incomplete", f"got {upd.get('status')!r}")
     ucp_schema_validate(upd, "update_checkout (quantity) response")
@@ -762,10 +790,11 @@ def test_checkout_update(base_url, base_site, token):
     check("fulfillment echoes the applied delivery mode",
           fulfillment.get("delivery_mode") == DELIVERY_MODE_STANDARD, f"got {fulfillment!r}")
     totals = totals_of(upd)
-    check(f"shipping of {SHIPPING_STANDARD_MINOR} minor units appears in totals",
-          totals.get("shipping") == SHIPPING_STANDARD_MINOR, f"got {totals!r}")
+    # Delivery cost travels under the well-known type "fulfillment" (ADR 0003).
+    check(f"fulfillment cost of {SHIPPING_STANDARD_MINOR} minor units appears in totals",
+          totals.get("fulfillment") == SHIPPING_STANDARD_MINOR, f"got {totals!r}")
     check("BOGO discount survives the destination update",
-          totals.get("discount") == BOGO_DISCOUNT_MINOR, f"got {totals!r}")
+          totals.get("discount") == -BOGO_DISCOUNT_MINOR, f"got {totals!r}")
     expected_total = SECOND_SKU_PRICE_MINOR + SHIPPING_STANDARD_MINOR
     check(f"total is {expected_total} (discounted mice + standard shipping)",
           totals.get("total") == expected_total, f"got {totals!r}")
@@ -793,7 +822,7 @@ def test_checkout_update(base_url, base_site, token):
               set(items) == {SECOND_SKU, KNOWN_SKU}, f"got {sorted(items)!r}")
         totals = totals_of(upd)
         check("BOGO discount still applies with the laptop in the cart",
-              totals.get("discount") == BOGO_DISCOUNT_MINOR, f"got {totals!r}")
+              totals.get("discount") == -BOGO_DISCOUNT_MINOR, f"got {totals!r}")
         check("free-shipping promotion swapped the delivery mode (cart >= $1,000)",
               (upd.get("fulfillment") or {}).get("delivery_mode") == FREE_DELIVERY_MODE,
               f"got {(upd.get('fulfillment') or {}).get('delivery_mode')!r}")
@@ -813,7 +842,7 @@ def test_checkout_update(base_url, base_site, token):
         check("laptop was removed by its absence from the desired line_items",
               set(items) == {SECOND_SKU}, f"got {sorted(items)!r}")
         check("mouse discount still present after the removal",
-              totals_of(upd).get("discount") == BOGO_DISCOUNT_MINOR,
+              totals_of(upd).get("discount") == -BOGO_DISCOUNT_MINOR,
               f"got {totals_of(upd)!r}")
         check("status stays ready_for_complete after the removal",
               upd.get("status") == "ready_for_complete", f"got {upd.get('status')!r}")
@@ -833,15 +862,90 @@ def test_checkout_update(base_url, base_site, token):
               any(m.get("code") == "not_found" and m.get("severity") == "unrecoverable"
                   for m in msgs), f"got {msgs!r}")
 
-    # 7. A checkout payload containing an id violates the binding — a client
-    #    protocol bug (MCP isError / REST 400), not a UCP business error.
+    # 7. Payload-id rule (corrected in ADR 0003): the SDK update-request shape
+    #    carries an id and the OOTB reference client sends it — an id MATCHING
+    #    the addressed checkout is accepted; a MISMATCH is still a protocol bug.
+    status, body, echo = ucp_call(base_url, base_site, token, "update_checkout",
+                                  {"id": checkout_id,
+                                   "checkout": {"id": checkout_id,
+                                                "line_items": [{"item": {"id": SECOND_SKU},
+                                                                "quantity": 2}]}})
+    check("checkout payload echoing its own id is ACCEPTED (SDK request shape)",
+          not protocol_rejected(status, body) and (echo or {}).get("id") == checkout_id,
+          f"status {status}, body {str(body)[:200]}")
     status, body, _ = ucp_call(base_url, base_site, token, "update_checkout",
                                {"id": checkout_id,
-                                "checkout": {"id": checkout_id,
+                                "checkout": {"id": "ucp_chk_other",
                                              "line_items": [{"item": {"id": SECOND_SKU},
                                                              "quantity": 2}]}})
-    check("checkout payload with an id is rejected as a protocol error",
+    check("checkout payload with a MISMATCHED id is rejected as a protocol error",
           protocol_rejected(status, body), f"status {status}, body {str(body)[:200]}")
+
+    # 8. Spec fulfillment negotiation (ADR 0003) — the OOTB reference client's
+    #    steps 4–6 verbatim: trigger methods → offered destinations → select
+    #    destination → offered options → select option.
+    status, body, neg = ucp_call(base_url, base_site, token, "update_checkout",
+                                 {"id": checkout_id,
+                                  "checkout": {"fulfillment": {"methods": [
+                                      {"id": "method_1", "type": "shipping",
+                                       "line_item_ids": ["li_0"]}]}}})
+    check("negotiation trigger returns a parseable UCP payload", neg is not None,
+          f"status {status}, body {str(body)[:300]}")
+    dest_id = None
+    if neg is not None:
+        methods = (neg.get("fulfillment") or {}).get("methods") or []
+        check("negotiation response echoes the method", len(methods) == 1
+              and methods[0].get("id") == "method_1"
+              and methods[0].get("type") == "shipping", f"got {methods!r}")
+        destinations = (methods[0].get("destinations") if methods else None) or []
+        check("negotiation offers saved destinations (address book / applied address)",
+              len(destinations) >= 1 and all(d.get("id") for d in destinations),
+              f"got {destinations!r}")
+        check("destinations use the spec PostalAddress field names",
+              all("street_address" in d or "postal_code" in d for d in destinations),
+              f"got {destinations!r}")
+        dest_id = destinations[0].get("id") if destinations else None
+    if dest_id:
+        status, body, sel = ucp_call(base_url, base_site, token, "update_checkout",
+                                     {"id": checkout_id,
+                                      "checkout": {"fulfillment": {"methods": [
+                                          {"id": "method_1", "type": "shipping",
+                                           "line_item_ids": ["li_0"],
+                                           "selected_destination_id": dest_id}]}}})
+        method = ((sel or {}).get("fulfillment") or {}).get("methods", [{}])[0]
+        check("selected destination is echoed",
+              method.get("selected_destination_id") is not None, f"got {method!r}")
+        groups = method.get("groups") or []
+        options = (groups[0].get("options") if groups else None) or []
+        check("destination selection yields groups[].options[] (delivery modes)",
+              len(options) >= 1 and all(o.get("id") and o.get("title") for o in options),
+              f"got {groups!r}")
+        check("every option carries a minor-unit totals breakdown",
+              all(isinstance(t.get("amount"), int)
+                  for o in options for t in o.get("totals") or []),
+              f"got {options!r}")
+        if options:
+            option_id = options[0]["id"]
+            status, body, chosen = ucp_call(base_url, base_site, token, "update_checkout",
+                                            {"id": checkout_id,
+                                             "checkout": {"fulfillment": {"methods": [
+                                                 {"id": "method_1", "type": "shipping",
+                                                  "line_item_ids": ["li_0"],
+                                                  "selected_destination_id": dest_id,
+                                                  "groups": [{"id": "group_1",
+                                                              "line_item_ids": ["li_0"],
+                                                              "selected_option_id": option_id}]}]}}})
+            chosen_method = ((chosen or {}).get("fulfillment") or {}).get("methods", [{}])[0]
+            chosen_groups = chosen_method.get("groups") or [{}]
+            check("selected option is applied and echoed",
+                  chosen_groups[0].get("selected_option_id") == option_id,
+                  f"got {chosen_groups!r}")
+            check("negotiated checkout reaches ready_for_complete",
+                  (chosen or {}).get("status") == "ready_for_complete",
+                  f"got {(chosen or {}).get('status')!r}")
+    else:
+        skip("fulfillment negotiation destination/option selection",
+             "no destinations offered (empty address book?)")
 
 
 def test_checkout_complete(base_url, base_site, token):
@@ -920,11 +1024,17 @@ def test_checkout_complete(base_url, base_site, token):
           f"got {done.get('status')!r}")
     order_id = (done.get("order") or {}).get("id")
     check("completed checkout embeds order.id", bool(order_id), f"got {done.get('order')!r}")
+    # OrderConfirmation requires permalink_url — the OOTB client reads it
+    # right after a successful complete (ADR 0003).
+    permalink = (done.get("order") or {}).get("permalink_url") or ""
+    check("completed order block carries permalink_url",
+          permalink.startswith("http") and (order_id or "") in permalink,
+          f"got {done.get('order')!r}")
     totals = totals_of(done)
-    check(f"completed BOGO discount of {BOGO_DISCOUNT_MINOR} survives onto the order",
-          totals.get("discount") == BOGO_DISCOUNT_MINOR, f"got {totals!r}")
-    check(f"completed shipping is {SHIPPING_STANDARD_MINOR}",
-          totals.get("shipping") == SHIPPING_STANDARD_MINOR, f"got {totals!r}")
+    check(f"completed BOGO discount of {-BOGO_DISCOUNT_MINOR} survives onto the order",
+          totals.get("discount") == -BOGO_DISCOUNT_MINOR, f"got {totals!r}")
+    check(f"completed fulfillment cost is {SHIPPING_STANDARD_MINOR}",
+          totals.get("fulfillment") == SHIPPING_STANDARD_MINOR, f"got {totals!r}")
     expected_total = SECOND_SKU_PRICE_MINOR + SHIPPING_STANDARD_MINOR
     check(f"completed total is {expected_total} (discounted mice + standard shipping)",
           totals.get("total") == expected_total, f"got {totals!r}")
@@ -1062,8 +1172,8 @@ def test_orders(base_url, base_site, token, order_id):
                   and line_items[0].get("quantity") == 2,
                   f"got {line_items!r}")
             totals = {t.get("type"): t.get("amount") for t in order.get("totals") or []}
-            check(f"order BOGO discount of {BOGO_DISCOUNT_MINOR} survives onto the order detail",
-                  totals.get("discount") == BOGO_DISCOUNT_MINOR, f"got {totals!r}")
+            check(f"order BOGO discount of {-BOGO_DISCOUNT_MINOR} survives onto the order detail",
+                  totals.get("discount") == -BOGO_DISCOUNT_MINOR, f"got {totals!r}")
             expected_total = SECOND_SKU_PRICE_MINOR + SHIPPING_STANDARD_MINOR
             check(f"order total is {expected_total} (discounted mice + standard shipping)",
                   totals.get("total") == expected_total, f"got {totals!r}")

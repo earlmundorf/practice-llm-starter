@@ -5,18 +5,23 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * The UCP checkout {@code fulfillment} block. Symmetric on request and
- * response so an agent can echo back what it received:
+ * The UCP checkout {@code fulfillment} block. Two layers coexist here:
  *
- * <pre>
- * "fulfillment": {
- *   "destination":   { ...address fields... },
- *   "delivery_mode": "thinkshop-standard",      // mode code; auto-selected when omitted
- *   "delivery_mode_name": "Standard Delivery"   // response-only convenience
- * }
- * </pre>
+ * <ul>
+ *   <li><strong>{@code methods[]}</strong> — the spec's fulfillment
+ *       negotiation flow (python-sdk {@code Fulfillment}; ADR 0003): the
+ *       agent triggers a method, the server offers {@code destinations[]},
+ *       the agent selects one, the server offers {@code groups[].options[]},
+ *       the agent selects an option. This is what the official reference
+ *       client drives.</li>
+ *   <li><strong>{@code destination}/{@code delivery_mode}</strong> — the
+ *       pre-correction ThinkShop shorthand (an inline address + optional
+ *       mode code), kept accepted on requests and echoed on responses for
+ *       backward compatibility. The spec tolerates the extra fields
+ *       ({@code extra=allow}).</li>
+ * </ul>
  *
- * On update, applying a destination (and a delivery mode, explicit or
+ * Either way, an applied destination plus a delivery mode (explicit or
  * auto-selected) is what moves the derived checkout status from
  * {@code incomplete} to {@code ready_for_complete} (design diagram S5).
  */
@@ -24,6 +29,10 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class UcpFulfillment
 {
+	/** Spec negotiation flow (ADR 0003). */
+	@JsonProperty("methods")
+	private java.util.List<UcpFulfillmentMethod> methods;
+
 	@JsonProperty("destination")
 	private UcpDestination destination;
 
@@ -32,6 +41,16 @@ public class UcpFulfillment
 
 	@JsonProperty("delivery_mode_name")
 	private String deliveryModeName;
+
+	public java.util.List<UcpFulfillmentMethod> getMethods()
+	{
+		return methods;
+	}
+
+	public void setMethods(final java.util.List<UcpFulfillmentMethod> methods)
+	{
+		this.methods = methods;
+	}
 
 	public UcpDestination getDestination()
 	{

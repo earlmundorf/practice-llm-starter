@@ -64,6 +64,14 @@ public class DefaultUcpOrderServiceTest
 		final UcpOrderMarshaller orderMarshaller = new UcpOrderMarshaller();
 		orderMarshaller.setUcpCheckoutMarshaller(checkoutMarshaller);
 		orderMarshaller.setUcpMoneyConverter(moneyConverter);
+		orderMarshaller.setDeepLinkBuilder(new com.coremcp.services.DeepLinkBuilder()
+		{
+			@Override
+			public String orderUrl(final String code)
+			{
+				return "http://storefront.test/orders/" + code;
+			}
+		});
 
 		orderService = new DefaultUcpOrderService()
 		{

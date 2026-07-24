@@ -145,10 +145,27 @@ public class UcpCheckoutRestControllerTest
 	}
 
 	@Test
-	public void updateRejectsAPayloadCarryingAnIdAs400() throws Exception
+	public void updateAcceptsAPayloadIdMatchingThePath() throws Exception
 	{
-		// Even the checkout's OWN id: the URL path addresses the resource.
-		controller.update(CHECKOUT_ID, "{\"id\":\"" + CHECKOUT_ID + "\"}", response);
+		// Corrected rule (ADR 0003): the SDK's CheckoutUpdateRequest carries an
+		// id and the official reference client sends it — accepted when it
+		// matches the path, stripped before the DTO conversion.
+		when(ucpCheckoutService.update(eq(CHECKOUT_ID), any())).thenReturn(checkoutPayload("incomplete"));
+
+		controller.update(CHECKOUT_ID,
+			"{\"id\":\"" + CHECKOUT_ID + "\",\"line_items\":[{\"item\":{\"id\":\"LAPTOP_PRO_15\"},\"quantity\":1}]}",
+			response);
+
+		final ArgumentCaptor<UcpCheckoutRequest> captor = ArgumentCaptor.forClass(UcpCheckoutRequest.class);
+		verify(ucpCheckoutService).update(eq(CHECKOUT_ID), captor.capture());
+		assertEquals("LAPTOP_PRO_15", captor.getValue().getLineItems().get(0).getItem().getId());
+		verify(response, never()).setStatus(anyInt());
+	}
+
+	@Test
+	public void updateRejectsAMismatchedPayloadIdAs400() throws Exception
+	{
+		controller.update(CHECKOUT_ID, "{\"id\":\"ucp_chk_other\"}", response);
 
 		verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
 		verify(ucpCheckoutService, never()).update(anyString(), any());

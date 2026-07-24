@@ -1,5 +1,6 @@
 package com.ucpcommerce.services.impl;
 
+import com.coremcp.services.DeepLinkBuilder;
 import com.ucpcommerce.dto.UcpOrder;
 import com.ucpcommerce.dto.UcpTotal;
 
@@ -35,8 +36,16 @@ public class UcpOrderMarshaller
 {
 	private UcpCheckoutMarshaller ucpCheckoutMarshaller;
 	private UcpMoneyConverter ucpMoneyConverter;
+	private DeepLinkBuilder deepLinkBuilder;
 
-	/** Minimal embedded order block ({@code id} + {@code created_at}). */
+	/**
+	 * Minimal embedded order block ({@code id} + {@code created_at} +
+	 * {@code permalink_url}). The permalink is REQUIRED by the spec's
+	 * OrderConfirmation (the reference client reads it after complete — ADR
+	 * 0003) and points at the ThinkShop storefront order page via coremcp's
+	 * {@link DeepLinkBuilder}. Completion responses stored before the field
+	 * existed replay without it.
+	 */
 	public UcpOrder marshal(final OrderData orderData)
 	{
 		if (orderData == null)
@@ -46,6 +55,7 @@ public class UcpOrderMarshaller
 		final UcpOrder order = new UcpOrder();
 		order.setId(orderData.getCode());
 		order.setCreatedAt(iso(orderData.getCreated()));
+		order.setPermalinkUrl(deepLinkBuilder.orderUrl(orderData.getCode()));
 		return order;
 	}
 
@@ -85,6 +95,7 @@ public class UcpOrderMarshaller
 		final UcpOrder order = new UcpOrder();
 		order.setId(historyData.getCode());
 		order.setCreatedAt(iso(historyData.getPlaced()));
+		order.setPermalinkUrl(deepLinkBuilder.orderUrl(historyData.getCode()));
 		order.setStatus(wireStatus(historyData.getStatus() != null ? historyData.getStatus().getCode() : null));
 		if (historyData.getTotal() != null && historyData.getTotal().getValue() != null)
 		{
@@ -122,5 +133,11 @@ public class UcpOrderMarshaller
 	public void setUcpMoneyConverter(final UcpMoneyConverter ucpMoneyConverter)
 	{
 		this.ucpMoneyConverter = ucpMoneyConverter;
+	}
+
+	@Required
+	public void setDeepLinkBuilder(final DeepLinkBuilder deepLinkBuilder)
+	{
+		this.deepLinkBuilder = deepLinkBuilder;
 	}
 }

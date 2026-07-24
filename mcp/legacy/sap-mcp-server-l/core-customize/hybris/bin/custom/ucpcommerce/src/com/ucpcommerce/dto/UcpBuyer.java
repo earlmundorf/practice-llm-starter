@@ -20,6 +20,14 @@ public class UcpBuyer
 	@JsonProperty("last_name")
 	private String lastName;
 
+	/**
+	 * Single display name — the shape the reference client sends
+	 * ({@code BuyerCreateRequest(full_name=…)}); accepted and echoed alongside
+	 * the split name fields (the SDK buyer model allows extra fields).
+	 */
+	@JsonProperty("full_name")
+	private String fullName;
+
 	@JsonProperty("email")
 	private String email;
 
@@ -44,6 +52,16 @@ public class UcpBuyer
 	public void setLastName(final String lastName)
 	{
 		this.lastName = lastName;
+	}
+
+	public String getFullName()
+	{
+		return fullName;
+	}
+
+	public void setFullName(final String fullName)
+	{
+		this.fullName = fullName;
 	}
 
 	public String getEmail()

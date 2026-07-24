@@ -8,6 +8,7 @@ import com.ucpcommerce.dto.UcpEnvelope;
 import com.ucpcommerce.dto.UcpFulfillment;
 import com.ucpcommerce.dto.UcpLineItem;
 import com.ucpcommerce.dto.UcpMessage;
+import com.ucpcommerce.dto.UcpPayment;
 import com.ucpcommerce.dto.UcpProduct;
 import com.ucpcommerce.dto.UcpTotal;
 
@@ -56,6 +57,12 @@ public class UcpCheckoutMarshaller
 		checkout.setTotals(marshalTotals(cart));
 		checkout.setBuyer(buyer);
 		checkout.setFulfillment(marshalFulfillment(cart));
+		// Base-schema conformance (ADR 0003): links is REQUIRED (empty like the
+		// sample server), and payment is echoed on every response because the
+		// reference client feeds response.payment into its next request. The
+		// service overlays the request's instruments when there are any.
+		checkout.setLinks(List.of());
+		checkout.setPayment(new UcpPayment(List.of()));
 		if (messages != null && !messages.isEmpty())
 		{
 			checkout.setMessages(messages);
@@ -103,7 +110,11 @@ public class UcpCheckoutMarshaller
 
 			if (entry.getTotalPrice() != null)
 			{
-				lineItem.setTotals(List.of(new UcpTotal(UcpTotal.TYPE_SUBTOTAL, minor(entry.getTotalPrice()))));
+				// subtotal + total per line, as the sample server emits (the SDK
+				// LineItem requires a totals breakdown).
+				final Long lineTotal = minor(entry.getTotalPrice());
+				lineItem.setTotals(List.of(new UcpTotal(UcpTotal.TYPE_SUBTOTAL, lineTotal),
+					new UcpTotal(UcpTotal.TYPE_TOTAL, lineTotal)));
 			}
 			lineItems.add(lineItem);
 		}
@@ -117,13 +128,16 @@ public class UcpCheckoutMarshaller
 		{
 			return totals;
 		}
-		addTotal(totals, UcpTotal.TYPE_SUBTOTAL, cart.getSubTotal(), true);
-		// Discounts appear once Drools promotions fire (Phase 4 asserts this);
-		// reported as a positive amount under type "discount".
-		addTotal(totals, UcpTotal.TYPE_DISCOUNT, cart.getTotalDiscounts(), false);
-		addTotal(totals, UcpTotal.TYPE_TAX, cart.getTotalTax(), false);
-		addTotal(totals, UcpTotal.TYPE_SHIPPING, cart.getDeliveryCost(), false);
-		addTotal(totals, UcpTotal.TYPE_TOTAL, cart.getTotalPrice(), true);
+		addTotal(totals, UcpTotal.TYPE_SUBTOTAL, cart.getSubTotal(), true, false);
+		// Discounts appear once Drools promotions fire (Phase 4 asserts this).
+		// SIGN per the official total.json (ADR 0003): discount entries carry a
+		// NEGATIVE amount (hybris reports the discount magnitude as positive).
+		addTotal(totals, UcpTotal.TYPE_DISCOUNT, cart.getTotalDiscounts(), false, true);
+		addTotal(totals, UcpTotal.TYPE_TAX, cart.getTotalTax(), false, false);
+		// Delivery cost under the well-known type "fulfillment" (ADR 0003).
+		addTotal(totals, UcpTotal.TYPE_FULFILLMENT, cart.getDeliveryCost(), false, false);
+		// total is emitted LAST — clients read totals[-1] as the running total.
+		addTotal(totals, UcpTotal.TYPE_TOTAL, cart.getTotalPrice(), true, false);
 		return totals;
 	}
 
@@ -173,16 +187,20 @@ public class UcpCheckoutMarshaller
 		return destination;
 	}
 
-	/** Adds a totals entry; optional zero-valued entries are suppressed. */
+	/**
+	 * Adds a totals entry; optional zero-valued entries are suppressed.
+	 * {@code negate} flips the sign for discount-type entries (schema:
+	 * discounts are negative on the receipt; hybris reports magnitudes).
+	 */
 	private void addTotal(final List<UcpTotal> totals, final String type, final PriceData price,
-		final boolean includeWhenZero)
+		final boolean includeWhenZero, final boolean negate)
 	{
 		final Long amount = minor(price);
 		if (amount == null || (amount == 0L && !includeWhenZero))
 		{
 			return;
 		}
-		totals.add(new UcpTotal(type, amount));
+		totals.add(new UcpTotal(type, negate ? -Math.abs(amount) : amount));
 	}
 
 	private Long minor(final PriceData price)
