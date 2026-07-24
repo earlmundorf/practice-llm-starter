@@ -41,6 +41,15 @@ Transports (both advertised in the profile's `services.dev.ucp.shopping`):
 Only `handler_id` `thinkshop_mock_card` is accepted (the profile's single
 declared mock handler); any credential token passes and is never read/stored.
 
+**`meta["idempotency-key"]` is not a tool argument.** It travels in the
+JSON-RPC request's `params.meta` (or `params._meta`), outside the
+`params.arguments` object an LLM controls — generic MCP chat clients (e.g.
+claude.ai connectors) cannot supply it, so the agent platform or gateway in
+front of the store must inject it (`scripts/ucp-mcp-bridge.py` is the dev
+stand-in — see the README's Verification section; the key check fails fast —
+no order is placed without it). Over REST the same key is the
+`Idempotency-Key` header.
+
 ### dev.ucp.shopping.order
 
 | Tool | Input | Returns |

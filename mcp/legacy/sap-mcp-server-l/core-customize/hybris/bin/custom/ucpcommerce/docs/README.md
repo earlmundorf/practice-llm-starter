@@ -128,6 +128,29 @@ request/response log of a passing run (copy-pasteable curls) lives in the
 task artifacts (`reference-client-happy-path.md`); regenerate one anytime
 with `UCP_CLIENT_EXPORT=<path> ./scripts/run-ucp-reference-client.sh`.
 
+### Generic MCP chat clients (e.g. a claude.ai custom connector): PASSING (2026-07-23)
+
+A generic MCP chat client can drive the full journey against the MCP
+binding, but needs a gateway in front of the store for the two things such
+clients cannot provide (both R8 agent-platform responsibilities): the OAuth2
+bearer, and `meta["idempotency-key"]` — which travels in the JSON-RPC
+`params.meta`, *outside* the `params.arguments` an LLM controls (see
+`docs/reference/tools.md`). `scripts/ucp-mcp-bridge.py` is that gateway's
+dev stand-in: it accepts unauthenticated MCP POSTs, injects the bearer, and
+injects a **deterministic** idempotency key (hash of tool + arguments) so a
+retried identical `complete_checkout` replays the stored completion instead
+of placing a duplicate order.
+
+```bash
+python3 scripts/ucp-mcp-bridge.py            # :8183 → /occ/v2/electronics/ucp/mcp
+cloudflared tunnel --url http://localhost:8183   # then use https://<host>/mcp
+```
+
+Verified live with a claude.ai custom connector completing search →
+create → update → complete (the totals double-count fix in
+`UcpCheckoutMarshaller` came out of that session). The bridge exposes the
+demo store unauthenticated — take the tunnel down when finished.
+
 The official
 [`conformance`](https://github.com/Universal-Commerce-Protocol/conformance)
 suite remains the outstanding external check.

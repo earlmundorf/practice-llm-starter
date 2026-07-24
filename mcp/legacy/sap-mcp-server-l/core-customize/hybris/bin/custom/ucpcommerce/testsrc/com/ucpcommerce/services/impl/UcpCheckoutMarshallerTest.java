@@ -186,6 +186,47 @@ public class UcpCheckoutMarshallerTest
 	}
 
 	@Test
+	public void entryLevelPromotionDiscountsDoNotDoubleCountInTheTotalsBlock()
+	{
+		// The live BOGO shape: hybris reduces entry.totalPrice AND reports the
+		// same discount in totalDiscounts. The wire subtotal must be the
+		// PRE-DISCOUNT item sum so the block sums:
+		// 15998 − 7999 + 599 = 8598 (not 7999 − 7999 + 599 = 599).
+		final CartData cart = new CartData();
+		final List<OrderEntryData> entries = new ArrayList<>();
+		entries.add(entry(0, "WIRELESS_GAMING_MOUSE", "Wireless Gaming Mouse", 2, "79.99", "79.99"));
+		cart.setEntries(entries);
+		cart.setSubTotal(usd("79.99"));
+		cart.setTotalDiscounts(usd("79.99"));
+		cart.setDeliveryCost(usd("5.99"));
+		cart.setTotalPrice(usd("85.98"));
+
+		final UcpCheckout checkout = marshaller.marshal("ucp_chk_abc",
+			UcpCheckout.STATUS_READY_FOR_COMPLETE, cart, null, null);
+
+		final Map<String, Long> totals = totalsByType(checkout);
+		assertEquals("subtotal is the pre-discount item sum (unit × qty)",
+			Long.valueOf(15998L), totals.get(UcpTotal.TYPE_SUBTOTAL));
+		assertEquals(Long.valueOf(-7999L), totals.get(UcpTotal.TYPE_DISCOUNT));
+		assertEquals(Long.valueOf(599L), totals.get(UcpTotal.TYPE_FULFILLMENT));
+		assertEquals(Long.valueOf(8598L), totals.get(UcpTotal.TYPE_TOTAL));
+		assertEquals("the totals block must sum to total",
+			totals.get(UcpTotal.TYPE_TOTAL),
+			Long.valueOf(totals.get(UcpTotal.TYPE_SUBTOTAL) + totals.get(UcpTotal.TYPE_DISCOUNT)
+				+ totals.get(UcpTotal.TYPE_FULFILLMENT)));
+
+		final UcpLineItem mouse = checkout.getLineItems().get(0);
+		assertEquals("discounted line carries subtotal + discount + total", 3, mouse.getTotals().size());
+		assertEquals(UcpTotal.TYPE_SUBTOTAL, mouse.getTotals().get(0).getType());
+		assertEquals(Long.valueOf(15998L), mouse.getTotals().get(0).getAmount());
+		assertEquals(UcpTotal.TYPE_DISCOUNT, mouse.getTotals().get(1).getType());
+		assertEquals(Long.valueOf(-7999L), mouse.getTotals().get(1).getAmount());
+		assertEquals("line total stays LAST", UcpTotal.TYPE_TOTAL,
+			mouse.getTotals().get(mouse.getTotals().size() - 1).getType());
+		assertEquals(Long.valueOf(7999L), mouse.getTotals().get(2).getAmount());
+	}
+
+	@Test
 	public void buyerAndMessagesArePassedThrough()
 	{
 		final UcpBuyer buyer = new UcpBuyer();

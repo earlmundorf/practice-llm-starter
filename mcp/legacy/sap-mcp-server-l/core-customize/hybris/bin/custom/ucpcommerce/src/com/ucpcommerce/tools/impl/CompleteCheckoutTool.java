@@ -38,7 +38,10 @@ public class CompleteCheckoutTool implements UcpTool
 			"to be ready_for_complete (items + destination + delivery mode). The checkout payload must " +
 			"contain payment.instruments with handler_id \"thinkshop_mock_card\" (any credential token is " +
 			"accepted by this demo handler) and must NOT contain an id. The call MUST carry a unique " +
-			"meta[\"idempotency-key\"] (UUID): replaying the same key returns the same completed checkout " +
+			"idempotency key (UUID) — NOTE: this is not a tool argument. It travels in the JSON-RPC " +
+			"request's params.meta[\"idempotency-key\"] (params._meta also accepted) and is normally " +
+			"injected by the agent platform or gateway, not by the model; over REST it is the " +
+			"Idempotency-Key header. Replaying the same key returns the same completed checkout " +
 			"and never places a second order. On success the response has status \"completed\" and an " +
 			"embedded order block with order.id. All prices are integer minor units.";
 	}

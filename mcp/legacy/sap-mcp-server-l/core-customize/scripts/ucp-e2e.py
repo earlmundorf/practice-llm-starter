@@ -795,6 +795,15 @@ def test_checkout_update(base_url, base_site, token):
           totals.get("fulfillment") == SHIPPING_STANDARD_MINOR, f"got {totals!r}")
     check("BOGO discount survives the destination update",
           totals.get("discount") == -BOGO_DISCOUNT_MINOR, f"got {totals!r}")
+    # Subtotal is the PRE-discount item sum — hybris's entry-discounted
+    # subTotal next to totalDiscounts double-counted (found by the first
+    # external MCP agent session).
+    check(f"totals.subtotal is the pre-discount item sum ({2 * SECOND_SKU_PRICE_MINOR})",
+          totals.get("subtotal") == 2 * SECOND_SKU_PRICE_MINOR, f"got {totals!r}")
+    check("totals block sums (subtotal + discount + tax + fulfillment == total)",
+          (totals.get("subtotal") or 0) + (totals.get("discount") or 0)
+          + (totals.get("tax") or 0) + (totals.get("fulfillment") or 0)
+          == totals.get("total"), f"got {totals!r}")
     expected_total = SECOND_SKU_PRICE_MINOR + SHIPPING_STANDARD_MINOR
     check(f"total is {expected_total} (discounted mice + standard shipping)",
           totals.get("total") == expected_total, f"got {totals!r}")

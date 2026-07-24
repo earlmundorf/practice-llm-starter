@@ -110,11 +110,21 @@ public class UcpCheckoutMarshaller
 
 			if (entry.getTotalPrice() != null)
 			{
-				// subtotal + total per line, as the sample server emits (the SDK
-				// LineItem requires a totals breakdown).
+				// Per-line breakdown (the SDK LineItem requires one): subtotal is
+				// the PRE-DISCOUNT extended amount (unit price × quantity) so the
+				// entries sum — hybris's entry.totalPrice is already net of
+				// entry-level promotion discounts (the BOGO double-count bug).
 				final Long lineTotal = minor(entry.getTotalPrice());
-				lineItem.setTotals(List.of(new UcpTotal(UcpTotal.TYPE_SUBTOTAL, lineTotal),
-					new UcpTotal(UcpTotal.TYPE_TOTAL, lineTotal)));
+				final Long extended = extendedSubtotal(entry);
+				final List<UcpTotal> lineTotals = new ArrayList<>();
+				lineTotals.add(new UcpTotal(UcpTotal.TYPE_SUBTOTAL, extended != null ? extended : lineTotal));
+				if (extended != null && lineTotal != null && !extended.equals(lineTotal))
+				{
+					lineTotals.add(new UcpTotal(UcpTotal.TYPE_DISCOUNT, lineTotal - extended));
+				}
+				// total is emitted LAST — clients read totals[-1].
+				lineTotals.add(new UcpTotal(UcpTotal.TYPE_TOTAL, lineTotal));
+				lineItem.setTotals(lineTotals);
 			}
 			lineItems.add(lineItem);
 		}
@@ -128,7 +138,21 @@ public class UcpCheckoutMarshaller
 		{
 			return totals;
 		}
-		addTotal(totals, UcpTotal.TYPE_SUBTOTAL, cart.getSubTotal(), true, false);
+		// Wire subtotal is the pre-discount item sum (official total.json
+		// semantics: subtotal + discount + tax + fulfillment = total). Hybris's
+		// cart.subTotal is Σ entry.totalPrice, which entry-level promotion
+		// discounts have ALREADY reduced — emitting it next to totalDiscounts
+		// (which includes those same discounts) double-counts and the block no
+		// longer sums. Falls back to cart.subTotal when a unit price is missing.
+		final Long itemsSubtotal = itemsSubtotal(cart);
+		if (itemsSubtotal != null)
+		{
+			totals.add(new UcpTotal(UcpTotal.TYPE_SUBTOTAL, itemsSubtotal));
+		}
+		else
+		{
+			addTotal(totals, UcpTotal.TYPE_SUBTOTAL, cart.getSubTotal(), true, false);
+		}
 		// Discounts appear once Drools promotions fire (Phase 4 asserts this).
 		// SIGN per the official total.json (ADR 0003): discount entries carry a
 		// NEGATIVE amount (hybris reports the discount magnitude as positive).
@@ -201,6 +225,37 @@ public class UcpCheckoutMarshaller
 			return;
 		}
 		totals.add(new UcpTotal(type, negate ? -Math.abs(amount) : amount));
+	}
+
+	/** Pre-discount extended amount for one entry: unit price × quantity. */
+	private Long extendedSubtotal(final OrderEntryData entry)
+	{
+		final Long unit = minor(entry.getBasePrice());
+		if (unit == null || entry.getQuantity() == null)
+		{
+			return null;
+		}
+		return unit * entry.getQuantity();
+	}
+
+	/** Pre-discount item sum across all entries; null when not derivable. */
+	private Long itemsSubtotal(final AbstractOrderData cart)
+	{
+		if (cart.getEntries() == null)
+		{
+			return null;
+		}
+		long sum = 0L;
+		for (final OrderEntryData entry : cart.getEntries())
+		{
+			final Long extended = extendedSubtotal(entry);
+			if (extended == null)
+			{
+				return null;
+			}
+			sum += extended;
+		}
+		return sum;
 	}
 
 	private Long minor(final PriceData price)
