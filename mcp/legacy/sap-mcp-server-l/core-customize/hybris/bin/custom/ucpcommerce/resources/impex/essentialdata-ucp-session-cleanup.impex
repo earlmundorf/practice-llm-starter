@@ -1,0 +1,16 @@
+# ---------------------------------------------------------------------------
+# UCP checkout-session cleanup — removes expired UcpCheckoutSessionEntry rows
+# left behind by abandoned checkouts (the persisted store evicts lazily on
+# access; this job sweeps entries that are never touched again).
+# Mirror of coremcp's essentialdata-mcp-session-cleanup.impex.
+# Runs every 30 minutes.
+# ---------------------------------------------------------------------------
+
+INSERT_UPDATE ServicelayerJob; code[unique = true]; springId
+; ucpCheckoutSessionCleanupJob ; ucpCheckoutSessionCleanupJob
+
+INSERT_UPDATE CronJob; code[unique = true]; job(code); sessionLanguage(isocode)[default = en]
+; ucpCheckoutSessionCleanupCronJob ; ucpCheckoutSessionCleanupJob
+
+INSERT_UPDATE Trigger; cronJob(code)[unique = true]; cronExpression
+; ucpCheckoutSessionCleanupCronJob ; 0 0/30 * * * ?

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!--
+ ucpcommerce item types.
+
+ UcpCheckoutSessionEntry — maps an opaque UCP checkout id (ucp_chk_...) to a
+ hybris cart code plus the protocol-side state a bare cart cannot carry
+ (design R5): the derived checkout status lifecycle, buyer fields, the
+ complete/cancel idempotency key, and the stored completion response for
+ idempotent replay (Phase 5). Persisted (CCv2 multi-node safe) — the mirror
+ of coremcp's McpSessionEntry, with lazy TTL eviction on access plus the
+ ucpCheckoutSessionCleanupCronJob sweep for abandoned rows.
+-->
+
+<items xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:noNamespaceSchemaLocation="items.xsd">
+
+    <enumtypes>
+        <!-- UCP checkout status lifecycle (design diagram S5). Derived from
+             cart/order state plus protocol events — never trusted from the
+             client. Codes are the UCP wire values. -->
+        <enumtype code="UcpCheckoutStatus" autocreate="true" generate="true">
+            <value code="incomplete"/>
+            <value code="ready_for_complete"/>
+            <value code="complete_in_progress"/>
+            <value code="completed"/>
+            <value code="canceled"/>
+        </enumtype>
+    </enumtypes>
+
+    <itemtypes>
+        <itemtype code="UcpCheckoutSessionEntry"
+                  autocreate="true"
+                  generate="true">
+            <!-- Table name kept under hybris's 24-char deployment-table limit
+                 (UcpCheckoutSessionEntries is rejected as too long). -->
+            <deployment table="UcpCheckoutSessions" typecode="14003"/>
+            <attributes>
+                <attribute qualifier="checkoutId" type="java.lang.String">
+                    <description>Opaque UCP checkout id (ucp_chk_...) echoed by the client on every call.</description>
+                    <persistence type="property"/>
+                    <modifiers unique="true" optional="false"/>
+                </attribute>
+                <attribute qualifier="cartCode" type="java.lang.String">
+                    <description>Internal hybris cart code backing this checkout — never exposed on the wire.</description>
+                    <persistence type="property"/>
+                </attribute>
+                <attribute qualifier="status" type="UcpCheckoutStatus">
+                    <description>Derived UCP checkout status (S5 lifecycle).</description>
+                    <persistence type="property"/>
+                    <modifiers optional="false"/>
+                </attribute>
+                <attribute qualifier="buyerJson" type="java.lang.String">
+                    <description>UCP buyer block from create/update, serialized as JSON (fields not representable on the cart).</description>
+                    <persistence type="property">
+                        <columntype><value>HYBRIS.LONG_STRING</value></columntype>
+                    </persistence>
+                </attribute>
+                <attribute qualifier="idempotencyKey" type="java.lang.String">
+                    <description>meta["idempotency-key"] of the first accepted complete/cancel call (Phase 5).</description>
+                    <persistence type="property"/>
+                </attribute>
+                <attribute qualifier="completionResponseJson" type="java.lang.String">
+                    <description>Serialized completion response replayed verbatim on duplicate idempotency keys (Phase 5).</description>
+                    <persistence type="property">
+                        <columntype><value>HYBRIS.LONG_STRING</value></columntype>
+                    </persistence>
+                </attribute>
+                <attribute qualifier="orderCode" type="java.lang.String">
+                    <description>Code of the placed order once the checkout completes (Phase 5).</description>
+                    <persistence type="property"/>
+                </attribute>
+                <attribute qualifier="lastAccessedAt" type="java.util.Date">
+                    <persistence type="property"/>
+                    <modifiers optional="false"/>
+                </attribute>
+            </attributes>
+            <indexes>
+                <index name="ucpCheckoutIdIdx" unique="true">
+                    <key attribute="checkoutId"/>
+                </index>
+                <index name="ucpCheckoutLastAccessIdx">
+                    <key attribute="lastAccessedAt"/>
+                </index>
+            </indexes>
+        </itemtype>
+    </itemtypes>
+</items>
