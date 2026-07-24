@@ -60,11 +60,20 @@ public class UcpCheckoutRestController extends AbstractUcpRestController
 	@Secured({ "ROLE_CUSTOMERGROUP", "ROLE_TRUSTED_CLIENT" })
 	@RequestMapping(value = "/ucp/checkout-sessions", method = RequestMethod.POST, produces = "application/json")
 	@ResponseBody
-	public String create(@RequestBody final String body, final HttpServletResponse response) throws IOException
+	public String create(@RequestBody final String body,
+		@RequestHeader(value = "UCP-Agent", required = false) final String ucpAgent,
+		@RequestHeader(value = IDEMPOTENCY_KEY_HEADER, required = false) final String idempotencyKey,
+		final HttpServletResponse response) throws IOException
 	{
 		try
 		{
-			return json(ucpCheckoutService.create(parseCheckoutPayload(body, null)), response);
+			final String versionRejection = rejectUnsupportedAgentVersion(ucpAgent, response);
+			if (versionRejection != null)
+			{
+				return versionRejection;
+			}
+			return jsonCheckout(ucpCheckoutService.create(parseCheckoutPayload(body, null), idempotencyKey),
+				response, true);
 		}
 		catch (final IllegalArgumentException e)
 		{
@@ -93,11 +102,20 @@ public class UcpCheckoutRestController extends AbstractUcpRestController
 		produces = "application/json")
 	@ResponseBody
 	public String update(@PathVariable final String checkoutId, @RequestBody final String body,
+		@RequestHeader(value = "UCP-Agent", required = false) final String ucpAgent,
+		@RequestHeader(value = IDEMPOTENCY_KEY_HEADER, required = false) final String idempotencyKey,
 		final HttpServletResponse response) throws IOException
 	{
 		try
 		{
-			return json(ucpCheckoutService.update(checkoutId, parseCheckoutPayload(body, checkoutId)), response);
+			final String versionRejection = rejectUnsupportedAgentVersion(ucpAgent, response);
+			if (versionRejection != null)
+			{
+				return versionRejection;
+			}
+			return jsonCheckout(
+				ucpCheckoutService.update(checkoutId, parseCheckoutPayload(body, checkoutId), idempotencyKey),
+				response, false);
 		}
 		catch (final IllegalArgumentException e)
 		{
@@ -111,13 +129,19 @@ public class UcpCheckoutRestController extends AbstractUcpRestController
 	@ResponseBody
 	public String complete(@PathVariable final String checkoutId, @RequestBody final String body,
 		@RequestHeader(value = IDEMPOTENCY_KEY_HEADER, required = false) final String idempotencyKey,
+		@RequestHeader(value = "UCP-Agent", required = false) final String ucpAgent,
 		final HttpServletResponse response) throws IOException
 	{
 		try
 		{
-			return json(
+			final String versionRejection = rejectUnsupportedAgentVersion(ucpAgent, response);
+			if (versionRejection != null)
+			{
+				return versionRejection;
+			}
+			return jsonCheckout(
 				ucpCheckoutService.complete(checkoutId, parseCheckoutPayload(body, checkoutId), idempotencyKey),
-				response);
+				response, false);
 		}
 		catch (final IllegalArgumentException e)
 		{
@@ -137,7 +161,7 @@ public class UcpCheckoutRestController extends AbstractUcpRestController
 		// the MCP binding where cancel_checkout carries only id + meta).
 		try
 		{
-			return json(ucpCheckoutService.cancel(checkoutId, idempotencyKey), response);
+			return jsonCheckout(ucpCheckoutService.cancel(checkoutId, idempotencyKey), response, false);
 		}
 		catch (final IllegalArgumentException e)
 		{
@@ -172,12 +196,11 @@ public class UcpCheckoutRestController extends AbstractUcpRestController
 		}
 		if (raw.containsKey("id"))
 		{
-			if (expectedId == null)
-			{
-				throw new IllegalArgumentException(
-					"checkout payload must not contain an id on create; the response mints one");
-			}
-			if (!expectedId.equals(raw.get("id")))
+			// On create a client-generated id is TOLERATED and ignored — the
+			// official CheckoutCreateRequest model carries an optional id (the
+			// conformance suite sends a uuid) and the server still mints the
+			// canonical one. On update a mismatched id is still rejected.
+			if (expectedId != null && !expectedId.equals(raw.get("id")))
 			{
 				throw new IllegalArgumentException("checkout payload id does not match the URL path id");
 			}

@@ -1,10 +1,14 @@
 package com.ucpcommerce.dto;
 
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
+import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The inbound {@code checkout} payload for {@code create_checkout} and
@@ -23,6 +27,14 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class UcpCheckoutRequest
 {
+	/**
+	 * The client's {@code ucp} metadata block. Only {@code version} is read —
+	 * a request pinned to a version this server does not implement is
+	 * rejected ({@code version_unsupported}, HTTP 422 over REST).
+	 */
+	@JsonProperty("ucp")
+	private UcpEnvelope ucp;
+
 	@JsonProperty("line_items")
 	private List<UcpLineItemRequest> lineItems;
 
@@ -39,6 +51,31 @@ public class UcpCheckoutRequest
 	/** Discount (voucher) codes — declarative like {@code line_items}. */
 	@JsonProperty("discounts")
 	private UcpDiscounts discounts;
+
+	/**
+	 * Unmapped request fields (currency, status echo, context, …) — retained
+	 * so the idempotency request hash reflects the payload AS SENT: a same-key
+	 * retry that differs only in a field this phase does not act on must
+	 * still be a 409 conflict, not a replay.
+	 */
+	@JsonAnySetter
+	private final Map<String, Object> extras = new LinkedHashMap<>();
+
+	@JsonAnyGetter
+	public Map<String, Object> getExtras()
+	{
+		return extras;
+	}
+
+	public UcpEnvelope getUcp()
+	{
+		return ucp;
+	}
+
+	public void setUcp(final UcpEnvelope ucp)
+	{
+		this.ucp = ucp;
+	}
 
 	public List<UcpLineItemRequest> getLineItems()
 	{

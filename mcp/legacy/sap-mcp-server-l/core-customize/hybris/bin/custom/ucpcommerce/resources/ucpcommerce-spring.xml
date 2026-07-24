@@ -68,6 +68,9 @@
     <bean id="defaultUcpCheckoutMarshaller"
           class="com.ucpcommerce.services.impl.UcpCheckoutMarshaller">
         <property name="ucpMoneyConverter" ref="ucpMoneyConverter"/>
+        <!-- checkout envelopes embed the payment_handlers registry (official
+             response_checkout_schema requires it). -->
+        <property name="ucpProfileService" ref="ucpProfileService"/>
     </bean>
 
     <!-- OrderData → UCP order objects: the minimal block embedded in a
@@ -84,9 +87,21 @@
         <property name="deepLinkBuilder" ref="deepLinkBuilder"/>
     </bean>
 
+    <!-- Per-operation idempotency store (official binding: any mutating call
+         may carry an Idempotency-Key; identical retry replays, different
+         payload under the same key is a 409 conflict). -->
+    <alias name="defaultUcpIdempotencyService" alias="ucpIdempotencyService"/>
+    <bean id="defaultUcpIdempotencyService"
+          class="com.ucpcommerce.services.impl.DefaultUcpIdempotencyService">
+        <property name="modelService" ref="modelService"/>
+        <property name="flexibleSearchService" ref="flexibleSearchService"/>
+        <property name="userService" ref="userService"/>
+    </bean>
+
     <alias name="defaultUcpCheckoutService" alias="ucpCheckoutService"/>
     <bean id="defaultUcpCheckoutService"
           class="com.ucpcommerce.services.impl.DefaultUcpCheckoutService">
+        <property name="ucpIdempotencyService" ref="ucpIdempotencyService"/>
         <property name="cartFacade" ref="cartFacade"/>
         <property name="checkoutFacade" ref="checkoutFacade"/>
         <property name="userFacade" ref="userFacade"/>
@@ -109,6 +124,8 @@
           class="com.ucpcommerce.services.impl.DefaultUcpOrderService">
         <property name="orderFacade" ref="orderFacade"/>
         <property name="ucpOrderMarshaller" ref="ucpOrderMarshaller"/>
+        <!-- checkout_id provenance lookup for order.json conformance -->
+        <property name="ucpCheckoutSessionService" ref="ucpCheckoutSessionService"/>
     </bean>
 
     <!-- ===================================================================

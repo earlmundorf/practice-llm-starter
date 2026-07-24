@@ -2,6 +2,7 @@ package com.ucpcommerce.services.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ucpcommerce.constants.UcpcommerceConstants;
+import com.ucpcommerce.dto.UcpAppliedDiscount;
 import com.ucpcommerce.dto.UcpBuyer;
 import com.ucpcommerce.dto.UcpCheckout;
 import com.ucpcommerce.dto.UcpCheckoutRequest;
@@ -22,6 +23,7 @@ import com.ucpcommerce.dto.UcpShippingDestination;
 import com.ucpcommerce.dto.UcpTotal;
 import com.ucpcommerce.services.UcpCheckoutService;
 import com.ucpcommerce.services.UcpCheckoutSessionService;
+import com.ucpcommerce.services.UcpIdempotencyService;
 
 import de.hybris.platform.commercefacades.order.CartFacade;
 import de.hybris.platform.commercefacades.order.CheckoutFacade;
@@ -40,6 +42,7 @@ import de.hybris.platform.commercefacades.voucher.data.VoucherData;
 import de.hybris.platform.commercefacades.voucher.exceptions.VoucherOperationException;
 import de.hybris.platform.commercewebservicescommons.strategies.CartLoaderStrategy;
 import de.hybris.platform.order.InvalidCartException;
+import de.hybris.platform.util.Config;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +52,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -83,6 +87,7 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 	private CheckoutFacade checkoutFacade;
 	private UserFacade userFacade;
 	private VoucherFacade voucherFacade;
+	private UcpIdempotencyService ucpIdempotencyService;
 	private CartLoaderStrategy cartLoaderStrategy;
 	private UcpCheckoutSessionService ucpCheckoutSessionService;
 	private UcpCheckoutMarshaller ucpCheckoutMarshaller;
@@ -92,6 +97,51 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 	@Override
 	public UcpCheckout create(final UcpCheckoutRequest payload)
 	{
+		return create(payload, null);
+	}
+
+	@Override
+	public UcpCheckout create(final UcpCheckoutRequest payload, final String idempotencyKey)
+	{
+		// Optional idempotency (official binding): an identical same-key retry
+		// replays the stored response verbatim; a different payload under the
+		// same key is a 409 conflict.
+		final String requestHash = idempotencyKey != null && !idempotencyKey.isBlank()
+			? requestHash(payload) : null;
+		if (requestHash != null)
+		{
+			final UcpIdempotencyService.Consultation seen =
+				ucpIdempotencyService.consult("create", idempotencyKey, requestHash);
+			if (seen.getOutcome() == UcpIdempotencyService.Outcome.CONFLICT)
+			{
+				return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "conflict",
+					UcpMessage.SEVERITY_UNRECOVERABLE,
+					"Idempotency-Key was already used with a different request payload")));
+			}
+			if (seen.getOutcome() == UcpIdempotencyService.Outcome.REPLAY && seen.getResponseJson() != null)
+			{
+				final UcpCheckout replay = parseCheckoutJson(seen.getResponseJson());
+				if (replay != null)
+				{
+					return replay;
+				}
+			}
+		}
+		final UcpCheckout created = doCreate(payload);
+		if (requestHash != null && created.getUcp() != null && !"error".equals(created.getUcp().getStatus()))
+		{
+			ucpIdempotencyService.record("create", idempotencyKey, requestHash, toJson(created));
+		}
+		return created;
+	}
+
+	protected UcpCheckout doCreate(final UcpCheckoutRequest payload)
+	{
+		final UcpMessage versionError = validateRequestedVersion(payload);
+		if (versionError != null)
+		{
+			return ucpCheckoutMarshaller.error(List.of(versionError));
+		}
 		if (payload == null || payload.getLineItems() == null || payload.getLineItems().isEmpty())
 		{
 			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
@@ -176,6 +226,49 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 	@Override
 	public UcpCheckout update(final String checkoutId, final UcpCheckoutRequest payload)
 	{
+		return update(checkoutId, payload, null);
+	}
+
+	@Override
+	public UcpCheckout update(final String checkoutId, final UcpCheckoutRequest payload,
+		final String idempotencyKey)
+	{
+		final String requestHash = idempotencyKey != null && !idempotencyKey.isBlank()
+			? requestHash(payload) : null;
+		if (requestHash != null)
+		{
+			final UcpIdempotencyService.Consultation seen =
+				ucpIdempotencyService.consult("update:" + checkoutId, idempotencyKey, requestHash);
+			if (seen.getOutcome() == UcpIdempotencyService.Outcome.CONFLICT)
+			{
+				return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "conflict",
+					UcpMessage.SEVERITY_UNRECOVERABLE,
+					"Idempotency-Key was already used with a different request payload")));
+			}
+			if (seen.getOutcome() == UcpIdempotencyService.Outcome.REPLAY && seen.getResponseJson() != null)
+			{
+				final UcpCheckout replay = parseCheckoutJson(seen.getResponseJson());
+				if (replay != null)
+				{
+					return replay;
+				}
+			}
+		}
+		final UcpCheckout updated = doUpdate(checkoutId, payload);
+		if (requestHash != null && updated.getUcp() != null && !"error".equals(updated.getUcp().getStatus()))
+		{
+			ucpIdempotencyService.record("update:" + checkoutId, idempotencyKey, requestHash, toJson(updated));
+		}
+		return updated;
+	}
+
+	protected UcpCheckout doUpdate(final String checkoutId, final UcpCheckoutRequest payload)
+	{
+		final UcpMessage versionError = validateRequestedVersion(payload);
+		if (versionError != null)
+		{
+			return ucpCheckoutMarshaller.error(List.of(versionError));
+		}
 		final UcpCheckoutSession session = ucpCheckoutSessionService.get(checkoutId);
 		if (session == null)
 		{
@@ -185,8 +278,9 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		if (UcpCheckout.STATUS_COMPLETED.equals(session.getStatus())
 			|| UcpCheckout.STATUS_CANCELED.equals(session.getStatus()))
 		{
-			// Terminal statuses are immutable (S5) — reject without touching the cart.
-			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
+			// Terminal statuses are immutable (S5) — reject without touching the
+			// cart. Code "conflict" → HTTP 409 over REST.
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "conflict",
 				UcpMessage.SEVERITY_UNRECOVERABLE,
 				"Checkout " + checkoutId + " is " + session.getStatus() + " and can no longer be updated")));
 		}
@@ -195,7 +289,7 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 			// A completion is running — mutating the cart underneath it would
 			// race placeOrder. Recoverable: the client can retry after the
 			// completion settles one way or the other (S5).
-			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "conflict",
 				UcpMessage.SEVERITY_RECOVERABLE,
 				"Checkout " + checkoutId + " has a completion in progress and cannot be updated right now")));
 		}
@@ -249,6 +343,18 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		final String idempotencyKey)
 	{
 		requireIdempotencyKey(idempotencyKey, "complete_checkout");
+		// Same-key/DIFFERENT-payload retry is a 409 conflict (official
+		// binding) — checked against the hash stored when the first complete
+		// was accepted; the response replay itself comes from the session.
+		final String completeHash = requestHash(payload);
+		final UcpIdempotencyService.Consultation seen =
+			ucpIdempotencyService.consult("complete:" + checkoutId, idempotencyKey, completeHash);
+		if (seen.getOutcome() == UcpIdempotencyService.Outcome.CONFLICT)
+		{
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "conflict",
+				UcpMessage.SEVERITY_UNRECOVERABLE,
+				"Idempotency-Key was already used with a different request payload")));
+		}
 		final UcpCheckoutSession session = ucpCheckoutSessionService.get(checkoutId);
 		if (session == null)
 		{
@@ -272,16 +378,25 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 			// place a second one. Rebuild a minimal completed payload.
 			return completedFallback(session);
 		}
+		if (idempotencyKey.equals(session.getIdempotencyKey())
+			&& UcpCheckout.STATUS_COMPLETED.equals(session.getStatus()))
+		{
+			// Same accepted key, but no stored response (e.g. the record write
+			// hit a column limit): the order exists — replay the fallback, not
+			// a bogus "different idempotency key" error.
+			return completedFallback(session);
+		}
 
 		if (UcpCheckout.STATUS_COMPLETED.equals(session.getStatus()))
 		{
-			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
+			// Code "conflict" → HTTP 409 over REST (idempotency conflict).
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "conflict",
 				UcpMessage.SEVERITY_UNRECOVERABLE,
 				"Checkout " + checkoutId + " is already completed (under a different idempotency key)")));
 		}
 		if (UcpCheckout.STATUS_CANCELED.equals(session.getStatus()))
 		{
-			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "conflict",
 				UcpMessage.SEVERITY_UNRECOVERABLE,
 				"Checkout " + checkoutId + " is canceled and can no longer be completed")));
 		}
@@ -289,17 +404,24 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		{
 			// A previous complete was accepted but has not settled (concurrent
 			// call, or a crash mid-completion). Recoverable — retry later.
-			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "conflict",
 				UcpMessage.SEVERITY_RECOVERABLE,
 				"A completion for checkout " + checkoutId + " is already in progress; retry shortly")));
 		}
 
 		// Handler validation (R9): the single declared mock handler must be
-		// referenced; any credential token for it is accepted (and never read).
+		// referenced; any credential token for it is accepted (and never read)
+		// EXCEPT the well-known decline probe "fail_token", which the mock
+		// declines so agents can exercise the payment-failure path.
 		final UcpMessage handlerError = validatePaymentHandler(payload);
 		if (handlerError != null)
 		{
 			return ucpCheckoutMarshaller.error(List.of(handlerError));
+		}
+		final UcpMessage declined = probeDeclineToken(payload);
+		if (declined != null)
+		{
+			return ucpCheckoutMarshaller.error(List.of(declined));
 		}
 
 		try
@@ -322,16 +444,22 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		if (!UcpCheckout.STATUS_READY_FOR_COMPLETE.equals(derived))
 		{
 			ucpCheckoutSessionService.update(checkoutId, cart.getCode(), derived);
+			// Code "not_ready" → HTTP 400 over REST (official binding). The
+			// message leads with the spec's canonical phrasing.
 			final UcpCheckout notReady = ucpCheckoutMarshaller.marshal(checkoutId, derived, cart, buyer,
-				List.of(new UcpMessage("error", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
-					"Checkout is not ready to complete: it needs at least one item, a delivery "
-						+ "destination and a delivery mode (current status: " + derived + ")")));
+				List.of(new UcpMessage("error", "not_ready", UcpMessage.SEVERITY_RECOVERABLE,
+					"Fulfillment address and option must be selected before completing: the checkout "
+						+ "needs at least one item, a delivery destination and a delivery mode "
+						+ "(current status: " + derived + ")")));
 			attachFulfillmentNegotiation(notReady, null, cart);
 			return notReady;
 		}
 
 		// Accepted: S5 ready_for_complete → complete_in_progress, key stored.
 		ucpCheckoutSessionService.beginCompletion(checkoutId, idempotencyKey);
+		// Pin the accepted request's hash so a same-key retry with a DIFFERENT
+		// payload is a 409 (the session entry replays the response itself).
+		ucpIdempotencyService.record("complete:" + checkoutId, idempotencyKey, completeHash, null);
 
 		final OrderData order;
 		try
@@ -382,7 +510,8 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		}
 		if (UcpCheckout.STATUS_COMPLETED.equals(session.getStatus()))
 		{
-			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
+			// Code "conflict" → HTTP 409 over REST.
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "conflict",
 				UcpMessage.SEVERITY_UNRECOVERABLE,
 				"Checkout " + checkoutId + " is already completed and can no longer be canceled")));
 		}
@@ -390,7 +519,7 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		{
 			// S5 has no complete_in_progress → canceled edge: the completion
 			// must settle first. Recoverable — retry after it does.
-			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "invalid_request",
+			return ucpCheckoutMarshaller.error(List.of(new UcpMessage("error", "conflict",
 				UcpMessage.SEVERITY_RECOVERABLE,
 				"A completion for checkout " + checkoutId + " is in progress; it cannot be canceled right now")));
 		}
@@ -470,6 +599,62 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 	 * declared handler (R9). Returns null when valid, otherwise the
 	 * unrecoverable message to return.
 	 */
+	/**
+	 * Version negotiation (protocol.md): a request whose {@code ucp.version}
+	 * names a version this server does not implement is rejected —
+	 * {@code version_unsupported}, HTTP 422 over REST. An absent block or
+	 * version means "whatever the server speaks" and passes.
+	 */
+	protected UcpMessage validateRequestedVersion(final UcpCheckoutRequest payload)
+	{
+		final String requested = payload != null && payload.getUcp() != null
+			? payload.getUcp().getVersion() : null;
+		if (requested == null || requested.isBlank())
+		{
+			return null;
+		}
+		final String pinned = getPinnedUcpVersion();
+		if (pinned.equals(requested))
+		{
+			return null;
+		}
+		return new UcpMessage("error", "version_unsupported", UcpMessage.SEVERITY_UNRECOVERABLE,
+			"UCP version " + requested + " is not supported; this server implements " + pinned);
+	}
+
+	/** The pinned UCP spec version — config seam, overridable in tests. */
+	protected String getPinnedUcpVersion()
+	{
+		return Config.getString(UcpcommerceConstants.UCP_VERSION_PROPERTY,
+			UcpcommerceConstants.UCP_VERSION_DEFAULT);
+	}
+
+	/**
+	 * The mock handler's decline probe: a credential {@code token} of
+	 * {@code fail_token} is declined (code {@code payment_declined}, HTTP 402
+	 * over REST) BEFORE the completion is accepted — no state transition, no
+	 * order. Every other token is accepted and never inspected further.
+	 */
+	protected UcpMessage probeDeclineToken(final UcpCheckoutRequest payload)
+	{
+		final List<UcpPaymentInstrument> instruments =
+			payload != null && payload.getPayment() != null ? payload.getPayment().getInstruments() : null;
+		if (instruments == null)
+		{
+			return null;
+		}
+		for (final UcpPaymentInstrument instrument : instruments)
+		{
+			if (instrument != null && instrument.getCredential() != null
+				&& "fail_token".equals(instrument.getCredential().get("token")))
+			{
+				return new UcpMessage("error", "payment_declined", UcpMessage.SEVERITY_RECOVERABLE,
+					"Payment was declined by the mock handler (fail_token decline probe)");
+			}
+		}
+		return null;
+	}
+
 	protected UcpMessage validatePaymentHandler(final UcpCheckoutRequest payload)
 	{
 		final List<UcpPaymentInstrument> instruments =
@@ -483,7 +668,8 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		for (final UcpPaymentInstrument instrument : instruments)
 		{
 			if (instrument != null
-				&& UcpcommerceConstants.PAYMENT_HANDLER_ID.equals(instrument.getHandlerId()))
+				&& (UcpcommerceConstants.PAYMENT_HANDLER_ID.equals(instrument.getHandlerId())
+					|| UcpcommerceConstants.PAYMENT_HANDLER_ALIAS.equals(instrument.getHandlerId())))
 			{
 				return null;
 			}
@@ -608,15 +794,17 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		final List<String> requested = new ArrayList<>();
 		for (final String code : discounts.getCodes())
 		{
-			if (code != null && !code.isBlank() && !requested.contains(code.trim()))
+			if (code != null && !code.isBlank() && !containsIgnoreCase(requested, code.trim()))
 			{
 				requested.add(code.trim());
 			}
 		}
+		// Codes match CASE-INSENSITIVELY (discount.md / conformance DSC-005);
+		// releases always use the server-side canonical code.
 		final List<String> applied = appliedVoucherCodes();
 		for (final String code : applied)
 		{
-			if (!requested.contains(code))
+			if (!containsIgnoreCase(requested, code))
 			{
 				try
 				{
@@ -632,20 +820,62 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		}
 		for (final String code : requested)
 		{
-			if (!applied.contains(code))
+			if (!containsIgnoreCase(applied, code))
 			{
-				try
-				{
-					voucherFacade.applyVoucher(code);
-				}
-				catch (final VoucherOperationException e)
-				{
-					LOG.info("UCP discounts: voucher '{}' rejected: {}", code, e.getMessage());
-					messages.add(new UcpMessage("warning", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
-						"Discount code '" + code + "' is not valid for this checkout"));
-				}
+				applyDiscountCode(code, messages);
 			}
 		}
+	}
+
+	/**
+	 * Applies one requested code, tolerating case variants: hybris coupon
+	 * codes are stored canonically (typically uppercase), so an as-given miss
+	 * retries the upper- and lowercase forms before reporting the code
+	 * invalid. The response echo always carries the canonical applied code.
+	 */
+	protected void applyDiscountCode(final String code, final List<UcpMessage> messages)
+	{
+		final List<String> candidates = new ArrayList<>();
+		candidates.add(code);
+		final String upper = code.toUpperCase(Locale.ROOT);
+		final String lower = code.toLowerCase(Locale.ROOT);
+		if (!candidates.contains(upper))
+		{
+			candidates.add(upper);
+		}
+		if (!candidates.contains(lower))
+		{
+			candidates.add(lower);
+		}
+		VoucherOperationException lastFailure = null;
+		for (final String candidate : candidates)
+		{
+			try
+			{
+				voucherFacade.applyVoucher(candidate);
+				return;
+			}
+			catch (final VoucherOperationException e)
+			{
+				lastFailure = e;
+			}
+		}
+		LOG.info("UCP discounts: voucher '{}' rejected: {}", code,
+			lastFailure != null ? lastFailure.getMessage() : "unknown");
+		messages.add(new UcpMessage("warning", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
+			"Discount code '" + code + "' is not valid for this checkout"));
+	}
+
+	private static boolean containsIgnoreCase(final List<String> codes, final String code)
+	{
+		for (final String candidate : codes)
+		{
+			if (candidate.equalsIgnoreCase(code))
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -657,10 +887,41 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 	 */
 	protected void attachAppliedDiscounts(final UcpCheckout checkout)
 	{
-		final List<String> codes = appliedVoucherCodes();
+		final List<String> codes = new ArrayList<>();
+		final List<UcpAppliedDiscount> applied = new ArrayList<>();
+		try
+		{
+			for (final VoucherData voucher : voucherFacade.getVouchersForCart())
+			{
+				final String code = voucher.getVoucherCode() != null ? voucher.getVoucherCode() : voucher.getCode();
+				if (code == null || codes.contains(code))
+				{
+					continue;
+				}
+				codes.add(code);
+				// Official applied_discount entry (discount.json): title and
+				// amount are REQUIRED; amount is the positive magnitude in
+				// minor units (the signed effect lives in totals[]).
+				final String title = voucher.getName() != null ? voucher.getName()
+					: (voucher.getDescription() != null ? voucher.getDescription() : code);
+				Long amount = 0L;
+				if (voucher.getAppliedValue() != null && voucher.getAppliedValue().getValue() != null)
+				{
+					amount = Math.abs(ucpMoneyConverter.toMinorUnits(
+						voucher.getAppliedValue().getValue(), voucher.getAppliedValue().getCurrencyIso()));
+				}
+				applied.add(new UcpAppliedDiscount(code, title, amount));
+			}
+		}
+		catch (final RuntimeException e)
+		{
+			LOG.warn("UCP discounts: could not read applied vouchers: {}", e.getMessage());
+		}
 		if (!codes.isEmpty())
 		{
-			checkout.setDiscounts(new UcpDiscounts(codes));
+			final UcpDiscounts discounts = new UcpDiscounts(codes);
+			discounts.setApplied(applied);
+			checkout.setDiscounts(discounts);
 		}
 	}
 
@@ -756,7 +1017,8 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 			final CartModificationData modification = cartFacade.updateCartEntry(entry.getEntryNumber(), quantity);
 			if (quantity > 0 && modification != null && modification.getQuantity() < quantity)
 			{
-				messages.add(new UcpMessage("warning", "out_of_stock", UcpMessage.SEVERITY_RECOVERABLE,
+				// Clamp-and-warn posture (checkout-rest.md "Business Outcomes").
+				messages.add(new UcpMessage("warning", "quantity_adjusted", UcpMessage.SEVERITY_RECOVERABLE,
 					"Item " + itemId + ": only " + modification.getQuantity() + " of " + quantity
 						+ " units are available"));
 			}
@@ -799,22 +1061,38 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		if (method != null && method.getSelectedDestinationId() != null
 			&& !method.getSelectedDestinationId().isBlank())
 		{
-			final AddressData byId = new AddressData();
-			byId.setId(method.getSelectedDestinationId());
-			try
+			final String selectedId = method.getSelectedDestinationId();
+			boolean applied = false;
+			// Resolve the id against the ADDRESS BOOK explicitly — the facade's
+			// setDeliveryAddress silently resolves an unknown id to null (which
+			// CLEARS the address and still returns true).
+			final AddressData saved = findSavedAddress(selectedId);
+			if (saved != null)
 			{
-				if (!checkoutFacade.setDeliveryAddress(byId))
+				try
 				{
-					messages.add(new UcpMessage("error", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
-						"Unknown fulfillment destination id: " + method.getSelectedDestinationId()));
+					applied = checkoutFacade.setDeliveryAddress(saved);
+				}
+				catch (final Exception e)
+				{
+					LOG.debug("UCP checkout: could not select destination {}: {}", selectedId, e.getMessage());
 				}
 			}
-			catch (final Exception e)
+			if (!applied)
 			{
-				LOG.debug("UCP checkout: could not select destination {}: {}",
-					method.getSelectedDestinationId(), e.getMessage());
-				messages.add(new UcpMessage("error", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
-					"Could not select destination " + method.getSelectedDestinationId() + ": " + e.getMessage()));
+				// Not a saved-address id — the official flow also allows the
+				// CLIENT to supply the destination inline in this same
+				// methods[].destinations list and select it in one call.
+				final UcpShippingDestination inline = findInlineDestination(method, selectedId);
+				if (inline != null)
+				{
+					applied = applyInlineDestination(inline, buyer, messages);
+				}
+				else
+				{
+					messages.add(new UcpMessage("error", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
+						"Unknown fulfillment destination id: " + selectedId));
+				}
 			}
 		}
 		if (fulfillment.getDestination() != null)
@@ -932,6 +1210,110 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		}
 	}
 
+	/** The customer's saved (address-book) address with the given id, or null. */
+	protected AddressData findSavedAddress(final String addressId)
+	{
+		try
+		{
+			final List<AddressData> book = userFacade.getAddressBook();
+			if (book != null)
+			{
+				for (final AddressData address : book)
+				{
+					if (address != null && addressId.equals(address.getId()))
+					{
+						return address;
+					}
+				}
+			}
+		}
+		catch (final Exception e)
+		{
+			LOG.debug("UCP checkout: could not read the address book: {}", e.getMessage());
+		}
+		return null;
+	}
+
+	/** The request-supplied inline destination with the given id, or null. */
+	private static UcpShippingDestination findInlineDestination(final UcpFulfillmentMethod method,
+		final String destinationId)
+	{
+		if (method.getDestinations() == null)
+		{
+			return null;
+		}
+		for (final UcpShippingDestination destination : method.getDestinations())
+		{
+			if (destination != null && destinationId.equals(destination.getId()))
+			{
+				return destination;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Applies a client-supplied inline destination (official
+	 * {@code shipping_destination} field names) via the same persist-then-
+	 * select path as the legacy inline {@code fulfillment.destination}.
+	 */
+	protected boolean applyInlineDestination(final UcpShippingDestination destination, final UcpBuyer buyer,
+		final List<UcpMessage> messages)
+	{
+		final AddressData address = toAddressData(destination, buyer);
+		try
+		{
+			userFacade.addAddress(address);
+			if (checkoutFacade.setDeliveryAddress(address))
+			{
+				return true;
+			}
+			messages.add(new UcpMessage("error", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
+				"Delivery destination " + destination.getId() + " was not accepted (this store may not "
+					+ "deliver to " + destination.getAddressCountry() + ")"));
+		}
+		catch (final Exception e)
+		{
+			LOG.debug("UCP checkout: could not apply inline destination {}: {}",
+				destination.getId(), e.getMessage());
+			messages.add(new UcpMessage("error", "invalid_request", UcpMessage.SEVERITY_RECOVERABLE,
+				"Could not set delivery destination " + destination.getId() + ": " + e.getMessage()));
+		}
+		return false;
+	}
+
+	/** Official {@code shipping_destination} names → hybris address data. */
+	protected AddressData toAddressData(final UcpShippingDestination destination, final UcpBuyer buyer)
+	{
+		final AddressData address = new AddressData();
+		address.setFirstName(destination.getFirstName() != null ? destination.getFirstName()
+			: buyer != null && buyer.getFirstName() != null ? buyer.getFirstName() : "UCP");
+		address.setLastName(destination.getLastName() != null ? destination.getLastName()
+			: buyer != null && buyer.getLastName() != null ? buyer.getLastName() : "Agent");
+		address.setLine1(destination.getStreetAddress());
+		address.setLine2(destination.getExtendedAddress());
+		address.setTown(destination.getAddressLocality());
+		address.setPostalCode(destination.getPostalCode());
+		address.setPhone(destination.getPhoneNumber());
+		if (destination.getAddressCountry() != null && !destination.getAddressCountry().isBlank())
+		{
+			final CountryData country = new CountryData();
+			country.setIsocode(destination.getAddressCountry());
+			address.setCountry(country);
+		}
+		if (destination.getAddressRegion() != null && !destination.getAddressRegion().isBlank())
+		{
+			final RegionData region = new RegionData();
+			region.setIsocode(destination.getAddressRegion().contains("-")
+				|| destination.getAddressCountry() == null
+				? destination.getAddressRegion()
+				: destination.getAddressCountry() + "-" + destination.getAddressRegion());
+			address.setRegion(region);
+		}
+		address.setShippingAddress(true);
+		return address;
+	}
+
 	/** First method of a request fulfillment block, or null. */
 	private static UcpFulfillmentMethod firstMethod(final UcpFulfillment fulfillment)
 	{
@@ -953,7 +1335,18 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 			payload != null && payload.getPayment() != null ? payload.getPayment().getInstruments() : null;
 		if (instruments != null && !instruments.isEmpty())
 		{
-			checkout.setPayment(new UcpPayment(instruments));
+			// STRIP credentials before echo — the echoed instruments are also
+			// what recordCompletion persists, and raw payment credentials are
+			// never echoed, logged or stored (review finding / runbook §5/§8).
+			final List<UcpPaymentInstrument> sanitized = new ArrayList<>();
+			for (final UcpPaymentInstrument instrument : instruments)
+			{
+				if (instrument != null)
+				{
+					sanitized.add(instrument.sanitized());
+				}
+			}
+			checkout.setPayment(new UcpPayment(sanitized));
 		}
 	}
 
@@ -1019,15 +1412,48 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		{
 			LOG.debug("UCP checkout: could not read the address book: {}", e.getMessage());
 		}
+		// Union echo (official behavior): the response offers the saved
+		// addresses PLUS any destinations the request supplied inline, under
+		// the CLIENT's ids — a new address must remain addressable by the id
+		// the client minted for it.
+		if (requestMethod != null && requestMethod.getDestinations() != null)
+		{
+			for (final UcpShippingDestination clientDestination : requestMethod.getDestinations())
+			{
+				if (clientDestination != null && clientDestination.getId() != null
+					&& !clientDestination.getId().isBlank()
+					&& destinations.stream().noneMatch(d -> clientDestination.getId().equals(d.getId())))
+				{
+					destinations.add(clientDestination);
+				}
+			}
+		}
 		String selectedDestinationId = null;
 		if (applied != null)
 		{
-			for (final UcpShippingDestination destination : destinations)
+			// Prefer a request-supplied inline destination match — echo the
+			// client's id, not the cart's internal address clone id.
+			if (requestMethod != null && requestMethod.getDestinations() != null)
 			{
-				if (sameAddress(destination, applied))
+				for (final UcpShippingDestination clientDestination : requestMethod.getDestinations())
 				{
-					selectedDestinationId = destination.getId();
-					break;
+					if (clientDestination != null && clientDestination.getId() != null
+						&& sameAddress(clientDestination, applied))
+					{
+						selectedDestinationId = clientDestination.getId();
+						break;
+					}
+				}
+			}
+			if (selectedDestinationId == null)
+			{
+				for (final UcpShippingDestination destination : destinations)
+				{
+					if (sameAddress(destination, applied))
+					{
+						selectedDestinationId = destination.getId();
+						break;
+					}
 				}
 			}
 			if (selectedDestinationId == null && applied.getId() != null)
@@ -1045,24 +1471,23 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		}
 		method.setSelectedDestinationId(selectedDestinationId);
 
-		// Options exist once a destination is applied (delivery modes depend
-		// on the address).
-		if (applied != null)
+		// The group block is ALWAYS attached (clients index groups[0]
+		// unconditionally); options populate once a destination is applied —
+		// delivery modes depend on the address, so the list is empty before.
+		final UcpFulfillmentGroup group = new UcpFulfillmentGroup();
+		String groupId = "group_1";
+		if (requestMethod != null && requestMethod.getGroups() != null
+			&& !requestMethod.getGroups().isEmpty() && requestMethod.getGroups().get(0) != null
+			&& requestMethod.getGroups().get(0).getId() != null)
 		{
-			final UcpFulfillmentGroup group = new UcpFulfillmentGroup();
-			String groupId = "group_1";
-			if (requestMethod != null && requestMethod.getGroups() != null
-				&& !requestMethod.getGroups().isEmpty() && requestMethod.getGroups().get(0) != null
-				&& requestMethod.getGroups().get(0).getId() != null)
-			{
-				groupId = requestMethod.getGroups().get(0).getId();
-			}
-			group.setId(groupId);
-			group.setLineItemIds(method.getLineItemIds());
-			group.setOptions(deliveryModeOptions());
-			group.setSelectedOptionId(cart.getDeliveryMode() != null ? cart.getDeliveryMode().getCode() : null);
-			method.setGroups(List.of(group));
+			groupId = requestMethod.getGroups().get(0).getId();
 		}
+		group.setId(groupId);
+		group.setLineItemIds(method.getLineItemIds());
+		group.setOptions(applied != null ? deliveryModeOptions() : List.of());
+		group.setSelectedOptionId(applied != null && cart.getDeliveryMode() != null
+			? cart.getDeliveryMode().getCode() : null);
+		method.setGroups(List.of(group));
 
 		final UcpFulfillment fulfillment = checkout.getFulfillment() != null
 			? checkout.getFulfillment() : new UcpFulfillment();
@@ -1225,7 +1650,9 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 			}
 			if (added < quantity)
 			{
-				messages.add(new UcpMessage("warning", "out_of_stock", UcpMessage.SEVERITY_RECOVERABLE,
+				// Clamp-and-warn posture (checkout-rest.md "Business Outcomes"):
+				// the canonical code for a stock-clamped quantity.
+				messages.add(new UcpMessage("warning", "quantity_adjusted", UcpMessage.SEVERITY_RECOVERABLE,
 					"Item " + itemId + ": only " + added + " of " + quantity + " units could be added"));
 			}
 			return true;
@@ -1291,10 +1718,52 @@ public class DefaultUcpCheckoutService implements UcpCheckoutService
 		this.userFacade = userFacade;
 	}
 
+	/** SHA-256 hex of the canonical request payload JSON (idempotency compare). */
+	protected String requestHash(final UcpCheckoutRequest payload)
+	{
+		try
+		{
+			final String canonical = objectMapper.writeValueAsString(payload);
+			final java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+			final byte[] hashed = digest.digest(canonical.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			final StringBuilder hex = new StringBuilder(hashed.length * 2);
+			for (final byte b : hashed)
+			{
+				hex.append(Character.forDigit((b >> 4) & 0xF, 16)).append(Character.forDigit(b & 0xF, 16));
+			}
+			return hex.toString();
+		}
+		catch (final Exception e)
+		{
+			LOG.debug("UCP idempotency: could not hash request: {}", e.getMessage());
+			return "unhashable";
+		}
+	}
+
+	/** Deserialize a stored checkout response for idempotent replay; null on failure. */
+	protected UcpCheckout parseCheckoutJson(final String json)
+	{
+		try
+		{
+			return objectMapper.readValue(json, UcpCheckout.class);
+		}
+		catch (final Exception e)
+		{
+			LOG.warn("UCP idempotency: stored response unreadable: {}", e.getMessage());
+			return null;
+		}
+	}
+
 	@Required
 	public void setVoucherFacade(final VoucherFacade voucherFacade)
 	{
 		this.voucherFacade = voucherFacade;
+	}
+
+	@Required
+	public void setUcpIdempotencyService(final UcpIdempotencyService ucpIdempotencyService)
+	{
+		this.ucpIdempotencyService = ucpIdempotencyService;
 	}
 
 	@Required

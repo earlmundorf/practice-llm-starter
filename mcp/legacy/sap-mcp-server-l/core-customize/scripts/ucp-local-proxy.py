@@ -36,6 +36,7 @@ USAGE
 
 import argparse
 import http.server
+import os
 import json
 import ssl
 import sys
@@ -78,7 +79,25 @@ class TokenSource:
             return self._token
 
 
-def make_handler(upstream, site, tokens):
+def _has_traversal(path):
+    """
+    True when any path segment is '..' — raw or percent-encoded (single or
+    double). The proxy blindly prefixes the upstream REST base, so a
+    traversal segment would walk OUT of the /ucp subtree and forward an
+    arbitrary upstream path WITH the injected bearer.
+    """
+    candidate = path.split("?")[0]
+    for _ in range(3):  # unwind double encoding (%252e…)
+        if any(seg == ".." for seg in candidate.split("/")):
+            return True
+        decoded = urllib.parse.unquote(candidate)
+        if decoded == candidate:
+            break
+        candidate = decoded
+    return False
+
+
+def make_handler(upstream, site, tokens, public_base):
     profile_path = "/.well-known/ucp"
     profile_target = f"{upstream}/occ/v2/{site}{profile_path}"
     rest_base = f"{upstream}/occ/v2/{site}/ucp"
@@ -89,9 +108,39 @@ def make_handler(upstream, site, tokens):
         def log_message(self, fmt, *args):  # noqa: N802
             sys.stderr.write("[ucp-proxy] %s\n" % (fmt % args))
 
+        def _rewrite_profile(self, payload):
+            """
+            Advertise THIS proxy as the transport endpoint — exactly what the
+            production edge does with its public base. Discovery-driven
+            clients (the conformance suite reads services.dev.ucp.shopping[]
+            .endpoint) then route through the proxy and get the merchant-auth
+            injection; without the rewrite they would hit the upstream base
+            directly and see 401s.
+            """
+            try:
+                doc = json.loads(payload)
+                for entry in (doc.get("ucp", {}).get("services", {})
+                              .get("dev.ucp.shopping", [])):
+                    if entry.get("transport") == "rest":
+                        entry["endpoint"] = public_base
+                    elif entry.get("transport") == "mcp":
+                        entry["endpoint"] = public_base + "/mcp"
+                return json.dumps(doc).encode()
+            except Exception:  # noqa: BLE001 — serve the profile unmodified
+                return payload
+
         def _forward(self):
             path = self.path
-            if path.split("?")[0] == profile_path:
+            if _has_traversal(path):
+                msg = json.dumps({"error": "invalid path"}).encode()
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(msg)))
+                self.end_headers()
+                self.wfile.write(msg)
+                return
+            is_profile = path.split("?")[0] == profile_path
+            if is_profile:
                 target = profile_target
                 inject_auth = False   # the profile is public by spec (R6)
             else:
@@ -124,6 +173,8 @@ def make_handler(upstream, site, tokens):
                     else:
                         resp = e  # HTTPError is a valid response object
                 payload = resp.read()
+                if is_profile and resp.getcode() == 200:
+                    payload = self._rewrite_profile(payload)
                 self.send_response(resp.getcode())
                 for k, v in resp.headers.items():
                     if k.lower() not in _SKIP_RESPONSE_HEADERS:
@@ -147,23 +198,27 @@ def make_handler(upstream, site, tokens):
 def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--port", type=int, default=8182)
-    parser.add_argument("--upstream", default="https://localhost:9002")
-    parser.add_argument("--site", default="electronics")
-    parser.add_argument("--client-id", default="mobile_android")
-    parser.add_argument("--client-secret", default="secret")
-    parser.add_argument("--username", default="john.doe@thinkshop.com")
-    parser.add_argument("--password", default="1234")
+    # Demo credentials overridable via env (repo rule: secrets come from the
+    # environment; the checked-in values are the local demo defaults only).
+    parser.add_argument("--port", type=int, default=int(os.getenv("UCP_PROXY_PORT", "8182")))
+    parser.add_argument("--upstream", default=os.getenv("UCP_UPSTREAM", "https://localhost:9002"))
+    parser.add_argument("--site", default=os.getenv("UCP_SITE", "electronics"))
+    parser.add_argument("--client-id", default=os.getenv("UCP_CLIENT_ID", "mobile_android"))
+    parser.add_argument("--client-secret", default=os.getenv("UCP_CLIENT_SECRET", "secret"))
+    parser.add_argument("--username", default=os.getenv("UCP_USERNAME", "john.doe@thinkshop.com"))
+    parser.add_argument("--password", default=os.getenv("UCP_PASSWORD", "1234"))
     args = parser.parse_args()
 
     upstream = args.upstream.rstrip("/")
+    public_base = f"http://localhost:{args.port}"
     tokens = TokenSource(upstream, args.client_id, args.client_secret,
                          args.username, args.password)
-    handler = make_handler(upstream, args.site, tokens)
+    handler = make_handler(upstream, args.site, tokens, public_base)
     server = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), handler)
-    print(f"[ucp-proxy] listening on http://127.0.0.1:{args.port}")
-    print(f"[ucp-proxy]   /.well-known/ucp → {upstream}/occ/v2/{args.site}/.well-known/ucp (anonymous)")
-    print(f"[ucp-proxy]   /*               → {upstream}/occ/v2/{args.site}/ucp/* (+ bearer token)")
+    print(f"[ucp-proxy] listening on {public_base}")
+    print(f"[ucp-proxy]   /.well-known/ucp → {upstream}/occ/v2/{args.site}/.well-known/ucp (anonymous; "
+          f"advertised endpoints rewritten to {public_base})")
+    print(f"[ucp-proxy]   /*               → {upstream}/occ/v2/{args.site}/ucp/* (+ bearer token; '..' rejected)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

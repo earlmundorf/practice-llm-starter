@@ -1,0 +1,25 @@
+{
+  "ucp_version": "2026-04-08",
+  "required_capabilities": [
+    "dev.ucp.shopping.checkout",
+    "dev.ucp.shopping.order",
+    "dev.ucp.shopping.discount",
+    "dev.ucp.shopping.fulfillment"
+  ],
+  "currency": "USD",
+  "items": [
+    {
+      "id": "UCP_CONFORMANCE_ITEM",
+      "title": "USB-C Travel Adapter",
+      "price": 3500
+    }
+  ],
+  "out_of_stock_item": {
+    "id": "KEYBOARD_LTD_ALUMINUM",
+    "title": "Limited Edition Aluminum Keyboard"
+  },
+  "non_existent_item": {
+    "id": "NO_SUCH_SKU",
+    "title": "No Such Product"
+  }
+}

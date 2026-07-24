@@ -113,6 +113,21 @@ public class PersistedUcpCheckoutSessionServiceIntegrationTest extends Servicela
 	}
 
 	@Test
+	public void findCheckoutIdForOrderRecoversProvenanceAfterCompletion()
+	{
+		// order.json's checkout_id: a completed session is findable by the
+		// order code it recorded, from any node, without touching its TTL.
+		final String checkoutId = service.create("CART-001", UcpCheckout.STATUS_INCOMPLETE, null).getCheckoutId();
+		service.beginCompletion(checkoutId, "idem-key-1");
+		service.recordCompletion(checkoutId, "{\"id\":\"" + checkoutId + "\"}", "ORDER-42");
+
+		final PersistedUcpCheckoutSessionService secondNode = newService(30);
+		assertEquals(checkoutId, secondNode.findCheckoutIdForOrder("ORDER-42"));
+		assertNull(secondNode.findCheckoutIdForOrder("ORDER-UNKNOWN"));
+		assertNull(secondNode.findCheckoutIdForOrder(null));
+	}
+
+	@Test
 	public void updateForUnknownSessionIsNoOp()
 	{
 		service.update("ucp_chk_doesnotexist", "CART-001", UcpCheckout.STATUS_INCOMPLETE);

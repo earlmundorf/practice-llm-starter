@@ -19,14 +19,56 @@ import java.util.Map;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class UcpPaymentInstrument
 {
+	/** Client-assigned instrument id (the SDK PaymentInstrument requires one). */
+	@JsonProperty("id")
+	private String id;
+
 	@JsonProperty("handler_id")
 	private String handlerId;
 
 	@JsonProperty("type")
 	private String type;
 
+	/** Display metadata (brand / last digits) — echoed, never interpreted. */
+	@JsonProperty("display")
+	private Map<String, Object> display;
+
 	@JsonProperty("credential")
 	private Map<String, Object> credential;
+
+	/**
+	 * A credential-free copy for response echo and persistence — the
+	 * credential is never echoed, logged or stored (runbook §5/§8).
+	 */
+	public UcpPaymentInstrument sanitized()
+	{
+		final UcpPaymentInstrument copy = new UcpPaymentInstrument();
+		copy.setId(id);
+		copy.setHandlerId(handlerId);
+		copy.setType(type);
+		copy.setDisplay(display);
+		return copy;
+	}
+
+	public String getId()
+	{
+		return id;
+	}
+
+	public void setId(final String id)
+	{
+		this.id = id;
+	}
+
+	public Map<String, Object> getDisplay()
+	{
+		return display;
+	}
+
+	public void setDisplay(final Map<String, Object> display)
+	{
+		this.display = display;
+	}
 
 	public String getHandlerId()
 	{

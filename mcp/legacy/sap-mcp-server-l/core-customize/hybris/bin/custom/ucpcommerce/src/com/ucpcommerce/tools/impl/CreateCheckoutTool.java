@@ -63,13 +63,13 @@ public class CreateCheckoutTool implements UcpTool
 			throw new IllegalArgumentException("checkout is required and must be an object");
 		}
 		final Map<String, Object> checkoutArg = (Map<String, Object>) args.get("checkout");
-		if (checkoutArg.containsKey("id"))
-		{
-			// Binding spec: the checkout payload MUST NOT contain an id on create.
-			throw new IllegalArgumentException("checkout payload must not contain an id on create");
-		}
+		// A client-generated id is TOLERATED and ignored on create — the
+		// official CheckoutCreateRequest model carries an optional id (the
+		// conformance suite sends a uuid); the server mints the canonical one.
+		checkoutArg.remove("id");
 		final UcpCheckoutRequest payload = objectMapper.convertValue(checkoutArg, UcpCheckoutRequest.class);
-		return objectMapper.writeValueAsString(ucpCheckoutService.create(payload));
+		return objectMapper.writeValueAsString(ucpCheckoutService.create(payload,
+			context != null ? context.getIdempotencyKey() : null));
 	}
 
 	@Required

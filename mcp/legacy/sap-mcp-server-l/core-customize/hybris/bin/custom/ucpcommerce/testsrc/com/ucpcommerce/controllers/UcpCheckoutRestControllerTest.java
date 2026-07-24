@@ -73,14 +73,13 @@ public class UcpCheckoutRestControllerTest
 	@Test
 	public void createMapsTheBodyOntoTheSharedRequestDto() throws Exception
 	{
-		when(ucpCheckoutService.create(any())).thenReturn(checkoutPayload("incomplete"));
+		when(ucpCheckoutService.create(any(), any())).thenReturn(checkoutPayload("incomplete"));
 
-		final String body = controller.create(
-			"{\"line_items\":[{\"item\":{\"id\":\"WIRELESS_GAMING_MOUSE\"},\"quantity\":2}],"
-				+ "\"buyer\":{\"email\":\"john.doe@thinkshop.com\"}}", response);
+		final String body = controller.create("{\"line_items\":[{\"item\":{\"id\":\"WIRELESS_GAMING_MOUSE\"},\"quantity\":2}],"
+				+ "\"buyer\":{\"email\":\"john.doe@thinkshop.com\"}}", null, null, response);
 
 		final ArgumentCaptor<UcpCheckoutRequest> captor = ArgumentCaptor.forClass(UcpCheckoutRequest.class);
-		verify(ucpCheckoutService).create(captor.capture());
+		verify(ucpCheckoutService).create(captor.capture(), any());
 		final UcpCheckoutRequest mapped = captor.getValue();
 		assertEquals(1, mapped.getLineItems().size());
 		assertEquals("WIRELESS_GAMING_MOUSE", mapped.getLineItems().get(0).getItem().getId());
@@ -90,27 +89,31 @@ public class UcpCheckoutRestControllerTest
 		final JsonNode root = objectMapper.readTree(body);
 		assertEquals(CHECKOUT_ID, root.path("id").asText());
 		assertEquals("success", root.path("ucp").path("status").asText());
-		verify(response, never()).setStatus(anyInt());
+		// Official REST semantics: a successful create answers 201 Created.
+		verify(response).setStatus(HttpServletResponse.SC_CREATED);
 		verify(response).setContentType("application/json");
 	}
 
 	@Test
-	public void createRejectsAPayloadCarryingAnIdAs400() throws Exception
+	public void createToleratesAndIgnoresAClientGeneratedId() throws Exception
 	{
-		final String body = controller.create("{\"id\":\"" + CHECKOUT_ID + "\",\"line_items\":[]}", response);
+		// The official CheckoutCreateRequest carries an OPTIONAL client id
+		// (the conformance suite sends a uuid); the server ignores it and
+		// mints the canonical ucp_chk_ id.
+		when(ucpCheckoutService.create(any(), any())).thenReturn(checkoutPayload("incomplete"));
 
-		verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
-		verify(ucpCheckoutService, never()).create(any());
+		final String body = controller.create("{\"id\":\"client-uuid-1234\",\"line_items\":[{\"item\":{\"id\":\"X\"},\"quantity\":1}]}", null, null, response);
+
+		verify(ucpCheckoutService).create(any(), any());
 		final JsonNode root = objectMapper.readTree(body);
-		assertEquals("error", root.path("ucp").path("status").asText());
-		assertEquals("invalid_request", root.path("messages").path(0).path("code").asText());
-		assertEquals("unrecoverable", root.path("messages").path(0).path("severity").asText());
+		assertEquals("the response carries the SERVER-minted id", CHECKOUT_ID, root.path("id").asText());
+		verify(response).setStatus(HttpServletResponse.SC_CREATED);
 	}
 
 	@Test
 	public void createRejectsMalformedJsonAs400() throws Exception
 	{
-		controller.create("this is not json", response);
+		controller.create("this is not json", null, null, response);
 
 		verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
 		verify(ucpCheckoutService, never()).create(any());
@@ -132,14 +135,14 @@ public class UcpCheckoutRestControllerTest
 	@Test
 	public void updateMapsThePathIdAndTheBody() throws Exception
 	{
-		when(ucpCheckoutService.update(eq(CHECKOUT_ID), any())).thenReturn(checkoutPayload("incomplete"));
+		when(ucpCheckoutService.update(eq(CHECKOUT_ID), any(), any())).thenReturn(checkoutPayload("incomplete"));
 
 		controller.update(CHECKOUT_ID,
-			"{\"fulfillment\":{\"destination\":{\"city\":\"New York\"},\"delivery_mode\":\"thinkshop-standard\"}}",
+			"{\"fulfillment\":{\"destination\":{\"city\":\"New York\"},\"delivery_mode\":\"thinkshop-standard\"}}", null, null,
 			response);
 
 		final ArgumentCaptor<UcpCheckoutRequest> captor = ArgumentCaptor.forClass(UcpCheckoutRequest.class);
-		verify(ucpCheckoutService).update(eq(CHECKOUT_ID), captor.capture());
+		verify(ucpCheckoutService).update(eq(CHECKOUT_ID), captor.capture(), any());
 		assertEquals("New York", captor.getValue().getFulfillment().getDestination().getCity());
 		assertEquals("thinkshop-standard", captor.getValue().getFulfillment().getDeliveryMode());
 	}
@@ -150,14 +153,14 @@ public class UcpCheckoutRestControllerTest
 		// Corrected rule (ADR 0003): the SDK's CheckoutUpdateRequest carries an
 		// id and the official reference client sends it — accepted when it
 		// matches the path, stripped before the DTO conversion.
-		when(ucpCheckoutService.update(eq(CHECKOUT_ID), any())).thenReturn(checkoutPayload("incomplete"));
+		when(ucpCheckoutService.update(eq(CHECKOUT_ID), any(), any())).thenReturn(checkoutPayload("incomplete"));
 
 		controller.update(CHECKOUT_ID,
-			"{\"id\":\"" + CHECKOUT_ID + "\",\"line_items\":[{\"item\":{\"id\":\"LAPTOP_PRO_15\"},\"quantity\":1}]}",
+			"{\"id\":\"" + CHECKOUT_ID + "\",\"line_items\":[{\"item\":{\"id\":\"LAPTOP_PRO_15\"},\"quantity\":1}]}", null, null,
 			response);
 
 		final ArgumentCaptor<UcpCheckoutRequest> captor = ArgumentCaptor.forClass(UcpCheckoutRequest.class);
-		verify(ucpCheckoutService).update(eq(CHECKOUT_ID), captor.capture());
+		verify(ucpCheckoutService).update(eq(CHECKOUT_ID), captor.capture(), any());
 		assertEquals("LAPTOP_PRO_15", captor.getValue().getLineItems().get(0).getItem().getId());
 		verify(response, never()).setStatus(anyInt());
 	}
@@ -165,10 +168,11 @@ public class UcpCheckoutRestControllerTest
 	@Test
 	public void updateRejectsAMismatchedPayloadIdAs400() throws Exception
 	{
-		controller.update(CHECKOUT_ID, "{\"id\":\"ucp_chk_other\"}", response);
+		controller.update(CHECKOUT_ID, "{\"id\":\"ucp_chk_other\"}", null, null,
+			response);
 
 		verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
-		verify(ucpCheckoutService, never()).update(anyString(), any());
+		verify(ucpCheckoutService, never()).update(anyString(), any(), any());
 	}
 
 	// ── complete / cancel — Idempotency-Key header mapping ──────────────────
@@ -182,7 +186,7 @@ public class UcpCheckoutRestControllerTest
 		final String body = controller.complete(CHECKOUT_ID,
 			"{\"payment\":{\"instruments\":[{\"handler_id\":\"thinkshop_mock_card\",\"type\":\"card\","
 				+ "\"credential\":{\"token\":\"tok\"}}]}}",
-			"key-123", response);
+			"key-123", null, response);
 
 		final ArgumentCaptor<UcpCheckoutRequest> captor = ArgumentCaptor.forClass(UcpCheckoutRequest.class);
 		verify(ucpCheckoutService).complete(eq(CHECKOUT_ID), captor.capture(), eq("key-123"));
@@ -200,7 +204,7 @@ public class UcpCheckoutRestControllerTest
 		when(ucpCheckoutService.complete(eq(CHECKOUT_ID), any(), isNull()))
 			.thenThrow(new IllegalArgumentException("idempotency key is required"));
 
-		final String body = controller.complete(CHECKOUT_ID, "{\"payment\":{\"instruments\":[]}}", null, response);
+		final String body = controller.complete(CHECKOUT_ID, "{\"payment\":{\"instruments\":[]}}", null, null, response);
 
 		verify(response).setStatus(HttpServletResponse.SC_BAD_REQUEST);
 		assertTrue(objectMapper.readTree(body).path("messages").path(0).path("content").asText()

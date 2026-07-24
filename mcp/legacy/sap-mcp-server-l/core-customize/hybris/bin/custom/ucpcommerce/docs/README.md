@@ -83,8 +83,15 @@ What is verified automatically against a running local server:
   changes.
 - `core-customize/scripts/smoke-test.sh` — UCP section (profile,
   exactly-13-tools, catalog search, `com.thinkshop.*` calls).
-- `ucp-schema validate` runs best-effort when the CLI is installed;
-  otherwise those checks report SKIP.
+- `ucp-schema validate` — every capability payload the e2e harness
+  captures is validated against the OFFICIAL pinned schema set
+  (`cargo install ucp-schema`; schemas mirrored under
+  `working-docs/ucp-client/schemas-2026-04-08/`, remote fallback to
+  ucp.dev). The only SKIPs left are honest ones: `list_orders` (extension
+  surface — the official spec has no list binding) and the
+  `com.thinkshop.*` custom capabilities (no official schema).
+- `core-customize/scripts/run-ucp-conformance.sh` — the official
+  conformance suite through the local proxy (see below).
 
 ### Official reference client: PASSING (2026-07-23)
 
@@ -151,6 +158,43 @@ create → update → complete (the totals double-count fix in
 `UcpCheckoutMarshaller` came out of that session). The bridge exposes the
 demo store unauthenticated — take the tunnel down when finished.
 
+### Official conformance suite: RUN (2026-07-24) — 44 passing, remainder N/A
+
 The official
 [`conformance`](https://github.com/Universal-Commerce-Protocol/conformance)
-suite remains the outstanding external check.
+suite (cloned under `working-docs/ucp-client/conformance/`) runs against
+this server through `scripts/ucp-local-proxy.py` (which now also rewrites
+the advertised transport endpoints to itself, exactly as a production edge
+would), with ThinkShop-specific expectations in
+`scripts/conformance/` (`thinkshop-conformance-input.json`,
+`thinkshop-test-fixtures.json`, `test_data/`):
+
+```bash
+./scripts/run-ucp-conformance.sh              # whole suite
+./scripts/run-ucp-conformance.sh discount_test.py   # one file
+```
+
+Result on 2026-07-24: **44 tests pass, 5 skip, 20 fail — every failure is
+a sample-server/test-data coupling, not a spec gap.** Ten of fifteen files
+pass outright (`checkout_lifecycle`, `idempotency`, `discount`,
+`business_logic`, `totals`, `validation`, `protocol`, `ap2`, `binding`,
+`card_credential`). The suite drove a substantial round of fixes recorded
+in **ADR 0004**, including: client-generated create ids tolerated,
+HTTP 201/402/409/422 status semantics on the REST binding, per-operation
+idempotency (`UcpIdempotencyRecord`), case-insensitive discount codes with
+the official `applied[]` echo, inline fulfillment destinations, the
+`payment_handlers` checkout envelope, the official `product.json` catalog
+shape, raw `order.json` responses with `checkout_id`, cursor-style
+pagination, buyer consent echo, the `fail_token` decline probe, and
+UCP-Agent version negotiation.
+
+The 20 remaining failures, classified (all reproduced in
+`/tmp/ucp-conformance-run.log` after a run):
+
+| Category | Tests | Why not applicable |
+|---|---|---|
+| Simulation endpoints | 3 | `/simulation/*` + `SIMULATION_SECRET` are the sample server's test doubles; this is a real commerce backend |
+| Webhooks | 3 | no `order_webhook` capability is advertised or implemented (no eventing on the demo platform) |
+| Order modification | 5 | `PUT /orders/{id}` + adjustments + fulfillment expectations model merchant-ops simulation; no fulfillment process runs on this demo platform |
+| Flower-shop shipping fixtures | 3 | expect `exp-ship-us`/`exp-ship-intl` option ids and CA delivery; ThinkShop is US-only with its own delivery modes |
+| Per-buyer address books | 6 | expect buyer-email-scoped customers and CSV address ids (`addr_1`/`addr_2`); this surface binds to the authenticated gateway customer and hybris address ids are PKs |

@@ -1,0 +1,45 @@
+# ---------------------------------------------------------------------------
+# UCP conformance fixture product
+#
+# The official UCP conformance suite's fulfillment flow hard-codes a base
+# item total of 3500 minor units ($35.00), and its discount/totals math
+# needs an item NO automatic promotion touches (headphones carry a 10%
+# auto promo, the mouse is BOGO, carts >= $1,000 get free shipping).
+# UCP_CONFORMANCE_ITEM is that neutral $35.00 item — referenced by
+# core-customize/scripts/conformance/thinkshop-conformance-input.json.
+#
+# Loaded on initialize (projectdata-*); on an existing database import via:
+#   ./gradlew impex -Pfile=hybris/bin/custom/sampledatamcp/resources/impex/projectdata-70-ucp-conformance.impex
+# ---------------------------------------------------------------------------
+
+#% impex.setLocale(new java.util.Locale("en"));
+
+$productCatalog = electronicsProductCatalog
+$onlineVersion = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Online'])[unique = true]
+$stagedVersion = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Staged'])[unique = true]
+$taxGroup = Europe1PriceFactory_PTG(code)[default = us-sales-tax-full]
+$currency = USD
+$language = en
+$warehouse = electronics-warehouse
+$unit = pieces
+
+INSERT_UPDATE Product ; code[unique = true]  ; name[lang = $language]    ; summary[lang = $language]                          ; description[lang = $language]                                                             ; $stagedVersion ; unit(code)[default = '$unit'] ; approvalStatus(code)[default = 'approved'] ; $taxGroup
+                      ; UCP_CONFORMANCE_ITEM ; USB-C Travel Adapter      ; Compact USB-C travel power adapter, 35W            ; A compact 35W USB-C travel power adapter with foldable prongs and universal voltage support — the ThinkShop fixture item for UCP conformance runs. ;                ;                               ;                                            ;
+
+INSERT_UPDATE Product ; code[unique = true]  ; name[lang = $language]    ; summary[lang = $language]                          ; description[lang = $language]                                                             ; $onlineVersion ; unit(code)[default = '$unit'] ; approvalStatus(code)[default = 'approved'] ; $taxGroup
+                      ; UCP_CONFORMANCE_ITEM ; USB-C Travel Adapter      ; Compact USB-C travel power adapter, 35W            ; A compact 35W USB-C travel power adapter with foldable prongs and universal voltage support — the ThinkShop fixture item for UCP conformance runs. ;                ;                               ;                                            ;
+
+INSERT_UPDATE PriceRow ; productId[unique = true] ; unit(code)[default = '$unit'] ; currency(isocode)[unique = true] ; price ; minqtd ; net   ; $stagedVersion
+                       ; UCP_CONFORMANCE_ITEM     ;                               ; $currency                        ; 35.00 ; 1      ; false ;
+
+INSERT_UPDATE PriceRow ; productId[unique = true] ; unit(code)[default = '$unit'] ; currency(isocode)[unique = true] ; price ; minqtd ; net   ; $onlineVersion
+                       ; UCP_CONFORMANCE_ITEM     ;                               ; $currency                        ; 35.00 ; 1      ; false ;
+
+INSERT_UPDATE StockLevel ; productCode[unique = true] ; warehouse(code)[unique = true] ; available ; inStockStatus(code)
+                         ; UCP_CONFORMANCE_ITEM       ; $warehouse                     ; 500       ; notSpecified
+
+UPDATE Product ; code[unique = true]  ; $stagedVersion ; stockLevels(productCode, warehouse(code))[mode = append]
+               ; UCP_CONFORMANCE_ITEM ;                ; UCP_CONFORMANCE_ITEM:$warehouse
+
+UPDATE Product ; code[unique = true]  ; $onlineVersion ; stockLevels(productCode, warehouse(code))[mode = append]
+               ; UCP_CONFORMANCE_ITEM ;                ; UCP_CONFORMANCE_ITEM:$warehouse

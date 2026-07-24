@@ -1,7 +1,15 @@
 #!/bin/bash
 # ThinkShop MCP server demo-readiness smoke test.
-BASE="https://localhost:9002/occ/v2/electronics"
-AUTH="https://localhost:9002/authorizationserver/oauth/token"
+# Demo credentials are overridable via env vars (repo rule: secrets come from
+# the environment; the checked-in values are the local demo defaults only).
+BASE="${SMOKE_BASE_URL:-https://localhost:9002}/occ/v2/${SMOKE_BASE_SITE:-electronics}"
+AUTH="${SMOKE_BASE_URL:-https://localhost:9002}/authorizationserver/oauth/token"
+SMOKE_CLIENT_ID="${SMOKE_CLIENT_ID:-trusted_client}"
+SMOKE_CLIENT_SECRET="${SMOKE_CLIENT_SECRET:-secret}"
+SMOKE_CUSTOMER_CLIENT_ID="${SMOKE_CUSTOMER_CLIENT_ID:-mobile_android}"
+SMOKE_CUSTOMER_CLIENT_SECRET="${SMOKE_CUSTOMER_CLIENT_SECRET:-secret}"
+SMOKE_CUSTOMER_USER="${SMOKE_CUSTOMER_USER:-john.doe%40thinkshop.com}"
+SMOKE_CUSTOMER_PASSWORD="${SMOKE_CUSTOMER_PASSWORD:-1234}"
 PASS=0; FAIL=0; WARN=0
 
 ok()   { PASS=$((PASS+1)); echo "PASS  $1"; }
@@ -11,10 +19,10 @@ warn() { WARN=$((WARN+1)); echo "WARN  $1"; }
 jqpy() { python3 -c "import sys,json;$1" 2>/dev/null; }
 
 # --- 1. OAuth: trusted client + customer (john.doe) -------------------------
-TOKEN=$(curl -sk -X POST "$AUTH" -d "client_id=trusted_client&client_secret=secret&grant_type=client_credentials" | jqpy "print(json.load(sys.stdin)['access_token'])")
+TOKEN=$(curl -sk -X POST "$AUTH" -d "client_id=$SMOKE_CLIENT_ID&client_secret=$SMOKE_CLIENT_SECRET&grant_type=client_credentials" | jqpy "print(json.load(sys.stdin)['access_token'])")
 [ -n "$TOKEN" ] && ok "OAuth client_credentials (trusted_client)" || bad "OAuth client_credentials"
 
-CTOKEN=$(curl -sk -X POST "$AUTH" -d "client_id=mobile_android&client_secret=secret&grant_type=password&username=john.doe%40thinkshop.com&password=1234" | jqpy "print(json.load(sys.stdin)['access_token'])")
+CTOKEN=$(curl -sk -X POST "$AUTH" -d "client_id=$SMOKE_CUSTOMER_CLIENT_ID&client_secret=$SMOKE_CUSTOMER_CLIENT_SECRET&grant_type=password&username=$SMOKE_CUSTOMER_USER&password=$SMOKE_CUSTOMER_PASSWORD" | jqpy "print(json.load(sys.stdin)['access_token'])")
 [ -n "$CTOKEN" ] && ok "OAuth password grant (john.doe customer)" || bad "OAuth password grant (john.doe)"
 
 mcp() { # token session payload
@@ -141,3 +149,5 @@ echo
 echo "================================================="
 echo "SMOKE TEST: $PASS passed, $FAIL failed, $WARN warnings"
 [ $FAIL -eq 0 ] && echo "DEMO READY" || echo "NOT READY — fix failures above"
+# CI-friendly exit code: nonzero when anything failed.
+exit $(( FAIL > 0 ))

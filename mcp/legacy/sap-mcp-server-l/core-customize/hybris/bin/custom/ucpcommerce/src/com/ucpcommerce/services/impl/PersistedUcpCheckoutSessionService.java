@@ -37,6 +37,9 @@ public class PersistedUcpCheckoutSessionService implements UcpCheckoutSessionSer
 	private static final String QUERY_BY_CHECKOUT_ID =
 		"SELECT {pk} FROM {UcpCheckoutSessionEntry} WHERE {checkoutId} = ?checkoutId";
 
+	private static final String QUERY_BY_ORDER_CODE =
+		"SELECT {pk} FROM {UcpCheckoutSessionEntry} WHERE {orderCode} = ?orderCode";
+
 	private ModelService modelService;
 	private FlexibleSearchService flexibleSearchService;
 	private int ttlMinutes = 30;
@@ -147,6 +150,22 @@ public class PersistedUcpCheckoutSessionService implements UcpCheckoutSessionSer
 		entry.setLastAccessedAt(new Date());
 		modelService.save(entry);
 		LOG.debug("UCP checkout {} completed as order {}", checkoutId, orderCode);
+	}
+
+	@Override
+	public String findCheckoutIdForOrder(final String orderCode)
+	{
+		if (orderCode == null)
+		{
+			return null;
+		}
+		// Read-only provenance lookup (order.json's checkout_id): no
+		// lastAccessedAt touch, no eviction — a COMPLETED entry's age is
+		// governed by the completion retention rules, not this read.
+		final FlexibleSearchQuery query = new FlexibleSearchQuery(QUERY_BY_ORDER_CODE);
+		query.addQueryParameter("orderCode", orderCode);
+		final SearchResult<UcpCheckoutSessionEntryModel> result = flexibleSearchService.search(query);
+		return result.getResult().isEmpty() ? null : result.getResult().get(0).getCheckoutId();
 	}
 
 	private UcpCheckoutSessionEntryModel findEntry(final String checkoutId)

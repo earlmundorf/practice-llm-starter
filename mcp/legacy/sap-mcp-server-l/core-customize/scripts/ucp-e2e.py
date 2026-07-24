@@ -45,6 +45,7 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import shutil
 import ssl
@@ -67,14 +68,15 @@ DEFAULT_BASE_URL = "https://localhost:9002"
 DEFAULT_BASE_SITE = "electronics"
 OAUTH_PATH = "/authorizationserver/oauth/token"
 
-# OAuth client with ROLE_TRUSTED_CLIENT (from commercewebservices essentialdata impex)
-CLIENT_ID = "trusted_client"
-CLIENT_SECRET = "secret"
+# OAuth client with ROLE_TRUSTED_CLIENT (from commercewebservices essentialdata
+# impex). Overridable via env — the checked-in values are local demo defaults.
+CLIENT_ID = os.getenv("UCP_CLIENT_ID", "trusted_client")
+CLIENT_SECRET = os.getenv("UCP_CLIENT_SECRET", "secret")
 
 # Demo customer (from thinkshop project data) — the only checkout path proven
 # end-to-end (design R8); used by every authenticated section from Phase 2 on.
-CUSTOMER_EMAIL = "john.doe@thinkshop.com"
-CUSTOMER_PASSWORD = "1234"
+CUSTOMER_EMAIL = os.getenv("UCP_USERNAME", "john.doe@thinkshop.com")
+CUSTOMER_PASSWORD = os.getenv("UCP_PASSWORD", "1234")
 
 # Pinned UCP versions are dated calver strings, e.g. 2026-04-08.
 UCP_VERSION_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -218,34 +220,67 @@ def get_customer_token(base_url):
         return None
 
 
-# ── Schema validation (best-effort) ─────────────────────────────────────────
+# ── Schema validation (official pinned schemas) ─────────────────────────────
 
-def ucp_schema_validate(payload, label, schema=None, op=None):
+# The pinned spec version's schema set. Preferred source is the local mirror
+# (working-docs/ucp-client/schemas-<version>/ — crawled from ucp.dev once, so
+# runs are offline-deterministic); falls back to fetching from ucp.dev.
+PINNED_UCP_VERSION = "2026-04-08"
+SCHEMA_REMOTE_BASE = f"https://ucp.dev/{PINNED_UCP_VERSION}"
+
+
+def _schema_mirror():
+    import pathlib
+    root = (pathlib.Path(__file__).resolve().parents[2]
+            / "working-docs" / "ucp-client" / f"schemas-{PINNED_UCP_VERSION}")
+    return root if root.is_dir() else None
+
+
+def ucp_schema_validate(payload, label, schema=None, op="read", def_=None):
     """
-    Shell out to the official `ucp-schema` CLI when available; SKIP otherwise.
-    (Fallback to bundled JSON Schemas from a cloned ucp-schema repo is noted
-    as an open question in the structure outline.)
+    Validate a payload against the OFFICIAL pinned UCP schema via the
+    `ucp-schema` CLI (cargo install ucp-schema).
+
+    schema — schema path under schemas/, e.g. "shopping/checkout.json"
+    op     — the operation for {op}_{direction} resolution (--op is required
+             by the CLI even for single-object schemas)
+    def_   — explicit $defs entry (e.g. "search_response") for container
+             schemas; when omitted the payload validates as a --response
     """
     cli = shutil.which("ucp-schema")
     if cli is None:
-        skip(f"ucp-schema validate ({label})", "ucp-schema CLI not on PATH")
+        skip(f"ucp-schema validate ({label})",
+             "ucp-schema CLI not on PATH (cargo install ucp-schema)")
+        return
+    if schema is None:
+        skip(f"ucp-schema validate ({label})", "no official schema mapped for this payload")
         return
 
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
         json.dump(payload, f)
         path = f.name
 
-    cmd = [cli, "validate", path]
-    if schema:
-        cmd += ["--schema", schema]
-    if op:
-        cmd += ["--op", op]
+    mirror = _schema_mirror()
+    if mirror is not None:
+        cmd = [cli, "validate", path,
+               "--schema", str(mirror / "schemas" / schema),
+               "--schema-local-base", str(mirror),
+               "--schema-remote-base", SCHEMA_REMOTE_BASE,
+               "--op", op]
+    else:
+        cmd = [cli, "validate", path,
+               "--schema", f"{SCHEMA_REMOTE_BASE}/schemas/{schema}",
+               "--op", op]
+    if def_:
+        cmd += ["--def", def_]
+    else:
+        cmd += ["--response"]
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
         log_verbose(f"  ucp-schema output: {result.stdout.strip()} {result.stderr.strip()}")
         check(f"ucp-schema validate ({label})", result.returncode == 0,
-              f"rc={result.returncode}: {result.stderr.strip()[:300]}")
+              f"rc={result.returncode}: {(result.stdout + ' ' + result.stderr).strip()[:300]}")
     except Exception as e:
         check(f"ucp-schema validate ({label})", False, str(e))
 
@@ -318,6 +353,10 @@ def test_profile(base_url, base_site):
     check("profile advertises dev.ucp.shopping.fulfillment extending checkout",
           fulfillment_cap.get("extends") == "dev.ucp.shopping.checkout",
           f"got {fulfillment_cap!r}")
+    discount_cap = (caps.get("dev.ucp.shopping.discount") or [{}])[0]
+    check("profile advertises dev.ucp.shopping.discount extending checkout",
+          discount_cap.get("extends") == "dev.ucp.shopping.checkout",
+          f"got {discount_cap!r}")
     check("profile advertises dev.ucp.shopping.order",
           "dev.ucp.shopping.order" in caps, f"got {sorted(caps)!r}")
     check("profile advertises the custom com.thinkshop.* capabilities",
@@ -346,12 +385,13 @@ def test_profile(base_url, base_site):
     flattened = [h for handlers in (ucp.get("payment_handlers") or {}).values()
                  for h in handlers if isinstance(h, dict)]
     handler_ids = [h.get("id") for h in flattened]
-    check(f"profile declares exactly the mock payment handler {PAYMENT_HANDLER_ID}",
-          handler_ids == [PAYMENT_HANDLER_ID], f"got {handler_ids!r}")
+    check(f"profile declares the mock payment handler {PAYMENT_HANDLER_ID} (+ well-known alias)",
+          handler_ids == [PAYMENT_HANDLER_ID, "mock_payment_handler"], f"got {handler_ids!r}")
     check("the mock handler carries a human-readable name (the client logs it)",
           bool((flattened or [{}])[0].get("name")), f"got {flattened!r}")
 
-    ucp_schema_validate(body, "profile")
+    ucp_schema_validate((body or {}).get("ucp") or {}, "profile ucp object",
+                        schema="ucp.json", def_="base")
     return body
 
 
@@ -563,7 +603,8 @@ def test_catalog(base_url, base_site, token):
               f"got {known.get('currency')!r}")
     check("search_catalog includes pagination",
           isinstance(payload.get("pagination"), dict), f"got {payload.get('pagination')!r}")
-    ucp_schema_validate(payload, "search_catalog response")
+    ucp_schema_validate(payload, "search_catalog response",
+                        schema="shopping/catalog_search.json", op="search", def_="search_response")
 
     # get_product for the known SKU — the ×100 spot check on the detail path.
     status, body, payload = ucp_call(base_url, base_site, token,
@@ -579,7 +620,8 @@ def test_catalog(base_url, base_site, token):
               product.get("price") == KNOWN_SKU_PRICE_MINOR, f"got {product.get('price')!r}")
         check("get_product has availability", bool(product.get("availability")),
               f"got {product.get('availability')!r}")
-        ucp_schema_validate(payload, "get_product response")
+        ucp_schema_validate(payload, "get_product response",
+                            schema="shopping/catalog_lookup.json", op="get", def_="get_product_response")
 
     # lookup_catalog batch — known ids resolve, price integrity on a second SKU.
     status, body, payload = ucp_call(base_url, base_site, token,
@@ -594,6 +636,8 @@ def test_catalog(base_url, base_site, token):
         check(f"{SECOND_SKU} lookup price is {SECOND_SKU_PRICE_MINOR} minor units",
               by_id.get(SECOND_SKU, {}).get("price") == SECOND_SKU_PRICE_MINOR,
               f"got {by_id.get(SECOND_SKU, {}).get('price')!r}")
+        ucp_schema_validate(payload, "lookup_catalog response",
+                            schema="shopping/catalog_lookup.json", op="lookup", def_="lookup_response")
 
     # lookup with one unknown id → partial success + recoverable message.
     status, body, payload = ucp_call(base_url, base_site, token,
@@ -666,7 +710,8 @@ def test_checkout_create_get(base_url, base_site, token):
     check("buyer is echoed back",
           (payload.get("buyer") or {}).get("email") == CUSTOMER_EMAIL,
           f"got {payload.get('buyer')!r}")
-    ucp_schema_validate(payload, "create_checkout response")
+    ucp_schema_validate(payload, "create_checkout response",
+                        schema="shopping/checkout.json", op="create")
 
     # get_checkout round-trip — separate stateless call, id addresses the resource.
     status, body, got = ucp_call(base_url, base_site, token,
@@ -689,7 +734,8 @@ def test_checkout_create_get(base_url, base_site, token):
         check("get_checkout buyer is persisted on the entry",
               (got.get("buyer") or {}).get("email") == CUSTOMER_EMAIL,
               f"got {got.get('buyer')!r}")
-        ucp_schema_validate(got, "get_checkout response")
+        ucp_schema_validate(got, "get_checkout response",
+                            schema="shopping/checkout.json", op="get")
 
     # Unknown checkout id → UCP business error payload, never a transport error.
     status, body, missing = ucp_call(base_url, base_site, token,
@@ -703,6 +749,18 @@ def test_checkout_create_get(base_url, base_site, token):
         check("unknown checkout id yields unrecoverable not_found message",
               any(m.get("code") == "not_found" and m.get("severity") == "unrecoverable"
                   for m in msgs), f"got {msgs!r}")
+
+    # create_checkout with a CLIENT-generated id — tolerated and ignored (the
+    # official CheckoutCreateRequest has an optional id; the conformance
+    # suite sends a uuid): the server mints its own canonical id.
+    status, body, with_id = ucp_call(base_url, base_site, token, "create_checkout",
+                                     {"checkout": {"id": "client-uuid-e2e",
+                                                   "line_items": [{"item": {"id": SECOND_SKU},
+                                                                   "quantity": 1}]}})
+    check("create_checkout tolerates a client-generated id (ignored, server mints)",
+          with_id is not None and (with_id.get("id") or "").startswith("ucp_chk_")
+          and with_id.get("id") != "client-uuid-e2e",
+          f"status {status}, got {(with_id or {}).get('id')!r}")
 
     # create_checkout with only an unknown SKU → error payload, no id minted.
     status, body, bad = ucp_call(base_url, base_site, token, "create_checkout",
@@ -768,7 +826,8 @@ def test_checkout_update(base_url, base_site, token):
           f"got {upd.get('totals')!r}")
     check("status is still incomplete before a destination is set",
           upd.get("status") == "incomplete", f"got {upd.get('status')!r}")
-    ucp_schema_validate(upd, "update_checkout (quantity) response")
+    ucp_schema_validate(upd, "update_checkout (quantity) response",
+                        schema="shopping/checkout.json", op="update")
 
     # 2. Destination (address + delivery mode) → derived ready_for_complete.
     status, body, upd = ucp_call(base_url, base_site, token, "update_checkout",
@@ -807,7 +866,8 @@ def test_checkout_update(base_url, base_site, token):
     expected_total = SECOND_SKU_PRICE_MINOR + SHIPPING_STANDARD_MINOR
     check(f"total is {expected_total} (discounted mice + standard shipping)",
           totals.get("total") == expected_total, f"got {totals!r}")
-    ucp_schema_validate(upd, "update_checkout (destination) response")
+    ucp_schema_validate(upd, "update_checkout (destination) response",
+                        schema="shopping/checkout.json", op="update")
 
     # 3. The derived status is persisted on the entry (stateless re-read).
     _, _, got = ucp_call(base_url, base_site, token, "get_checkout", {"id": checkout_id})
@@ -989,6 +1049,22 @@ def test_checkout_discounts(base_url, base_site, token):
     check("discounts: applied code is echoed in discounts.codes",
           (upd.get("discounts") or {}).get("codes") == ["10OFF"],
           f"got {upd.get('discounts')!r}")
+    applied = (upd.get("discounts") or {}).get("applied") or []
+    check("discounts: official applied[] entry (title + positive minor-unit amount)",
+          len(applied) == 1 and applied[0].get("code") == "10OFF"
+          and isinstance(applied[0].get("title"), str)
+          and isinstance(applied[0].get("amount"), int) and applied[0].get("amount") >= 0,
+          f"got {applied!r}")
+
+    # Case-insensitive matching (discount.md DSC-005): a case variant of the
+    # applied code is the SAME code — nothing is released or re-applied, and
+    # the echo keeps the canonical form.
+    status, body, upd = ucp_call(base_url, base_site, token, "update_checkout",
+                            {"id": checkout_id,
+                             "checkout": {"discounts": {"codes": ["10off"]}}})
+    check("discounts: case variant matches the applied code (canonical echo)",
+          upd is not None and (upd.get("discounts") or {}).get("codes") == ["10OFF"],
+          f"got {(upd or {}).get('discounts')!r}")
     totals = totals_of(upd)
     # The promotion engine floors 10% of $79.99 to $7.99 (currency digits).
     expected_discount = -(SECOND_SKU_PRICE_MINOR // 10)
@@ -1115,7 +1191,8 @@ def test_checkout_complete(base_url, base_site, token):
     expected_total = SECOND_SKU_PRICE_MINOR + SHIPPING_STANDARD_MINOR
     check(f"completed total is {expected_total} (discounted mice + standard shipping)",
           totals.get("total") == expected_total, f"got {totals!r}")
-    ucp_schema_validate(done, "complete_checkout response")
+    ucp_schema_validate(done, "complete_checkout response",
+                        schema="shopping/checkout.json", op="complete")
 
     # 4. Idempotent replay: the SAME key returns the SAME order — never a second
     #    placeOrder (verified in the DB as exactly one order for this key).
@@ -1185,7 +1262,8 @@ def test_checkout_complete(base_url, base_site, token):
         assert_ucp_envelope(canceled, "cancel_checkout")
         check("canceled checkout has status canceled",
               canceled.get("status") == "canceled", f"got {canceled.get('status')!r}")
-        ucp_schema_validate(canceled, "cancel_checkout response")
+        ucp_schema_validate(canceled, "cancel_checkout response",
+                            schema="shopping/checkout.json", op="cancel")
 
     # Replayed cancel is idempotent — same terminal state, no error.
     status, body, canceled2 = ucp_call(base_url, base_site, token, "cancel_checkout",
@@ -1231,9 +1309,17 @@ def test_orders(base_url, base_site, token, order_id):
               f"status {status}, body {str(body)[:300]}")
         if payload is not None:
             assert_ucp_envelope(payload, "get_order")
-            order = payload.get("order") or {}
+            # Official order.json: the order object IS the response — no
+            # wrapper (the conformance suite does Order(**response)).
+            order = payload
+            check("get_order returns the RAW order (no wrapper)",
+                  "order" not in payload, f"got wrapper keys {sorted(payload)!r}")
             check("get_order echoes the order id", order.get("id") == order_id,
                   f"got {order.get('id')!r}")
+            check("order carries its originating checkout_id",
+                  isinstance(order.get("checkout_id"), str)
+                  and order.get("checkout_id").startswith("ucp_chk_"),
+                  f"got {order.get('checkout_id')!r}")
             check("order has an ISO created_at timestamp",
                   isinstance(order.get("created_at"), str) and "T" in order.get("created_at", ""),
                   f"got {order.get('created_at')!r}")
@@ -1243,11 +1329,15 @@ def test_orders(base_url, base_site, token, order_id):
             check("order currency is USD", order.get("currency") == "USD",
                   f"got {order.get('currency')!r}")
             line_items = order.get("line_items") or []
-            check("order line items carry the purchased mice",
+            check("order line items carry the purchased mice (order-shape quantity block)",
                   len(line_items) == 1
                   and line_items[0].get("item", {}).get("id") == SECOND_SKU
-                  and line_items[0].get("quantity") == 2,
+                  and (line_items[0].get("quantity") or {}).get("total") == 2
+                  and (line_items[0].get("quantity") or {}).get("fulfilled") == 0,
                   f"got {line_items!r}")
+            check("order line items carry the required derived status",
+                  all(li.get("status") == "processing" for li in line_items),
+                  f"got {[li.get('status') for li in line_items]!r}")
             totals = {t.get("type"): t.get("amount") for t in order.get("totals") or []}
             check(f"order BOGO discount of {-BOGO_DISCOUNT_MINOR} survives onto the order detail",
                   totals.get("discount") == -BOGO_DISCOUNT_MINOR, f"got {totals!r}")
@@ -1257,7 +1347,8 @@ def test_orders(base_url, base_site, token, order_id):
             check("order fulfillment echoes the delivery destination",
                   ((order.get("fulfillment") or {}).get("destination") or {}).get("city")
                   == DESTINATION["city"], f"got {order.get('fulfillment')!r}")
-            ucp_schema_validate(payload, "get_order response")
+            ucp_schema_validate(payload, "get_order response",
+                                schema="shopping/order.json", op="get")
     else:
         skip("get_order for the placed order", "complete section did not yield an order id")
 
@@ -1289,10 +1380,20 @@ def test_orders(base_url, base_site, token, order_id):
         if order_id:
             check("list_orders includes the just-placed order",
                   order_id in order_ids, f"got {order_ids!r}")
-        check(f"list_orders includes the Phase 5 UCP purchase {UCP_FIXTURE_ORDER}",
-              UCP_FIXTURE_ORDER in order_ids, f"got {order_ids!r}")
-        check("list_orders includes the THINK-000x impex fixtures",
-              {"THINK-0001", "THINK-0003"} <= set(order_ids), f"got {order_ids!r}")
+        # The durable fixtures are the OLDEST orders — page through (the
+        # ever-growing test-run history pushes them off page 0 eventually).
+        all_ids = set(order_ids)
+        for page in range(1, 8):
+            _, _, more = ucp_call(base_url, base_site, token,
+                                  "list_orders", {"page": page, "page_size": 50})
+            page_ids = [o.get("id") for o in (more or {}).get("orders") or []]
+            all_ids.update(page_ids)
+            if not page_ids:
+                break
+        check(f"list_orders history (paged) includes the Phase 5 UCP purchase {UCP_FIXTURE_ORDER}",
+              UCP_FIXTURE_ORDER in all_ids, f"got {sorted(all_ids)!r}")
+        check("list_orders history (paged) includes the THINK-000x impex fixtures",
+              {"THINK-0001", "THINK-0003"} <= all_ids, f"got {sorted(all_ids)!r}")
         check("every history entry total is integer minor units",
               all(isinstance(t.get("amount"), int)
                   for o in orders for t in o.get("totals") or []),
@@ -1301,7 +1402,8 @@ def test_orders(base_url, base_site, token, order_id):
               all(o.get("status") for o in orders), f"got {orders!r}")
         check("list_orders includes pagination",
               isinstance(payload.get("pagination"), dict), f"got {payload.get('pagination')!r}")
-        ucp_schema_validate(payload, "list_orders response")
+        skip("ucp-schema validate (list_orders response)",
+             "extension surface — the official spec has no list-orders binding")
 
     # Pagination is honored: page_size 1 → exactly one summary.
     status, body, page1 = ucp_call(base_url, base_site, token,
@@ -1338,7 +1440,8 @@ def test_promotions_mcp(base_url, base_site, token):
     coupon_ids = {c.get("couponId") for c in coupons if isinstance(c, dict)}
     check(f"known coupon {KNOWN_COUPON} is listed",
           KNOWN_COUPON in coupon_ids, f"got {sorted(coupon_ids)!r}")
-    ucp_schema_validate(payload, "get_promotions response")
+    skip("ucp-schema validate (get_promotions response)",
+         "custom capability (com.thinkshop.promotions) — no official schema")
 
     # include_coupons=false omits the coupons block entirely.
     status, body, no_coupons = mcp_tool_call(base_url, base_site, token,
