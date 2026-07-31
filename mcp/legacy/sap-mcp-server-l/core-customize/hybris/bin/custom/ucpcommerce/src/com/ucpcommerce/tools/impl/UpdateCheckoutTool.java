@@ -42,7 +42,10 @@ public class UpdateCheckoutTool implements UcpTool
 			"optional; the cheapest supported mode is auto-selected); or the spec negotiation flow: " +
 			"fulfillment {methods: [{id, type: \"shipping\", line_item_ids}]} to request destinations, then " +
 			"selected_destination_id to choose one, then groups: [{id, selected_option_id}] to choose a " +
-			"delivery option. A payload id is allowed only when it equals the top-level id. " +
+			"delivery option. The destinations returned by that call ARE THE CUSTOMER'S SAVED " +
+			"ADDRESSES (their address book) — request methods first and offer those, rather than " +
+			"asking the buyer to type an address they have already saved. " +
+			"A payload id is allowed only when it equals the top-level id. " +
 			"discounts {codes: [\"…\"]} — the DESIRED set of discount (voucher) codes, declarative like " +
 			"line_items (new codes applied, absent codes released; an invalid code is a recoverable " +
 			"message). Applied codes are echoed in response.discounts.codes. " +
@@ -61,7 +64,10 @@ public class UpdateCheckoutTool implements UcpTool
 			"checkout", Map.of(
 				"type", "object",
 				"description", "UCP checkout payload: line_items[{item:{id}, quantity}] (desired end state), "
-					+ "optional buyer, optional fulfillment {destination, delivery_mode}. Must not contain an id.")
+					+ "optional buyer, optional fulfillment. To use the customer's SAVED ADDRESSES, send "
+					+ "fulfillment {methods:[{type:\"shipping\"}]} — the response lists their address book as "
+					+ "destinations; then send selected_destination_id. Or supply an inline "
+					+ "fulfillment {destination, delivery_mode}. Must not contain an id.")
 		));
 		schema.put("required", List.of("id", "checkout"));
 		return schema;
