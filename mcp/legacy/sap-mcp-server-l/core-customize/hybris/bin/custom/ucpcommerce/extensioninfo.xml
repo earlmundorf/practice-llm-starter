@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<extensioninfo xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="extensioninfo.xsd">
+
+    <extension abstractclassprefix="Generated" classprefix="Ucpcommerce" description="UCP (Universal Commerce Protocol) surface over SAP Commerce facades" jaloLogicFree="true" managername="UcpcommerceManager" managersuperclass="de.hybris.platform.jalo.extension.Extension" name="ucpcommerce">
+
+        <!-- coremcp is required for service reuse (PromotionQueryService / KnowledgeSearchService, Phase 6). -->
+        <requires-extension name="coremcp"/>
+        <requires-extension name="commercewebservices"/>
+        <requires-extension name="solrfacetsearch"/>
+        <requires-extension name="promotionengineservices"/>
+        <requires-extension name="couponservices"/>
+
+        <coremodule generated="true" manager="com.ucpcommerce.jalo.UcpcommerceManager" packageroot="com.ucpcommerce"/>
+
+    </extension>
+
+</extensioninfo>

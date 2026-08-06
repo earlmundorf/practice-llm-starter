@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ ucpcommerce — Service-layer Spring beans.
+ Binding-agnostic UCP capability services (profile now; catalog/checkout/order
+ services land in later phases). Follows the default* bean + alias idiom.
+-->
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:context="http://www.springframework.org/schema/context"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+           http://www.springframework.org/schema/beans/spring-beans.xsd
+           http://www.springframework.org/schema/context
+           http://www.springframework.org/schema/context/spring-context.xsd">
+
+    <context:annotation-config/>
+
+    <!-- ===================================================================
+         UCP profile — builds the /.well-known/ucp discovery document.
+         =================================================================== -->
+
+    <alias name="defaultUcpProfileService" alias="ucpProfileService"/>
+    <bean id="defaultUcpProfileService"
+          class="com.ucpcommerce.services.impl.DefaultUcpProfileService"/>
+
+    <!-- ===================================================================
+         Money boundary — the single BigDecimal-major ⇄ integer-minor-unit
+         converter every UCP marshaller must use (silent-100×-bug guard).
+         =================================================================== -->
+
+    <alias name="defaultUcpMoneyConverter" alias="ucpMoneyConverter"/>
+    <bean id="defaultUcpMoneyConverter"
+          class="com.ucpcommerce.services.impl.UcpMoneyConverter"/>
+
+    <!-- ===================================================================
+         Catalog capability (dev.ucp.shopping.catalog) — binding-agnostic
+         service over the standard product facades.
+         =================================================================== -->
+
+    <alias name="defaultUcpCatalogService" alias="ucpCatalogService"/>
+    <bean id="defaultUcpCatalogService"
+          class="com.ucpcommerce.services.impl.DefaultUcpCatalogService">
+        <property name="productSearchFacade" ref="productSearchFacade"/>
+        <property name="productFacade" ref="productFacade"/>
+        <property name="ucpMoneyConverter" ref="ucpMoneyConverter"/>
+    </bean>
+
+    <!-- ===================================================================
+         Checkout capability (dev.ucp.shopping.checkout) — persisted opaque
+         checkout id → cart code mapping (design R5) plus the binding-agnostic
+         checkout operations and the CartData → UCP checkout marshaller.
+         =================================================================== -->
+
+    <alias name="persistedUcpCheckoutSessionService" alias="ucpCheckoutSessionService"/>
+    <bean id="persistedUcpCheckoutSessionService"
+          class="com.ucpcommerce.services.impl.PersistedUcpCheckoutSessionService">
+        <property name="modelService" ref="modelService"/>
+        <property name="flexibleSearchService" ref="flexibleSearchService"/>
+        <property name="ttlMinutes" value="${ucpcommerce.checkout.session.ttl.minutes}"/>
+    </bean>
+
+    <!-- Sweeps abandoned expired checkout sessions (see
+         essentialdata-ucp-session-cleanup.impex for the CronJob/Trigger). -->
+    <bean id="ucpCheckoutSessionCleanupJob"
+          class="com.ucpcommerce.jobs.UcpCheckoutSessionCleanupJob"
+          parent="abstractJobPerformable"/>
+
+    <alias name="defaultUcpCheckoutMarshaller" alias="ucpCheckoutMarshaller"/>
+    <bean id="defaultUcpCheckoutMarshaller"
+          class="com.ucpcommerce.services.impl.UcpCheckoutMarshaller">
+        <property name="ucpMoneyConverter" ref="ucpMoneyConverter"/>
+        <!-- checkout envelopes embed the payment_handlers registry (official
+             response_checkout_schema requires it). -->
+        <property name="ucpProfileService" ref="ucpProfileService"/>
+    </bean>
+
+    <!-- OrderData → UCP order objects: the minimal block embedded in a
+         completed checkout (Phase 5) plus the full order schema and history
+         summaries for the order capability (Phase 6). -->
+    <alias name="defaultUcpOrderMarshaller" alias="ucpOrderMarshaller"/>
+    <bean id="defaultUcpOrderMarshaller"
+          class="com.ucpcommerce.services.impl.UcpOrderMarshaller">
+        <property name="ucpCheckoutMarshaller" ref="ucpCheckoutMarshaller"/>
+        <property name="ucpMoneyConverter" ref="ucpMoneyConverter"/>
+        <!-- coremcp's storefront deep-link builder — the order permalink_url
+             (required by the spec's OrderConfirmation, ADR 0003) points at the
+             ThinkShop storefront order page. -->
+        <property name="deepLinkBuilder" ref="deepLinkBuilder"/>
+    </bean>
+
+    <!-- Per-operation idempotency store (official binding: any mutating call
+         may carry an Idempotency-Key; identical retry replays, different
+         payload under the same key is a 409 conflict). -->
+    <alias name="defaultUcpIdempotencyService" alias="ucpIdempotencyService"/>
+    <bean id="defaultUcpIdempotencyService"
+          class="com.ucpcommerce.services.impl.DefaultUcpIdempotencyService">
+        <property name="modelService" ref="modelService"/>
+        <property name="flexibleSearchService" ref="flexibleSearchService"/>
+        <property name="userService" ref="userService"/>
+    </bean>
+
+    <alias name="defaultUcpCheckoutService" alias="ucpCheckoutService"/>
+    <bean id="defaultUcpCheckoutService"
+          class="com.ucpcommerce.services.impl.DefaultUcpCheckoutService">
+        <property name="ucpIdempotencyService" ref="ucpIdempotencyService"/>
+        <property name="cartFacade" ref="cartFacade"/>
+        <property name="checkoutFacade" ref="checkoutFacade"/>
+        <property name="userFacade" ref="userFacade"/>
+        <property name="voucherFacade" ref="voucherFacade"/>
+        <property name="cartLoaderStrategy" ref="cartLoaderStrategy"/>
+        <property name="ucpCheckoutSessionService" ref="ucpCheckoutSessionService"/>
+        <property name="ucpCheckoutMarshaller" ref="ucpCheckoutMarshaller"/>
+        <property name="ucpOrderMarshaller" ref="ucpOrderMarshaller"/>
+        <property name="ucpMoneyConverter" ref="ucpMoneyConverter"/>
+    </bean>
+
+    <!-- ===================================================================
+         Order capability (dev.ucp.shopping.order) — binding-agnostic
+         service over the standard OrderFacade (scoped to the authenticated
+         customer by the facade contract).
+         =================================================================== -->
+
+    <alias name="defaultUcpOrderService" alias="ucpOrderService"/>
+    <bean id="defaultUcpOrderService"
+          class="com.ucpcommerce.services.impl.DefaultUcpOrderService">
+        <property name="orderFacade" ref="orderFacade"/>
+        <property name="ucpOrderMarshaller" ref="ucpOrderMarshaller"/>
+        <!-- checkout_id provenance lookup for order.json conformance -->
+        <property name="ucpCheckoutSessionService" ref="ucpCheckoutSessionService"/>
+    </bean>
+
+    <!-- ===================================================================
+         UCP MCP binding — tool adapters + stateless JSON-RPC dispatcher.
+         Tool names follow the UCP MCP capability bindings.
+         =================================================================== -->
+
+    <alias name="defaultSearchCatalogTool" alias="searchCatalogTool"/>
+    <bean id="defaultSearchCatalogTool"
+          class="com.ucpcommerce.tools.impl.SearchCatalogTool">
+        <property name="ucpCatalogService" ref="ucpCatalogService"/>
+    </bean>
+
+    <alias name="defaultLookupCatalogTool" alias="lookupCatalogTool"/>
+    <bean id="defaultLookupCatalogTool"
+          class="com.ucpcommerce.tools.impl.LookupCatalogTool">
+        <property name="ucpCatalogService" ref="ucpCatalogService"/>
+    </bean>
+
+    <alias name="defaultGetProductTool" alias="getProductTool"/>
+    <bean id="defaultGetProductTool"
+          class="com.ucpcommerce.tools.impl.GetProductTool">
+        <property name="ucpCatalogService" ref="ucpCatalogService"/>
+    </bean>
+
+    <alias name="defaultCreateCheckoutTool" alias="createCheckoutTool"/>
+    <bean id="defaultCreateCheckoutTool"
+          class="com.ucpcommerce.tools.impl.CreateCheckoutTool">
+        <property name="ucpCheckoutService" ref="ucpCheckoutService"/>
+    </bean>
+
+    <alias name="defaultGetCheckoutTool" alias="getCheckoutTool"/>
+    <bean id="defaultGetCheckoutTool"
+          class="com.ucpcommerce.tools.impl.GetCheckoutTool">
+        <property name="ucpCheckoutService" ref="ucpCheckoutService"/>
+    </bean>
+
+    <alias name="defaultUpdateCheckoutTool" alias="updateCheckoutTool"/>
+    <bean id="defaultUpdateCheckoutTool"
+          class="com.ucpcommerce.tools.impl.UpdateCheckoutTool">
+        <property name="ucpCheckoutService" ref="ucpCheckoutService"/>
+    </bean>
+
+    <alias name="defaultCompleteCheckoutTool" alias="completeCheckoutTool"/>
+    <bean id="defaultCompleteCheckoutTool"
+          class="com.ucpcommerce.tools.impl.CompleteCheckoutTool">
+        <property name="ucpCheckoutService" ref="ucpCheckoutService"/>
+    </bean>
+
+    <alias name="defaultCancelCheckoutTool" alias="cancelCheckoutTool"/>
+    <bean id="defaultCancelCheckoutTool"
+          class="com.ucpcommerce.tools.impl.CancelCheckoutTool">
+        <property name="ucpCheckoutService" ref="ucpCheckoutService"/>
+    </bean>
+
+    <alias name="defaultGetOrderTool" alias="getOrderTool"/>
+    <bean id="defaultGetOrderTool"
+          class="com.ucpcommerce.tools.impl.GetOrderTool">
+        <property name="ucpOrderService" ref="ucpOrderService"/>
+    </bean>
+
+    <alias name="defaultListOrdersTool" alias="listOrdersTool"/>
+    <bean id="defaultListOrdersTool"
+          class="com.ucpcommerce.tools.impl.ListOrdersTool">
+        <property name="ucpOrderService" ref="ucpOrderService"/>
+    </bean>
+
+    <!-- Custom reverse-domain capabilities (design R7) — thin wrappers over
+         coremcp's services (the <requires-extension name="coremcp"/> reuse),
+         referencing the aliases coremcp-spring.xml publishes. -->
+
+    <alias name="defaultGetPromotionsTool" alias="getPromotionsTool"/>
+    <bean id="defaultGetPromotionsTool"
+          class="com.ucpcommerce.tools.impl.GetPromotionsTool">
+        <property name="promotionQueryService" ref="promotionQueryService"/>
+    </bean>
+
+    <alias name="defaultSearchKnowledgeTool" alias="searchKnowledgeTool"/>
+    <bean id="defaultSearchKnowledgeTool"
+          class="com.ucpcommerce.tools.impl.SearchKnowledgeTool">
+        <property name="knowledgeSearchService" ref="knowledgeSearchService"/>
+    </bean>
+
+    <alias name="defaultGetKnowledgeTool" alias="getKnowledgeTool"/>
+    <bean id="defaultGetKnowledgeTool"
+          class="com.ucpcommerce.tools.impl.GetKnowledgeTool">
+        <property name="knowledgeSearchService" ref="knowledgeSearchService"/>
+    </bean>
+
+    <alias name="defaultUcpMcpDispatcherService" alias="ucpMcpDispatcherService"/>
+    <bean id="defaultUcpMcpDispatcherService"
+          class="com.ucpcommerce.services.impl.DefaultUcpMcpDispatcherService">
+        <property name="tools">
+            <list>
+                <ref bean="searchCatalogTool"/>
+                <ref bean="lookupCatalogTool"/>
+                <ref bean="getProductTool"/>
+                <ref bean="createCheckoutTool"/>
+                <ref bean="getCheckoutTool"/>
+                <ref bean="updateCheckoutTool"/>
+                <ref bean="completeCheckoutTool"/>
+                <ref bean="cancelCheckoutTool"/>
+                <ref bean="getOrderTool"/>
+                <ref bean="listOrdersTool"/>
+                <ref bean="getPromotionsTool"/>
+                <ref bean="searchKnowledgeTool"/>
+                <ref bean="getKnowledgeTool"/>
+            </list>
+        </property>
+    </bean>
+
+</beans>

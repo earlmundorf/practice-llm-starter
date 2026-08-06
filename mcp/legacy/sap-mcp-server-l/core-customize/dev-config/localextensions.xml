@@ -89,6 +89,7 @@
     <!-- Custom extensions -->
     <extension dir="${HYBRIS_BIN_DIR}/custom/sampledatamcp"/>
     <extension dir="${HYBRIS_BIN_DIR}/custom/coremcp"/>
+    <extension dir="${HYBRIS_BIN_DIR}/custom/ucpcommerce"/>
 
   </extensions>
 </hybrisconfig>

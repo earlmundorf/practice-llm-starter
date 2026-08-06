@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!--
+ ucpcommerce — generated-DTO definitions (*-beans.xml).
+
+ Intentionally (and permanently) empty: UCP wire payloads are hand-written
+ Jackson classes in com.ucpcommerce.dto, matched against the pinned ucp-schema
+ JSON Schemas — never OCC WsDTOs. This mirrors coremcp's ADR 0005.
+-->
+<beans xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="beans.xsd">
+
+</beans>
