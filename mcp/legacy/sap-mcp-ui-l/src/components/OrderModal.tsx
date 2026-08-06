@@ -67,9 +67,29 @@ export const OrderModal = ({ orderId, onClose }: Props) => {
                   <tr key={idx}>
                     <td className="px-3 py-2 text-gray-900 dark:text-gray-200">{item.productName}</td>
                     <td className="px-3 py-2 text-gray-700 dark:text-gray-300">{item.quantity}</td>
-                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300">${item.price.toFixed(2)}</td>
+                    <td className="px-3 py-2 text-gray-700 dark:text-gray-300">
+                      {item.discountValue ? (
+                        <span className="flex flex-col">
+                          <span className="line-through text-gray-400 text-xs">${item.price.toFixed(2)}</span>
+                          <span className="text-green-600 dark:text-green-400">
+                            ${((item.price * item.quantity - item.discountValue) / item.quantity).toFixed(2)}
+                          </span>
+                        </span>
+                      ) : (
+                        <span>${item.price.toFixed(2)}</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-gray-900 dark:text-white font-medium">
-                      ${(item.price * item.quantity).toFixed(2)}
+                      {item.discountValue ? (
+                        <span className="flex flex-col">
+                          <span className="line-through text-gray-400 text-xs">${(item.price * item.quantity).toFixed(2)}</span>
+                          <span className="text-green-600 dark:text-green-400">
+                            ${(item.price * item.quantity - item.discountValue).toFixed(2)}
+                          </span>
+                        </span>
+                      ) : (
+                        <span>${(item.price * item.quantity).toFixed(2)}</span>
+                      )}
                     </td>
                   </tr>
                 ))}

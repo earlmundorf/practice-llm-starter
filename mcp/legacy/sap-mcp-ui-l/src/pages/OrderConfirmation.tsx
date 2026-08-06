@@ -218,10 +218,28 @@ export const OrderConfirmation = () => {
                             {item.quantity}
                           </td>
                           <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
-                            ${item.price.toFixed(2)}
+                            {item.discountValue ? (
+                              <span className="flex flex-col">
+                                <span className="line-through text-gray-400 text-xs">${item.price.toFixed(2)}</span>
+                                <span className="text-green-600 dark:text-green-400">
+                                  ${((item.price * item.quantity - item.discountValue) / item.quantity).toFixed(2)}
+                                </span>
+                              </span>
+                            ) : (
+                              <span>${item.price.toFixed(2)}</span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-gray-700 dark:text-gray-300 font-semibold">
-                            ${(item.price * item.quantity).toFixed(2)}
+                            {item.discountValue ? (
+                              <span className="flex flex-col">
+                                <span className="line-through text-gray-400 text-xs">${(item.price * item.quantity).toFixed(2)}</span>
+                                <span className="text-green-600 dark:text-green-400">
+                                  ${(item.price * item.quantity - item.discountValue).toFixed(2)}
+                                </span>
+                              </span>
+                            ) : (
+                              <span>${(item.price * item.quantity).toFixed(2)}</span>
+                            )}
                           </td>
                         </tr>
                         {expandedItem === idx && (

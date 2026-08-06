@@ -308,7 +308,7 @@ export const Chat = () => {
           try {
             const token = auth.getToken();
             if (token) {
-              const OCC_BASE = import.meta.env.VITE_API_URL || '/occ/v2/electronics';
+              const OCC_BASE = import.meta.env.VITE_OCC_BASE || '/occ/v2/electronics';
               const res = await fetch(`${OCC_BASE}/users/current/carts`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -399,7 +399,7 @@ export const Chat = () => {
         return { role: m.role, content: m.content };
       });
 
-      const OCC_BASE = import.meta.env.VITE_API_URL || '/occ/v2/electronics';
+      const OCC_BASE = import.meta.env.VITE_OCC_BASE || '/occ/v2/electronics';
       const headers = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
@@ -518,7 +518,7 @@ export const Chat = () => {
     try {
       const token = auth.getToken();
       if (token) {
-        const OCC_BASE = import.meta.env.VITE_API_URL || '/occ/v2/electronics';
+        const OCC_BASE = import.meta.env.VITE_OCC_BASE || '/occ/v2/electronics';
         const res = await fetch(`${OCC_BASE}/users/current/carts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },

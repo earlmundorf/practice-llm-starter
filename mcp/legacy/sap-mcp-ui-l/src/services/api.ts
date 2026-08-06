@@ -15,8 +15,10 @@ import type {
   KnowledgeSearchResult,
 } from '../types';
 
-// OCC base URL from environment (e.g., /occ/v2/electronics)
-const OCC_BASE = import.meta.env.VITE_API_URL || '/occ/v2/electronics';
+// OCC base path — in local dev the Vite proxy forwards /occ → SAP Commerce,
+// so this should be a relative path (no origin). Override with VITE_OCC_BASE for
+// production deployments where the API origin differs from the UI origin.
+const OCC_BASE = import.meta.env.VITE_OCC_BASE || '/occ/v2/electronics';
 
 // ============================================
 // Auth Module — OAuth2 Resource Owner Password
@@ -195,16 +197,36 @@ const mapOccCartEntry = (entry: any): CartItem => {
   };
 };
 
-const mapOccOrderEntry = (entry: any): OrderItem => ({
-  productId: entry.product?.code || '',
-  productName: entry.product?.name || '',
-  description: entry.product?.description || entry.product?.summary || undefined,
-  imageUrl: entry.product?.images?.find((img: any) => img.format === 'product')?.url
-    || entry.product?.images?.[0]?.url
-    || undefined,
-  quantity: entry.quantity || 0,
-  price: entry.basePrice?.value ?? entry.totalPrice?.value ?? 0,
-});
+const mapOccOrderEntry = (entry: any): OrderItem => {
+  const baseUnit = entry.basePrice?.value ?? 0;
+  const quantity = entry.quantity || 0;
+  const expectedFullTotal = baseUnit * quantity;
+  const entryTotalPrice = entry.totalPrice?.value;
+
+  let discountValue = 0;
+  if (Array.isArray(entry.discountValues) && entry.discountValues.length > 0) {
+    discountValue = entry.discountValues.reduce(
+      (sum: number, d: any) => sum + (d?.value ?? d?.appliedValue ?? 0),
+      0,
+    );
+  }
+  // Fallback: derive from the difference between line total and base * qty.
+  if (discountValue === 0 && entryTotalPrice != null && entryTotalPrice < expectedFullTotal) {
+    discountValue = expectedFullTotal - entryTotalPrice;
+  }
+
+  return {
+    productId: entry.product?.code || '',
+    productName: entry.product?.name || '',
+    description: entry.product?.description || entry.product?.summary || undefined,
+    imageUrl: entry.product?.images?.find((img: any) => img.format === 'product')?.url
+      || entry.product?.images?.[0]?.url
+      || undefined,
+    quantity,
+    price: baseUnit,
+    discountValue: discountValue > 0 ? discountValue : undefined,
+  };
+};
 
 const mapOccStatusDisplay = (statusDisplay: string | undefined): Order['status'] => {
   switch (statusDisplay?.toLowerCase()) {
