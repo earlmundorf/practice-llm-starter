@@ -1,0 +1,30 @@
+{
+  "profile": "REPLACE-ME — copy working-docs/profiles/composable-storefront.json over this file, then adjust versions and test verbs",
+  "stack": "angular-spartacus-composable",
+  "workingDir": ".",
+  "packageManager": "npm | yarn",
+  "protectedPaths": ["node_modules/", "dist/", ".angular/", ".env"],
+  "apiBoundary": "<OCC adapters/connectors — see the profile>",
+  "build": {
+    "INSTALL": "<see profile>",
+    "TYPECHECK": "<see profile>",
+    "LINT": "<see profile>",
+    "BUILD": "<see profile>",
+    "UNIT_TEST": "<see profile>",
+    "DEV_SERVER": "<see profile>"
+  },
+  "changeTypeVerbs": {
+    "ts": ["BUILD", "LINT", "UNIT_TEST"],
+    "html|scss|css": ["BUILD"],
+    "package.json|lockfile": ["INSTALL", "BUILD"]
+  },
+  "jira": { "mode": "manual", "project": null },
+  "researchLayers": [],
+  "_notes": [
+    "This is a TEMPLATE. Copy the Angular Composable Storefront starter over it: `cp working-docs/profiles/composable-storefront.json working-docs/config.json`, then adjust.",
+    "Every VERB a stage checkpoint references must exist in 'build'. A verb may be 'MANUAL: <steps>' — stages print the steps and wait instead of running a command.",
+    "UNIT_TEST defaults to Karma/Jasmine (ng test); switch to 'npx jest' if the app uses Jest.",
+    "Set jira.mode to 'mcp' if the Atlassian MCP connector is available in your Claude Code session; 'manual' otherwise; 'none' if there is no Jira.",
+    "The repo's CLAUDE.md is authoritative for Spartacus conventions; restate the load-bearing ones (feature modules, CMS mapping, OCC boundary, i18n, SCSS) here."
+  ]
+}
