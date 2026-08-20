@@ -1,0 +1,40 @@
+{
+  "profile": "springboot",
+  "stack": "java-spring-boot",
+  "workingDir": ".",
+  "buildTool": "maven",
+  "protectedPaths": ["target/", "build/", ".env"],
+  "apiBoundary": "external calls go through a typed client/gateway package — no inline RestTemplate/WebClient in controllers or services",
+  "build": {
+    "INSTALL": "./mvnw -q dependency:go-offline",
+    "COMPILE": "./mvnw -q compile",
+    "LINT": "MANUAL: no linter wired by default — add Spotless (./mvnw spotless:check) or Checkstyle, then point LINT at it",
+    "BUILD": "./mvnw -q package -DskipTests",
+    "UNIT_TEST": "./mvnw -q test",
+    "INTEGRATION_TEST": "./mvnw -q verify -Dskip.unit.tests=true",
+    "RUN": "./mvnw spring-boot:run"
+  },
+  "changeTypeVerbs": {
+    "java": ["COMPILE", "UNIT_TEST"],
+    "*Controller.java|*Resource.java": ["COMPILE", "UNIT_TEST", "INTEGRATION_TEST"],
+    "*Entity.java|*Repository.java|migration": ["COMPILE", "INTEGRATION_TEST"],
+    "pom.xml": ["INSTALL", "BUILD"],
+    "application.yml|application.properties": ["BUILD", "INTEGRATION_TEST"]
+  },
+  "jira": { "mode": "manual", "project": null },
+  "researchLayers": [
+    { "name": "web", "targets": "@RestController/@Controller classes, request/response DTOs, routing, validation" },
+    { "name": "service", "targets": "@Service classes, business logic, @Transactional boundaries, mappers" },
+    { "name": "data", "targets": "@Entity/@Repository, JPA mappings, query methods, Flyway/Liquibase migrations" },
+    { "name": "config-security", "targets": "@Configuration, SecurityFilterChain, application-*.yml profiles, beans" },
+    { "name": "build", "targets": "pom.xml (or build.gradle), plugins, Spring Boot version, profiles, CI" }
+  ],
+  "_notes": [
+    "Starter profile for a Spring Boot service (Maven). Copy to working-docs/config.json and adjust.",
+    "Gradle variant: set buildTool=gradle and swap verbs — COMPILE './gradlew classes', BUILD './gradlew bootJar -x test', UNIT_TEST './gradlew test', INTEGRATION_TEST './gradlew integrationTest', RUN './gradlew bootRun', protectedPaths drop target/ keep build/.",
+    "LINT is MANUAL until you add a formatter/linter (Spotless or Checkstyle are common). Once added, point the LINT verb at it and add it to the java change-type mapping.",
+    "apiBoundary encodes the convention that outbound I/O lives behind typed clients, not scattered through controllers/services — adjust to match your repo's CLAUDE.md.",
+    "INTEGRATION_TEST assumes @SpringBootTest / Testcontainers behind a Maven profile or a naming convention; tune the command to how your project separates slow tests.",
+    "Set jira.mode to 'mcp' if the Atlassian MCP connector is available in your Claude Code session."
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "profile": "fastapi",
+  "stack": "python-fastapi",
+  "workingDir": ".",
+  "packageManager": "uv",
+  "appModule": "app.main:app",
+  "protectedPaths": [".venv/", "__pycache__/", "*.egg-info/", ".env"],
+  "apiBoundary": "external calls go through a typed client/service layer — no inline httpx/requests in routers",
+  "build": {
+    "INSTALL": "uv sync",
+    "TYPECHECK": "uv run mypy app",
+    "LINT": "uv run ruff check .",
+    "FORMAT_CHECK": "uv run ruff format --check .",
+    "UNIT_TEST": "uv run pytest -q",
+    "INTEGRATION_TEST": "uv run pytest -q -m integration",
+    "RUN": "uv run uvicorn app.main:app --reload"
+  },
+  "changeTypeVerbs": {
+    "py": ["LINT", "TYPECHECK", "UNIT_TEST"],
+    "*router*.py|*api*.py|*endpoints*.py": ["LINT", "TYPECHECK", "UNIT_TEST", "INTEGRATION_TEST"],
+    "*models*.py|*schemas*.py|migration": ["TYPECHECK", "UNIT_TEST"],
+    "pyproject.toml|uv.lock": ["INSTALL"]
+  },
+  "jira": { "mode": "manual", "project": null },
+  "researchLayers": [
+    { "name": "routers", "targets": "APIRouter modules, path operations, dependencies (Depends), status codes" },
+    { "name": "schemas", "targets": "Pydantic request/response models, validators, serialization" },
+    { "name": "services", "targets": "business logic modules, the client/service boundary, background tasks" },
+    { "name": "data", "targets": "SQLAlchemy/SQLModel models, repositories, sessions, Alembic migrations" },
+    { "name": "config-deps", "targets": "Settings (pydantic-settings), dependency wiring, middleware, auth/security" },
+    { "name": "build", "targets": "pyproject.toml, uv.lock, ASGI server config, CI" }
+  ],
+  "_notes": [
+    "Starter profile for a FastAPI service managed with uv. Assumes a pyproject.toml + uv.lock, an 'app/' package exposing app.main:app, and a pytest 'integration' marker. Copy to working-docs/config.json and adjust.",
+    "uv is the default: 'uv sync' installs from the lockfile and 'uv run <tool>' runs inside the project venv (no manual activation). pip alternative → INSTALL 'pip install -r requirements.txt', drop the 'uv run' prefixes. Poetry → INSTALL 'poetry install', prefix verbs with 'poetry run'.",
+    "Lint/format use Ruff (ruff check + ruff format). Swap for flake8/black/isort if that's your toolchain.",
+    "TYPECHECK uses mypy; if you don't type-check, set it to 'MANUAL:' or remove it from the mappings.",
+    "INTEGRATION_TEST uses a pytest marker (@pytest.mark.integration) so slow tests (DB/Testcontainers, TestClient end-to-end) run separately from unit tests — adjust to your convention.",
+    "apiBoundary encodes 'outbound I/O lives behind typed clients, not scattered through routers' — adjust to match your repo's CLAUDE.md.",
+    "Set jira.mode to 'mcp' if the Atlassian MCP connector is available in your Claude Code session."
+  ]
+}
