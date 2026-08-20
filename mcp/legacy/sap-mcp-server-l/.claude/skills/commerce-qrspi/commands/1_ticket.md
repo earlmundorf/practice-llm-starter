@@ -31,6 +31,13 @@ and paste) and remember its path for stage 7. If `tickets/` doesn't exist, ignor
 6. Show the developer both files. Ask only: "Any questions to add or remove?"
 7. End by printing: `Next: /cq:2_research working-docs/<TICKET-KEY>/ — run in a FRESH session.`
 
+## Grounding — no speculation
+
+Write for a human reader first; keep it useful to the tooling by keeping it true.
+- **Only verified facts.** Every claim traces to something you actually read — the ticket text, the code, or a command's output. Anchor code facts with `file:line`.
+- **Unknown stays unknown.** Can't confirm it? Write it as an open question or mark it `unconfirmed` and clarify with the developer — never fill the gap with a plausible guess, and never infer intent or motive.
+- **No editorializing, no padding.** Don't add tangential detail "for completeness"; unverified extras are what mislead later stages and seed hallucinations. Comprehensive on what the work needs, silent on what it doesn't.
+
 ## Do not
 
 - Propose solutions or designs.

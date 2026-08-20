@@ -32,6 +32,13 @@
 9. **Retire the ticket file.** If this ticket came from `tickets/active/`, move that file to
    `tickets/completed/` so `active/` reflects the real remaining backlog.
 
+## Grounding — no speculation
+
+Write for a human reader first; keep it useful to the tooling by keeping it true.
+- **Only verified facts.** Every claim traces to something you actually read — the ticket text, the code, or a command's output. Anchor code facts with `file:line`.
+- **Unknown stays unknown.** Can't confirm it? Write it as an open question or mark it `unconfirmed` and clarify with the developer — never fill the gap with a plausible guess, and never infer intent or motive.
+- **No editorializing, no padding.** Don't add tangential detail "for completeness"; unverified extras are what mislead later stages and seed hallucinations. Comprehensive on what the work needs, silent on what it doesn't.
+
 ## Do not
 
 - Create a PR with failing automated criteria.
