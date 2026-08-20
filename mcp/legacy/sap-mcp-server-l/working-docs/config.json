@@ -1,39 +1,50 @@
 {
-  "layout": "ccv2",
+  "profile": "sap-commerce",
+  "stack": "sap-commerce-ccv2",
   "workingDir": "core-customize",
-  "commerceVersion": "2211.38",
-  "customExtensions": ["coremcp", "sampledatamcp"],
-  "storefront": "none",
+  "buildTool": "gradle",
+  "protectedPaths": [
+    "**/gensrc/",
+    "hybris/bin/platform/",
+    "hybris/bin/modules/",
+    "hybris/config/",
+    "**/build/",
+    "**/*.log"
+  ],
+  "apiBoundary": "OCC controllers (commercewebservices) delegate to *Facade beans; business logic lives in the ServiceLayer (*Service/*Strategy/DAO), never in controllers — see the repo CLAUDE.md",
   "build": {
+    "INSTALL": "./gradlew bootstrapPlatform",
     "BUILD": "./gradlew yclean ybuild",
     "FULL_BUILD": "./gradlew yclean yall",
-    "ITEMS_XML_CYCLE": "./gradlew yclean ybuild stopServer yupdatesystem startServer",
-    "TYPE_SYSTEM_UPDATE": "MANUAL: never run yupdatesystem with the server up (JMX restartWrapper failure) — use ITEMS_XML_CYCLE instead",
-    "UNIT_TEST": "./gradlew stopServer && ./gradlew testCustomExtensions && ./gradlew startServer",
-    "INTEGRATION_TEST": "cd hybris/bin/platform && . ./setantenv.sh && ant integrationtests -Dtestclasses.extensions={ext}",
-    "JUNIT_TENANT_INIT": "cd hybris/bin/platform && . ./setantenv.sh && ant yunitinit",
-    "IMPEX_IMPORT": "./gradlew impex -Pfile={path}",
-    "SERVER_RESTART": "./gradlew stopServer startServer",
-    "SOLR_REINDEX": "./scripts/index-solr.sh",
-    "SMOKE_TEST": "./scripts/smoke-test.sh"
+    "TYPE_SYSTEM_UPDATE": "./gradlew yupdatesystem   # run with the server STOPPED",
+    "UNIT_TEST": "cd hybris/bin/platform && . ./setantenv.sh && ant build && ant unittests -Dtestclasses.extensions=<ext>   # stop the server first; 'ant build' first so a newly-added test class is registered on the ant runner (a bare gradle ybuild leaves it off → 'No tests found' false pass); the gradle passthrough drops -D and runs the whole platform suite",
+    "INTEGRATION_TEST": "cd hybris/bin/platform && . ./setantenv.sh && ant build && ant integrationtests -Dtestclasses.extensions=<ext>   # server stopped; 'ant build' first (register new test classes); re-run 'ant yunitinit' after any *-items.xml change",
+    "IMPEX_IMPORT": "./gradlew impex -Pfile=<path>",
+    "SERVER_RESTART": "./gradlew stopServer startServer"
   },
   "changeTypeVerbs": {
-    "items.xml": ["ITEMS_XML_CYCLE", "JUNIT_TENANT_INIT", "UNIT_TEST"],
-    "java": ["BUILD", "SERVER_RESTART", "UNIT_TEST"],
-    "beans.xml": ["BUILD", "SERVER_RESTART"],
-    "impex": ["IMPEX_IMPORT", "SOLR_REINDEX"],
-    "tools-endpoints-config": ["BUILD", "SERVER_RESTART", "UNIT_TEST", "SMOKE_TEST"]
+    "*-items.xml": ["BUILD", "TYPE_SYSTEM_UPDATE", "SERVER_RESTART"],
+    "*-beans.xml": ["BUILD", "SERVER_RESTART"],
+    "*.java": ["BUILD", "SERVER_RESTART"],
+    "*-spring.xml": ["BUILD", "SERVER_RESTART"],
+    "*.impex": ["IMPEX_IMPORT"],
+    "manifest.json|localextensions.xml": ["FULL_BUILD", "SERVER_RESTART"]
   },
   "jira": { "mode": "manual", "project": null },
+  "researchLayers": [
+    { "name": "extensions", "targets": "extensioninfo.xml dependency graph, dev-config/localextensions.xml, bin/custom/* layout" },
+    { "name": "type-system", "targets": "*-items.xml custom types/relations/enums, deployment tables, generated model usage" },
+    { "name": "service-layer", "targets": "*-spring.xml beans + aliases, *Service/*Strategy/DAO impls, interceptors, converters/populators" },
+    { "name": "occ-web", "targets": "commercewebservices controllers, *-beans.xml WsDTO/Data, OCC field sets, *Facade beans" },
+    { "name": "impex-data", "targets": "resources/impex/, essentialdata/projectdata load order, catalog versions, Solr config" }
+  ],
   "_notes": [
-    "Verbs encode this repo's hard-won rules (CLAUDE.md is authoritative):",
-    "1. yclean is mandatory before ybuild — incremental compile silently skips recompiles.",
-    "2. UNIT_TEST stops the server first — the junit tenant kills the live Solr otherwise.",
-    "3. Never use ./gradlew yunittests/yintegrationtests with -D flags — the plugin drops them and runs the whole platform suite.",
-    "4. After items.xml changes, JUNIT_TENANT_INIT must run once or integration tests fail with 'type code ... invalid'.",
-    "5. projectdata-*.impex loads on initialize only — new files on an existing DB need IMPEX_IMPORT explicitly.",
-    "6. Tool/endpoint/config changes must update coremcp/docs/reference/ in the same commit (CLAUDE.md rule 10).",
-    "7. Config edits belong in core-customize/dev-config/, never the generated hybris/config/.",
-    "8. Set jira.mode to 'mcp' if the Atlassian MCP connector is available in your Claude Code session."
+    "Starter profile for an SAP Commerce (Hybris) CCv2 backend. Copy to working-docs/config.json and set coremcp to your extension(s).",
+    "ANT variant: set buildTool=ant and swap the verbs — BUILD '. ./setantenv.sh && ant build', FULL_BUILD 'ant clean all', TYPE_SYSTEM_UPDATE 'ant updatesystem', SERVER_RESTART './hybrisserver.sh stop | ./hybrisserver.sh start', IMPEX_IMPORT 'MANUAL: import the file via the HAC ImpEx console'. UNIT_TEST/INTEGRATION_TEST already use the ant form. If there is no core-customize/ wrapper, set workingDir to 'hybris'.",
+    "Always 'yclean' before 'ybuild' — incremental Java compilation is unreliable here and can leave stale .class files on a green build.",
+    "Run TYPE_SYSTEM_UPDATE and all tests with the server STOPPED: yupdatesystem needs the server down (a running server makes ant attempt a JMX wrapper restart that fails), and the junit tenant shuts down Solr on 8983, which is shared with the live server.",
+    "Scope tests to custom extensions only; never run the full platform suite unless asked. Do NOT use ./gradlew yunittests/yintegrationtests with -D flags (the plugin drops them) — use the ant form above.",
+    "Never edit gensrc/, platform/, or OOTB modules — override in custom extensions. Use the Spring alias pattern (defaultMyBean -> myBean). OCC Data/WsDTO classes are generated from *-beans.xml.",
+    "Set jira.mode to 'mcp' if the Atlassian MCP connector is available in your Claude Code session; 'manual' if Jira exists but is unreachable (paste ticket in; updates written paste-ready); 'none' if there is no Jira."
   ]
 }
