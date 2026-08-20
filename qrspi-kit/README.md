@@ -47,6 +47,10 @@ Stages never hardcode commands — they resolve **verbs** and **research layers*
 - **`react-vite.json`** — **React + Vite + TypeScript** storefront over OCC (`npm run build` / `tsc` /
   Playwright e2e), with the `src/services/api.ts` boundary. Pick this or `composable-storefront` per your stack.
 
+Generic starters for other stacks (Spring Boot, FastAPI, plain React), imported from
+[`rice-qrspi`](https://github.com/earlmundorf/rice-qrspi) for reference, live in [`profiles/`](profiles/) —
+they pair with rice's generic `qrspi` skill, not this kit's specialized ones.
+
 ## Learn it
 
 - **[WALKTHROUGH.md](WALKTHROUGH.md)** — one real ticket (surface OOTB product reviews to the MCP

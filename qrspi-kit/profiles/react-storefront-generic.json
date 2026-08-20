@@ -1,0 +1,43 @@
+{
+  "profile": "storefront",
+  "stack": "react-typescript-vite",
+  "workingDir": ".",
+  "packageManager": "npm",
+  "framework": {
+    "react": "19",
+    "router": "react-router-dom 7",
+    "styling": "tailwindcss 4",
+    "bundler": "vite 7"
+  },
+  "protectedPaths": ["node_modules/", "dist/", ".env"],
+  "apiBoundary": "src/services/api.ts",
+  "build": {
+    "INSTALL": "npm install",
+    "TYPECHECK": "npx tsc --noEmit",
+    "LINT": "npm run lint",
+    "BUILD": "npm run build",
+    "UNIT_TEST": "MANUAL: no test runner configured yet — CLAUDE.md plans Vitest + React Testing Library; until then verify with TYPECHECK + LINT and a manual dev-server check",
+    "DEV_SERVER": "npm run dev",
+    "PREVIEW": "npm run preview"
+  },
+  "changeTypeVerbs": {
+    "ts|tsx": ["TYPECHECK", "LINT", "BUILD"],
+    "css|tailwind": ["BUILD"],
+    "package.json|lockfile": ["INSTALL", "BUILD"],
+    "vite.config|tsconfig|eslint.config": ["TYPECHECK", "LINT", "BUILD"]
+  },
+  "jira": { "mode": "manual", "project": null },
+  "researchLayers": [
+    { "name": "routing-pages", "targets": "App.tsx routes, src/pages/, navigation patterns" },
+    { "name": "components", "targets": "src/components/, composition, props contracts, styling usage" },
+    { "name": "state", "targets": "src/contexts/, custom hooks, URL-driven state, window events" },
+    { "name": "api-types", "targets": "src/services/api.ts methods, src/types/index.ts shapes, backend contracts, auth/session lifecycle" },
+    { "name": "build-config", "targets": "vite.config.ts (proxy, aliases), env vars, eslint/tsconfig" }
+  ],
+  "_notes": [
+    "Starter profile for a React/Vite TypeScript storefront. Copy to working-docs/config.json and adjust.",
+    "The repo's CLAUDE.md is authoritative: functional components + named exports, all backend calls through apiBoundary (src/services/api.ts), typed responses, loading + error states, user-feedback helpers, styling ordering with dark: variants.",
+    "When a test runner lands, replace UNIT_TEST with 'npx vitest run' and add it to the ts|tsx mapping.",
+    "Set jira.mode to 'mcp' if the Atlassian MCP connector is available in your Claude Code session."
+  ]
+}
