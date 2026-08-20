@@ -23,6 +23,20 @@
           class="com.coremcp.services.DeepLinkBuilder"/>
 
     <!-- ===================================================================
+         Product option populators
+         Override the OOTB commercefacades `productReviewsPopulator` (used by the
+         product-option populator chain for ProductOption.REVIEW) so product_get
+         returns only approved, non-blocked reviews with a resolved reviewer name.
+         coremcp loads after commercefacades, so this alias wins.
+         =================================================================== -->
+
+    <alias name="mcpProductReviewsPopulator" alias="productReviewsPopulator"/>
+    <bean id="mcpProductReviewsPopulator"
+          class="com.coremcp.product.populator.McpProductReviewsPopulator">
+        <property name="customerReviewService" ref="customerReviewService"/>
+    </bean>
+
+    <!-- ===================================================================
          Tool Handlers
          =================================================================== -->
 
