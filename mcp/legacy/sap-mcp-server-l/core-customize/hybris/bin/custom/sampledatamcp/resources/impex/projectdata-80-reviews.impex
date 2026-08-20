@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# ThinkShop sample data — customer reviews
+#
+# Loaded automatically during "ant initialize" ONLY because the filename
+# matches the pattern: projectdata-*.impex
+#
+# Creates: CustomerReviews (Staged + Online) for a few demo products so the
+#          MCP product_get REVIEW option is observable end-to-end. One product
+#          (HD_WEBCAM) is deliberately left with no reviews to demonstrate the
+#          empty-list behaviour.
+#
+# Prerequisites: projectdata-10-products.impex (products LAPTOP_PRO_15,
+#                SMARTPHONE_X, WIRELESS_HEADPHONES, HD_WEBCAM and the 3 demo
+#                customers john.doe / jane.smith / bob.wilson).
+# ---------------------------------------------------------------------------
+
+#% impex.setLocale(new java.util.Locale("en"));
+
+$productCatalog = electronicsProductCatalog
+$stagedProduct = product(code, catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Staged']))[unique = true]
+$onlineProduct = product(code, catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Online']))[unique = true]
+
+
+# ==========================================================================
+# Reviews — Staged version (content authoring)
+# ==========================================================================
+# Unique key is (product, user): one review per customer per product. All rows
+# are approved and not blocked so they are visible to shoppers.
+INSERT_UPDATE CustomerReview ; $stagedProduct       ; user(uid)[unique = true]  ; alias   ; approvalStatus(code)[default = 'approved'] ; blocked[default = false] ; rating ; headline                       ; comment
+                             ; LAPTOP_PRO_15         ; john.doe@thinkshop.com    ; John D. ;                                            ;                          ; 5      ; Best laptop I've owned         ; Blazing fast for development and the battery easily lasts a full day.
+                             ; LAPTOP_PRO_15         ; jane.smith@thinkshop.com  ; Jane S. ;                                            ;                          ; 4      ; Great, but pricey              ; Excellent screen and keyboard. Docked a star for the price.
+                             ; LAPTOP_PRO_15         ; bob.wilson@thinkshop.com  ; Bob W.  ;                                            ;                          ; 5      ; Handles everything I throw at it ; Compiles large projects without breaking a sweat.
+                             ; SMARTPHONE_X          ; jane.smith@thinkshop.com  ; Jane S. ;                                            ;                          ; 4      ; Solid upgrade                  ; The 5G speeds are real and the camera is a big step up.
+                             ; WIRELESS_HEADPHONES   ; john.doe@thinkshop.com    ; John D. ;                                            ;                          ; 5      ; Incredible noise cancelling    ; Perfect for open-plan offices and flights.
+                             ; WIRELESS_HEADPHONES   ; bob.wilson@thinkshop.com  ; Bob W.  ;                                            ;                          ; 3      ; Good sound, tight fit          ; They sound great but clamp a little hard after a few hours.
+
+
+# ==========================================================================
+# Reviews — Online version (live storefront / read path)
+# ==========================================================================
+INSERT_UPDATE CustomerReview ; $onlineProduct       ; user(uid)[unique = true]  ; alias   ; approvalStatus(code)[default = 'approved'] ; blocked[default = false] ; rating ; headline                       ; comment
+                             ; LAPTOP_PRO_15         ; john.doe@thinkshop.com    ; John D. ;                                            ;                          ; 5      ; Best laptop I've owned         ; Blazing fast for development and the battery easily lasts a full day.
+                             ; LAPTOP_PRO_15         ; jane.smith@thinkshop.com  ; Jane S. ;                                            ;                          ; 4      ; Great, but pricey              ; Excellent screen and keyboard. Docked a star for the price.
+                             ; LAPTOP_PRO_15         ; bob.wilson@thinkshop.com  ; Bob W.  ;                                            ;                          ; 5      ; Handles everything I throw at it ; Compiles large projects without breaking a sweat.
+                             ; SMARTPHONE_X          ; jane.smith@thinkshop.com  ; Jane S. ;                                            ;                          ; 4      ; Solid upgrade                  ; The 5G speeds are real and the camera is a big step up.
+                             ; WIRELESS_HEADPHONES   ; john.doe@thinkshop.com    ; John D. ;                                            ;                          ; 5      ; Incredible noise cancelling    ; Perfect for open-plan offices and flights.
+                             ; WIRELESS_HEADPHONES   ; bob.wilson@thinkshop.com  ; Bob W.  ;                                            ;                          ; 3      ; Good sound, tight fit          ; They sound great but clamp a little hard after a few hours.
+
+# HD_WEBCAM intentionally has no reviews — proves product_get returns an empty
+# reviews list (not an error) for a product without reviews.
