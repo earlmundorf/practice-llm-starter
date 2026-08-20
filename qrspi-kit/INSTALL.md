@@ -37,11 +37,13 @@ cp -R qrspi-kit/ui/working-docs        /path/to/your-storefront-repo/
    # backend
    cp working-docs/profiles/sap-commerce.json working-docs/config.json
    # storefront
-   cp working-docs/profiles/composable-storefront.json working-docs/config.json
+   cp working-docs/profiles/composable-storefront.json working-docs/config.json   # Angular Spartacus
+   # …or, for a React/Vite storefront:
+   # cp working-docs/profiles/react-vite.json working-docs/config.json
    ```
 2. **Adjust `working-docs/config.json`:**
    - Backend: set `<ext>` to your extension(s). Building with **ant** instead of gradle? Set `buildTool: "ant"` and swap the verbs per the `_notes` in the profile.
-   - Storefront: confirm Angular/Spartacus versions; if the app uses **Jest**, set `UNIT_TEST` to `npx jest`.
+   - Storefront: pick the matching profile — **`composable-storefront`** (Angular Spartacus) or **`react-vite`** (React/Vite) — and confirm versions. React's gate is TYPECHECK + LINT + BUILD + Playwright e2e (no unit runner by default); Angular uses `ng test` (Karma) — set `UNIT_TEST` to `npx jest` if the app uses Jest.
    - Both: set `jira.mode` — `mcp` (Atlassian connector available), `manual` (paste tickets in), or `none`.
 3. **Publish the `/cq:*` commands** (source of truth is the skill's `commands/`):
    ```bash
