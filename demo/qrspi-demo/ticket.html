@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>THINK-142 / 143 · commerce-qrspi demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root{
+    --ink:#0e1116; --panel:#161b23; --panel-2:#1b212b; --rule:#262d38;
+    --text:#d7dde6; --muted:#8b95a4; --faint:#5b6472;
+    --coral:#ff6b6b; --coral-bg:#3a1e22; --jade:#4fd1b5; --jade-bg:#12332e;
+    --accent:#7aa2ff; --accent-bg:#1a2540; --amber:#ffb35c;
+    --violet:#c58cf0; --violet-bg:#2a1f3a;
+    --sans:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--ink);color:var(--text);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;height:100vh;overflow:hidden}
+  .stagewrap{display:flex;height:100vh}
+  .briefing{flex:1.35;min-width:0;overflow-y:auto;padding:34px clamp(22px,3vw,48px) 56px;background:radial-gradient(120% 80% at 0% 0%,#171d27 0%,var(--ink) 60%)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 16px}
+  .tkt-head{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+  .key{font-family:var(--mono);font-size:13px;font-weight:600;color:var(--ink);background:var(--accent);border-radius:4px;padding:5px 10px;white-space:nowrap}
+  .tkt-head h1{font-size:clamp(20px,2.2vw,30px);line-height:1.14;letter-spacing:-.02em;font-weight:700;margin:0;flex:1;min-width:240px}
+  .meta{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 20px}
+  .pill{font-family:var(--mono);font-size:11.5px;color:var(--text);border:1px solid var(--rule);background:var(--panel);border-radius:3px;padding:4px 9px}
+  .pill .lbl{color:var(--faint)}
+  .pill.story{border-color:var(--jade);color:var(--jade)} .pill.prio{border-color:var(--amber);color:var(--amber)}
+
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--rule);margin-bottom:24px;flex-wrap:wrap}
+  .tab{appearance:none;background:none;border:0;cursor:pointer;font-family:var(--sans);font-size:14.5px;font-weight:600;color:var(--muted);padding:11px 14px;border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .15s}
+  .tab .t-mono{font-family:var(--mono);font-size:12px;color:var(--faint);margin-right:7px}
+  .tab:hover{color:var(--text)} .tab[aria-selected="true"]{color:var(--text);border-bottom-color:var(--accent)}
+  .tab.ui[aria-selected="true"]{border-bottom-color:var(--violet);color:#fff}
+  .tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+  .panel{display:none;animation:fade .2s ease} .panel[data-active]{display:block}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  h2.sec{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+  .block{margin-bottom:24px}
+  .story-line{font-size:16px;line-height:1.58;margin:0 0 12px}
+  .story-line b{color:var(--jade);font-weight:600}
+  p.body{color:var(--muted);margin:0;max-width:66ch}
+  ol.ac{list-style:none;counter-reset:ac;margin:0;padding:0}
+  ol.ac li{counter-increment:ac;position:relative;padding:12px 14px 12px 46px;border:1px solid var(--rule);border-radius:6px;background:var(--panel);margin-bottom:8px;font-size:14.5px}
+  ol.ac li::before{content:counter(ac);position:absolute;left:14px;top:12px;width:22px;height:22px;border-radius:50%;background:var(--accent-bg);color:var(--accent);font-family:var(--mono);font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center}
+  ol.ac b{color:var(--text)}
+  .subgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:1150px){.subgrid{grid-template-columns:1fr}}
+  .mini{border:1px solid var(--rule);border-radius:6px;background:var(--panel);padding:14px 16px}
+  .mini h3{font-size:13px;margin:0 0 8px;color:var(--text)}
+  .mini ul{margin:0;padding-left:18px;color:var(--muted);font-size:13.5px} .mini ul li{margin-bottom:5px}
+  .goalstrip{display:flex;gap:12px;margin:22px 0 0}
+  .pc{flex:1;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:var(--panel-2)}
+  .pc .img{height:52px;background:linear-gradient(135deg,#232b38,#161b23);display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:10px}
+  .pc .pcb{padding:10px 12px} .pc .nm{font-size:12px;font-weight:600;margin:0 0 6px}
+  .pc .row{display:flex;align-items:center;gap:7px}
+  .pc .now{font-size:17px;font-weight:700;color:var(--accent)} .pc .was{font-size:12px;color:var(--faint);text-decoration:line-through}
+  .pc .sale{font-family:var(--mono);font-size:9px;font-weight:600;color:var(--ink);background:var(--coral);border-radius:3px;padding:2px 6px;margin-left:auto}
+  .pc .tag{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;padding:5px 0 6px}
+  .pc.before .tag{color:var(--faint)} .pc.after .tag{color:var(--coral)} .pc.after{border-color:var(--coral)}
+
+  /* sibling-project banner (UI tab) */
+  .sibling{display:flex;align-items:center;gap:10px;border:1px solid var(--violet);background:var(--violet-bg);border-radius:8px;padding:11px 14px;margin:0 0 18px;font-size:13.5px;color:var(--text)}
+  .sibling .ic{color:var(--violet);font-family:var(--mono)}
+  .sibling code{font-family:var(--mono);font-size:12.5px;color:var(--violet);background:rgba(197,140,240,.12);border-radius:3px;padding:1px 6px}
+
+  .cmdbar{display:flex;align-items:center;gap:12px;border:1px solid var(--accent);background:var(--accent-bg);border-radius:8px;padding:12px 14px;margin:0 0 18px}
+  .cmdbar.ui{border-color:var(--violet);background:var(--violet-bg)}
+  .cmdbar .hint{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);white-space:nowrap}
+  .cmdbar.ui .hint{color:var(--violet)}
+  .cmdbar .cmd{font-family:var(--mono);font-size:15px;color:#fff;flex:1;min-width:0;overflow-x:auto;white-space:nowrap}
+  .cmdbar .copy{appearance:none;border:1px solid var(--accent);background:transparent;color:var(--accent);font-family:var(--mono);font-size:12px;border-radius:5px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+  .cmdbar.ui .copy{border-color:var(--violet);color:var(--violet)}
+  .cmdbar .copy:hover{background:var(--accent);color:var(--ink)} .cmdbar.ui .copy:hover{background:var(--violet)}
+  .cmdbar .copy.ok{border-color:var(--jade);color:var(--jade)}
+
+  .agenda{border:1px solid var(--rule);border-radius:8px;background:var(--panel);padding:6px 2px;margin-bottom:26px}
+  .stage{display:flex;gap:12px;align-items:baseline;padding:10px 16px;border-top:1px solid var(--rule);cursor:pointer;transition:background .12s}
+  .stage:first-child{border-top:0}
+  .stage:hover{background:var(--panel-2)}
+  .stage.active{background:var(--accent-bg);box-shadow:inset 3px 0 0 var(--accent)}
+  .panel .agenda.ui .stage.active{background:var(--violet-bg);box-shadow:inset 3px 0 0 var(--violet)}
+  .stage:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .stage .n{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--muted);flex:0 0 16px}
+  .stage.active .n{color:var(--accent)}
+  .stage .nm{font-weight:600;color:var(--text);flex:0 0 92px}
+  .stage .dsc{color:#b8c0cc;font-size:14px}
+  .stage .gatetag{font-family:var(--mono);font-size:10px;color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:1px 6px;margin-left:6px;white-space:nowrap}
+  .marker{display:flex;gap:11px;align-items:center;padding:10px 16px;font-family:var(--mono);font-size:12px}
+  .marker.start{color:var(--muted)} .marker.before{color:var(--muted)} .marker.after{color:var(--jade)}
+  .marker .dot{width:8px;height:8px;border-radius:50%}
+  .marker.start .dot{background:var(--faint)} .marker.before .dot{background:var(--muted)} .marker.after .dot{background:var(--jade)}
+
+  .livehead{display:flex;align-items:center;gap:10px;margin:0 0 10px}
+  .livedot{width:7px;height:7px;border-radius:50%;background:var(--jade);animation:pulse 2s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(79,209,181,.5)}70%{box-shadow:0 0 0 7px rgba(79,209,181,0)}100%{box-shadow:0 0 0 0 rgba(79,209,181,0)}}
+  .livetree{border:1px solid var(--rule);border-radius:8px;background:#0d1117;padding:12px 14px;font-family:var(--mono);font-size:13px;min-height:110px}
+  .livetree .root{color:var(--accent);margin-bottom:6px}
+  .livetree .f{display:flex;gap:10px;align-items:baseline;padding:3px 0 3px 18px;color:var(--text)}
+  .livetree .f.d{color:var(--accent)}
+  .livetree .f.new{animation:flash 2.4s ease}
+  @keyframes flash{0%{background:var(--jade-bg);color:var(--jade)}100%{background:transparent}}
+  .livetree .empty{color:var(--faint)}
+  .livetree .f.file{cursor:pointer}
+  .livetree .f.file:hover{color:var(--jade)}
+  .livetree .f.file:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+  .livetree .f.file::after{content:"↗";margin-left:8px;color:var(--faint);font-size:11px;opacity:0;transition:opacity .12s}
+  .livetree .f.file:hover::after{opacity:1}
+
+  .prpanel{margin-top:16px;border:1px solid var(--jade);background:var(--jade-bg);border-radius:8px;padding:14px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .prpanel .pr-h{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--jade);font-weight:600}
+  .pr-link{font-family:var(--mono);font-size:13.5px;color:var(--jade);text-decoration:none;border-bottom:1px solid var(--jade)}
+  .pr-view{appearance:none;border:1px solid var(--jade);background:transparent;color:var(--jade);font-family:var(--sans);font-size:13px;font-weight:600;border-radius:5px;padding:6px 12px;cursor:pointer;margin-left:auto}
+  .pr-view:hover{background:var(--jade);color:var(--ink)}
+  .pr-view:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* live storefront tab */
+  .storehead{display:flex;align-items:center;gap:12px;margin:0 0 12px;flex-wrap:wrap}
+  .storehead .u{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .storehead .u b{color:var(--jade)}
+  .store-reload{appearance:none;border:1px solid var(--rule);background:var(--panel);color:var(--text);font-family:var(--mono);font-size:12px;border-radius:5px;padding:6px 11px;cursor:pointer;margin-left:auto}
+  .store-reload:hover{border-color:var(--accent);color:var(--accent)}
+  .storeframe{width:100%;height:76vh;min-height:440px;border:1px solid var(--rule);border-radius:8px;background:#fff;display:block}
+
+  /* markdown modal */
+  .modal{position:fixed;inset:0;background:rgba(4,6,10,.66);display:none;align-items:center;justify-content:center;z-index:50;padding:clamp(16px,4vw,56px)}
+  .modal.show{display:flex}
+  .modal-card{background:var(--panel);border:1px solid var(--rule);border-radius:10px;width:100%;max-width:860px;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.5)}
+  .modal-head{display:flex;align-items:center;gap:12px;padding:13px 18px;border-bottom:1px solid var(--rule)}
+  .modal-head .fname{font-family:var(--mono);font-size:13px;color:var(--accent);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .modal-head .badge{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);border:1px solid var(--rule);border-radius:3px;padding:2px 7px}
+  .modal-x{appearance:none;background:none;border:0;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:4px}
+  .modal-x:hover{color:var(--text);background:var(--panel-2)}
+  .modal-x:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .md-body{overflow-y:auto;padding:20px 26px 28px}
+  .md-body>*:first-child{margin-top:0}
+  .md-body h1,.md-body h2,.md-body h3,.md-body h4{color:#fff;line-height:1.25;margin:22px 0 10px;font-weight:600}
+  .md-body h1{font-size:24px} .md-body h2{font-size:19px;border-bottom:1px solid var(--rule);padding-bottom:6px} .md-body h3{font-size:16px} .md-body h4{font-size:14px}
+  .md-body p,.md-body li{color:var(--text);font-size:14.5px;line-height:1.65}
+  .md-body ul,.md-body ol{padding-left:22px;margin:10px 0} .md-body li{margin:4px 0}
+  .md-body a{color:var(--accent)}
+  .md-body code{font-family:var(--mono);font-size:.88em;background:var(--panel-2);border:1px solid var(--rule);border-radius:3px;padding:1px 5px;color:var(--jade)}
+  .md-body pre{background:#0d1117;border:1px solid var(--rule);border-radius:6px;padding:14px 16px;overflow-x:auto;margin:12px 0}
+  .md-body pre code{background:none;border:0;padding:0;color:#d7dde6;font-size:13px}
+  .md-body blockquote{margin:12px 0;padding:4px 16px;border-left:3px solid var(--accent);color:var(--muted)}
+  .md-body table{border-collapse:collapse;margin:12px 0;font-size:13.5px;width:100%}
+  .md-body th,.md-body td{border:1px solid var(--rule);padding:7px 11px;text-align:left}
+  .md-body th{background:var(--panel-2);color:var(--text);font-family:var(--mono);font-size:12px}
+  .md-body td{color:var(--muted)} .md-body strong{color:#fff}
+  .md-body hr{border:0;border-top:1px solid var(--rule);margin:18px 0} .md-body .loading{color:var(--faint)}
+
+  .rail{flex:1.35;min-width:360px;max-width:720px;display:flex;flex-direction:column;background:#0b0b0f;border-left:1px solid var(--rule)}
+  .rail-head{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid #20242c;color:var(--muted);font-family:var(--mono);font-size:12px}
+  .dots{display:flex;gap:6px}.dots i{width:11px;height:11px;border-radius:50%;display:block}
+  .dots i:nth-child(1){background:#ff5f57}.dots i:nth-child(2){background:#febc2e}.dots i:nth-child(3){background:#28c840}
+  .rail-head .live{margin-left:auto;color:var(--jade);display:flex;align-items:center;gap:6px}
+  .rail-head .live .pulse{width:7px;height:7px;border-radius:50%;background:var(--jade);animation:pulse 2s infinite}
+  .rail-body{flex:1;position:relative;min-height:0}
+  .rail-body iframe{width:100%;height:100%;border:0;display:block;background:#0b0b0f}
+  .term-replica{position:absolute;inset:0;overflow:auto;padding:16px 18px;font-family:var(--mono);font-size:13px;line-height:1.75;color:#cfe9df;white-space:pre-wrap}
+  .term-replica .u{color:#7fd1ff}.term-replica .info{color:var(--accent)}.term-replica .cursor{display:inline-block;width:8px;height:15px;background:var(--jade);vertical-align:-2px;animation:blink 1.1s step-end infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  @media(max-width:860px){body{overflow:auto;height:auto}.stagewrap{flex-direction:column;height:auto}.rail{max-width:none;min-height:55vh;border-left:0;border-top:1px solid var(--rule)}}
+</style>
+</head>
+<body>
+<div class="stagewrap">
+  <main class="briefing">
+    <p class="eyebrow">ThinkShop and Fast Commerce AI (SAP Commerce)</p>
+    <div class="tkt-head">
+      <h1>Promotional pricing — backend to storefront</h1>
+    </div>
+    <p class="body" style="margin:-4px 0 20px;max-width:72ch">Two paired tickets: <b style="color:var(--jade)">THINK-142</b> exposes promo pricing in the OCC payload (backend), then <b style="color:var(--violet)">THINK-143</b> renders it in the React storefront. Run 142, then 143.</p>
+
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true"  aria-controls="tab-ticket" id="t-ticket"><span class="t-mono">01</span>Ticket · 142 / 143</button>
+      <button class="tab" role="tab" aria-selected="false" aria-controls="tab-agenda" id="t-agenda"><span class="t-mono">02</span>QRSPI Workflow · 142</button>
+      <button class="tab ui" role="tab" aria-selected="false" aria-controls="tab-ui" id="t-ui"><span class="t-mono">03</span>QRSPI Workflow · 143 · UI</button>
+      <button class="tab ui" role="tab" aria-selected="false" aria-controls="tab-uiview" id="t-store"><span class="t-mono">04</span>Storefront UI</button>
+    </div>
+
+    <!-- TAB 1: TICKETS (142 + 143) -->
+    <section class="panel" id="tab-ticket" role="tabpanel" aria-labelledby="t-ticket" data-active>
+      <div class="tkt-head" style="margin-bottom:8px">
+        <span class="key">THINK-142</span>
+        <h1 style="font-size:clamp(18px,1.9vw,25px)">Expose promotional pricing in the OCC v2 REST product payload</h1>
+      </div>
+      <div class="meta">
+        <span class="pill story"><span class="lbl">Type</span> Story</span>
+        <span class="pill prio"><span class="lbl">Priority</span> Medium</span>
+        <span class="pill"><span class="lbl">Components</span> Backend · OCC API</span>
+        <span class="pill"><span class="lbl">Repo</span> sap-mcp-server-l</span>
+      </div>
+      <div class="block">
+        <h2 class="sec">Description</h2>
+        <p class="story-line"><b>As</b> the storefront, <b>when</b> a product has an active promotion,
+          <b>I need</b> the promo price present in the product data I fetch, <b>so that</b> the UI
+          (THINK-143) can show the deal.</p>
+        <p class="body">The storefront reads the <b>OCC v2 REST API</b> (<code style="font-family:var(--mono)">/products/search</code>, <code style="font-family:var(--mono)">/products/{code}</code>) — which carries only the base price today. Expose the promotion on the product node there.</p>
+      </div>
+      <div class="block">
+        <h2 class="sec">Acceptance Criteria</h2>
+        <ol class="ac">
+          <li>A promoted product returns a <b><code style="font-family:var(--mono)">promo</code> block</b> on the product node in <b>GET /products/{code}</b> (OCC v2 REST).</li>
+          <li>The same <code style="font-family:var(--mono)">promo</code> block appears in <b>GET /products/search</b> results.</li>
+          <li>A product with <b>no active promotion</b> returns no promo block, unchanged otherwise.</li>
+          <li>Values <b>match the active promotion</b> for the product on <code style="font-family:var(--mono)">electronics</code>.</li>
+          <li><b>Parity, not a fork:</b> reuse the existing <code style="font-family:var(--mono)">PromoPricing</code> DTO / promo service that already power the MCP tool responses.</li>
+        </ol>
+      </div>
+      <div class="subgrid">
+        <div class="mini"><h3>Notes / Context</h3><ul>
+          <li>“OCC payload” = the <b>OCC v2 REST</b> responses the storefront reads (<code style="font-family:var(--mono)">commercewebservices</code>) — <em>not</em> just the MCP tools.</li>
+          <li>142’s first pass added <code style="font-family:var(--mono)">promo</code> to the MCP handlers only; OCC REST still lacks it — this closes that gap.</li>
+          <li>Reuse <code style="font-family:var(--mono)">PromoPricing</code>/<code style="font-family:var(--mono)">PromoNodeWriter</code>; add a commercewebservices populator. Don’t modify OOTB.</li>
+        </ul></div>
+        <div class="mini"><h3>Out of Scope</h3><ul>
+          <li>Creating or administering promotions.</li>
+          <li>Sale indicators outside grid + PDP.</li>
+          <li>The frontend rendering — that’s <b>THINK-143</b> below.</li>
+        </ul></div>
+      </div>
+
+      <hr style="border:0;border-top:1px solid var(--rule);margin:28px 0 22px">
+
+      <div class="tkt-head" style="margin-bottom:8px">
+        <span class="key" style="background:var(--violet)">THINK-143</span>
+        <h1 style="font-size:clamp(18px,1.9vw,25px)">Render sale price &amp; “Sale” badge in the storefront (grid + PDP)</h1>
+      </div>
+      <div class="meta">
+        <span class="pill story"><span class="lbl">Type</span> Story</span>
+        <span class="pill"><span class="lbl">Components</span> Storefront (React)</span>
+        <span class="pill"><span class="lbl">Repo</span> sap-mcp-ui-l (sibling)</span>
+        <span class="pill"><span class="lbl">Depends on</span> THINK-142</span>
+      </div>
+      <div class="block">
+        <h2 class="sec">Description</h2>
+        <p class="story-line"><b>As a</b> shopper, <b>when</b> a product is on promotion, <b>I want</b> the grid card and detail page to show the sale price, struck original, and a “Sale” badge.</p>
+        <p class="body">The <b>frontend half of 142</b>: extend <code style="font-family:var(--mono);color:var(--violet)">mapOccProduct</code> + the <code style="font-family:var(--mono);color:var(--violet)">Product</code> type, then render in <code style="font-family:var(--mono);color:var(--violet)">ProductCard.tsx</code> and <code style="font-family:var(--mono);color:var(--violet)">ProductDetail.tsx</code>. Shorter, UI-only.</p>
+      </div>
+      <div class="block">
+        <h2 class="sec">Acceptance Criteria</h2>
+        <ol class="ac">
+          <li>On the <b>product grid</b>, a promoted product shows the discounted price, the original price struck through, and a <b>“Sale” badge</b>.</li>
+          <li>On the <b>product detail page</b>, the same discounted price, original price, and badge appear.</li>
+          <li>A product with <b>no active promotion</b> is unchanged.</li>
+          <li>The sale/original price <b>matches the OCC payload from THINK-142</b>.</li>
+          <li><b>No regression</b> to price display, stock indicator, or add-to-cart.</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- TAB 2: QRSPI WORKFLOW (142 backend) -->
+    <section class="panel" id="tab-agenda" role="tabpanel" aria-labelledby="t-agenda">
+      <div class="cmdbar">
+        <span class="hint">Type in terminal →</span>
+        <code class="cmd">/cq:0_go THINK-142</code>
+        <button class="copy">Copy</button>
+      </div>
+      <h2 class="sec">Click a stage to see its command · backend (sap-mcp-server-l)</h2>
+      <div class="agenda">
+        <div class="marker start"><span class="dot"></span>Start: everything off</div>
+        <div class="stage active" data-cmd="/cq:0_go THINK-142"><span class="n">0</span><span class="nm">Go</span><span class="dsc">recommend a tier · detect build config</span></div>
+        <div class="stage" data-cmd="/cq:1_ticket"><span class="n">1</span><span class="nm">Ticket</span><span class="dsc">restate · generate research questions</span></div>
+        <div class="stage" data-cmd="/cq:2_research"><span class="n">2</span><span class="nm">Research</span><span class="dsc">blind: is promo price in the OCC payload?</span></div>
+        <div class="stage" data-cmd="/cq:3_design"><span class="n">3</span><span class="nm">Design</span><span class="dsc">design + success criteria <span class="gatetag">★ gate</span></span></div>
+        <div class="stage" data-cmd="/cq:4_structure"><span class="n">4</span><span class="nm">Structure</span><span class="dsc">vertical slices: facade → OCC <span class="gatetag">★ gate</span></span></div>
+        <div class="stage" data-cmd="/cq:5_plan"><span class="n">5</span><span class="nm">Plan</span><span class="dsc">checkboxed tactical plan</span></div>
+        <div class="marker before"><span class="dot"></span>Start backend → capture the “before”</div>
+        <div class="stage" data-cmd="/cq:6_implement"><span class="n">6</span><span class="nm">Implement</span><span class="dsc">slice by slice · one commit each</span></div>
+        <div class="stage" data-cmd="/cq:7_validate"><span class="n">7</span><span class="nm">Validate</span><span class="dsc">re-run criteria · open PR <span class="gatetag">★ gate</span></span></div>
+        <div class="marker after"><span class="dot"></span>Backend now returns promo fields in the OCC payload</div>
+      </div>
+      <div class="livehead"><span class="livedot"></span><h2 class="sec" style="margin:0">working-docs/THINK-142/ · updates live</h2></div>
+      <div class="livetree" data-ticket="THINK-142"><div class="empty">waiting for the run to start…</div></div>
+      <div class="prpanel" data-ticket="THINK-142" hidden>
+        <span class="pr-h">◆ Pull Request</span>
+        <a class="pr-link" target="_blank" rel="noopener" hidden></a>
+        <button class="pr-view" hidden>View PR description</button>
+      </div>
+    </section>
+
+    <!-- TAB 3: QRSPI WORKFLOW · UI (143 storefront) -->
+    <section class="panel" id="tab-ui" role="tabpanel" aria-labelledby="t-ui">
+      <div class="sibling">
+        <span class="ic">▸</span>
+        <div>Runs in the <b>sibling UI project</b> <code>sap-mcp-ui-l</code> (Vite + React) — not the backend.
+          First in the terminal: <code>cd ../sap-mcp-ui-l &amp;&amp; claude</code>. Renders THINK-142’s promo fields; depends on 142 being shipped.</div>
+      </div>
+      <div class="cmdbar ui">
+        <span class="hint">In sap-mcp-ui-l →</span>
+        <code class="cmd">/cq:0_go THINK-143 simple</code>
+        <button class="copy">Copy</button>
+      </div>
+      <h2 class="sec">Simple tier — brief → implement → validate · storefront-qrspi</h2>
+      <p class="body" style="margin:-4px 0 14px;max-width:70ch;font-size:13.5px">A well-scoped UI change, so we run the <b style="color:var(--violet)">simple</b> tier: one short <b>brief</b> folds ticket/research/design/structure/plan, then straight to <b>implement</b> and a <b>validate-lite</b> gate. The <code style="font-family:var(--mono)">0_go</code> command auto-chains it — one command, code on camera, far fewer stages than 142’s full run.</p>
+      <div class="agenda ui">
+        <div class="marker start"><span class="dot"></span>Prereq: THINK-142 shipped (backend returns promo)</div>
+        <div class="stage active" data-cmd="/cq:0_go THINK-143 simple"><span class="n">0</span><span class="nm">Go</span><span class="dsc">recommend + confirm the simple tier · detect build (npm/Vite)</span></div>
+        <div class="stage" data-cmd="/cq:0_go THINK-143 simple"><span class="n">1</span><span class="nm">Brief</span><span class="dsc">one short doc: scope + approach (folds ticket→plan) <span class="gatetag">★ gate</span></span></div>
+        <div class="marker before"><span class="dot"></span>Start storefront (:5173) → capture the “before”</div>
+        <div class="stage" data-cmd="/cq:6_implement"><span class="n">6</span><span class="nm">Implement</span><span class="dsc">mapper + ProductCard + PDP · one commit each</span></div>
+        <div class="stage" data-cmd="/cq:7_validate"><span class="n">7</span><span class="nm">Validate</span><span class="dsc">typecheck · lint · build (validate-lite) <span class="gatetag">★ gate</span></span></div>
+        <div class="marker after"><span class="dot"></span>Sale badge live in the storefront</div>
+      </div>
+
+      <div class="livehead" style="margin-top:22px"><span class="livedot"></span><h2 class="sec" style="margin:0">sap-mcp-ui-l · working-docs/THINK-143/ · updates live</h2></div>
+      <div class="livetree" data-ticket="THINK-143"><div class="empty">waiting for the run to start…</div></div>
+      <div class="prpanel" data-ticket="THINK-143" hidden>
+        <span class="pr-h">◆ Pull Request</span>
+        <a class="pr-link" target="_blank" rel="noopener" hidden></a>
+        <button class="pr-view" hidden>View PR description</button>
+      </div>
+    </section>
+
+    <!-- TAB 4: LIVE UI (storefront product listing) -->
+    <section class="panel" id="tab-uiview" role="tabpanel" aria-labelledby="t-store">
+      <div class="storehead">
+        <span class="u">live storefront · product listing · <b>localhost:5173/products</b></span>
+        <button class="store-reload" id="storeReload">⟳ reload</button>
+      </div>
+      <iframe class="storeframe" id="storeframe" src="http://localhost:5173/products" title="ThinkShop storefront — product listing"></iframe>
+    </section>
+  </main>
+
+  <aside class="rail">
+    <div class="rail-head"><span class="dots"><i></i><i></i><i></i></span><span>ttyd · claude</span>
+      <span class="live"><span class="pulse"></span>live</span></div>
+    <div class="rail-body">
+      <iframe id="termFrame" title="terminal" style="display:none"></iframe>
+      <div id="termReplica" class="term-replica"><span class="info">▸</span> /cq:0_go THINK-142
+   <span class="cursor"></span>
+</div>
+    </div>
+  </aside>
+</div>
+
+<div id="modal" class="modal" role="dialog" aria-modal="true" aria-label="File preview">
+  <div class="modal-card">
+    <div class="modal-head">
+      <span class="badge" id="modalBadge">working-docs</span>
+      <span class="fname" id="modalTitle"></span>
+      <button class="modal-x" id="modalClose" aria-label="Close preview">✕</button>
+    </div>
+    <div class="md-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+  const CONFIG = { USE_LIVE_TERMINAL: true, TTYD_URL: "http://localhost:7681" };
+  if (CONFIG.USE_LIVE_TERMINAL) {
+    const f=document.getElementById('termFrame'), r=document.getElementById('termReplica');
+    f.src=CONFIG.TTYD_URL; f.style.display='block'; r.style.display='none';
+  }
+
+  // ---- tabs ----
+  const tabs=[...document.querySelectorAll('.tab')];
+  const panelOf={'t-ticket':'tab-ticket','t-agenda':'tab-agenda','t-ui':'tab-ui','t-store':'tab-uiview'};
+  function select(tab){tabs.forEach(t=>{const on=t===tab;t.setAttribute('aria-selected',on);
+    const p=document.getElementById(panelOf[t.id]);on?p.setAttribute('data-active',''):p.removeAttribute('data-active');});}
+  tabs.forEach(t=>t.addEventListener('click',()=>select(t)));
+  const wantTab=(new URLSearchParams(location.search).get('tab')||'').toLowerCase();
+  if(wantTab==='agenda') select(document.getElementById('t-agenda'));
+  else if(wantTab==='ui') select(document.getElementById('t-ui'));
+  else if(wantTab==='store'||wantTab==='uiview') select(document.getElementById('t-store'));
+  // reload the storefront iframe (to re-fetch after the 143 implement + Vite hot-reload)
+  const sr=document.getElementById('storeReload'), sf=document.getElementById('storeframe');
+  if(sr&&sf) sr.addEventListener('click',()=>{ sf.src=sf.src; });
+  document.querySelector('.tabs').addEventListener('keydown',e=>{
+    if(e.key!=='ArrowRight'&&e.key!=='ArrowLeft')return;
+    const i=tabs.findIndex(t=>t.getAttribute('aria-selected')==='true');
+    const n=(i+(e.key==='ArrowRight'?1:tabs.length-1))%tabs.length;tabs[n].focus();select(tabs[n]);});
+
+  // ---- per-panel command bars (stage click → command) ----
+  document.querySelectorAll('.panel').forEach(panel=>{
+    const cmd=panel.querySelector('.cmd'), copyBtn=panel.querySelector('.copy');
+    if(!cmd||!copyBtn) return;
+    panel.querySelectorAll('.stage').forEach(s=>{
+      s.setAttribute('role','button'); s.setAttribute('tabindex','0');
+      const act=()=>{ panel.querySelectorAll('.stage').forEach(x=>x.classList.remove('active'));
+        s.classList.add('active'); cmd.textContent=s.dataset.cmd; copyBtn.textContent='Copy'; copyBtn.classList.remove('ok'); };
+      s.addEventListener('click',act);
+      s.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();act();}});
+    });
+    copyBtn.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(cmd.textContent);copyBtn.textContent='Copied ✓';copyBtn.classList.add('ok');}catch{}});
+  });
+
+  // ---- modal ----
+  const modal=document.getElementById('modal'), mTitle=document.getElementById('modalTitle'),
+        mBody=document.getElementById('modalBody'), mClose=document.getElementById('modalClose'), mBadge=document.getElementById('modalBadge');
+  let lastFocus=null;
+  async function openFile(ticket, path){
+    lastFocus=document.activeElement;
+    mBadge.textContent=ticket; mTitle.textContent=path;
+    mBody.innerHTML='<p class="loading">loading…</p>'; modal.classList.add('show'); mClose.focus();
+    try{
+      const txt=await (await fetch(`/file?ticket=${encodeURIComponent(ticket)}&path=${encodeURIComponent(path)}`,{cache:'no-store'})).text();
+      mBody.innerHTML = window.marked ? marked.parse(txt) : '<pre></pre>';
+      if(!window.marked) mBody.querySelector('pre').textContent=txt;
+      mBody.scrollTop=0;
+    }catch(e){ mBody.innerHTML='<p class="loading">could not load this file.</p>'; }
+  }
+  function closeModal(){ modal.classList.remove('show'); if(lastFocus)lastFocus.focus(); }
+  mClose.addEventListener('click',closeModal);
+  modal.addEventListener('click',e=>{if(e.target===modal)closeModal();});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&modal.classList.contains('show'))closeModal();});
+
+  // ---- live trees + PR panels (one group per ticket) ----
+  function updatePR(prpanel, pr){
+    if(!prpanel) return;
+    const link=prpanel.querySelector('.pr-link'), view=prpanel.querySelector('.pr-view');
+    if(!pr.url && !pr.bodyFile){ prpanel.hidden=true; return; }
+    prpanel.hidden=false;
+    if(pr.url){ link.hidden=false; link.href=pr.url; link.textContent='#'+pr.url.split('/').pop()+' — open on GitHub ↗'; } else link.hidden=true;
+    if(pr.bodyFile){ view.hidden=false; view.dataset.path=pr.bodyFile; } else view.hidden=true;
+  }
+  const groups=[...document.querySelectorAll('.livetree')].map(tree=>{
+    const ticket=tree.dataset.ticket;
+    const prpanel=document.querySelector(`.prpanel[data-ticket="${ticket}"]`);
+    tree.addEventListener('click',e=>{const el=e.target.closest('.f.file');if(el)openFile(ticket,el.dataset.path);});
+    tree.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){const el=e.target.closest('.f.file');if(el){e.preventDefault();openFile(ticket,el.dataset.path);}}});
+    if(prpanel){ const v=prpanel.querySelector('.pr-view'); v.addEventListener('click',()=>{if(v.dataset.path)openFile(ticket,v.dataset.path);}); }
+    return {ticket,tree,prpanel,seen:new Set(),initialized:false};
+  });
+  async function pollGroup(g){
+    const d=await (await fetch('/tree?ticket='+encodeURIComponent(g.ticket),{cache:'no-store'})).json();
+    if(!d.exists||!d.files.length){ g.tree.innerHTML='<div class="empty">waiting for the run to start…</div>'; g.seen=new Set(); g.initialized=true; updatePR(g.prpanel,{}); return; }
+    let html=`<div class="root">${d.root}/</div>`;
+    for(const f of d.files){
+      const isNew=g.initialized && !g.seen.has(f.path);
+      const depth=(f.path.match(/\//g)||[]).length;
+      const name=f.path.split('/').pop();
+      html+=`<div class="f ${f.dir?'d':'file'} ${isNew?'new':''}"${f.dir?'':` data-path="${f.path}" role="button" tabindex="0"`} style="padding-left:${18+depth*16}px">${f.dir?'▸ '+name+'/':'· '+name}</div>`;
+    }
+    g.tree.innerHTML=html;
+    g.seen=new Set(d.files.map(f=>f.path)); g.initialized=true;
+    updatePR(g.prpanel, d.pr||{});
+  }
+  function pollAll(){ groups.forEach(g=>pollGroup(g).catch(()=>{})); }
+  pollAll(); setInterval(pollAll,1500);
+
+  // deep-link to a file: ?open=THINK-143:research.md  (or ?open=research.md → 142)
+  const openParam=new URLSearchParams(location.search).get('open');
+  if(openParam){ const [a,b]=openParam.includes(':')?openParam.split(':'):['THINK-142',openParam]; setTimeout(()=>openFile(a,b),350); }
+</script>
+</body>
+</html>
