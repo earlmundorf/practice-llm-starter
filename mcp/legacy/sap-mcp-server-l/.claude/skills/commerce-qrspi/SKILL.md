@@ -57,6 +57,7 @@ Structure exposes a flawed design → re-run 3. Implementation hits a fundamenta
 
 ## Commerce ground rules (apply in every stage)
 
+- **Ground every document — never speculate.** Docs state only verified facts (with `file:line` for code); unknowns are flagged as open questions or `unconfirmed` and clarified with the developer, not guessed. No editorializing, no inferring intent, no tangential padding "for completeness" — comprehensive on what the work needs, and readable. Unverified detail misleads later stages and seeds hallucinations.
 - Never modify `gensrc/`, platform, or OOTB modules — override in custom extensions.
 - **Stages never hardcode build commands.** They reference verification VERBS, resolved
   through the build adapter in `working-docs/config.json` (see below).
