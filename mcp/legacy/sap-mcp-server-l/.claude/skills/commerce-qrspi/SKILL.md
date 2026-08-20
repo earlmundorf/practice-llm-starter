@@ -63,6 +63,22 @@ Structure exposes a flawed design → re-run 3. Implementation hits a fundamenta
   through the build adapter in `working-docs/config.json` (see below).
 - Jira/Confluence publishing is optional; local `working-docs/` is first-class.
 
+## Writing standard — every artifact (ticket → validation)
+
+QRSPI documents are read by a human first and the next stage's LLM second. Write for both;
+this is the bar for all seven stages (the per-stage "Grounding — no speculation" blocks enforce it).
+
+- **Thorough but concise.** Cover everything the work needs; cut everything it doesn't. No
+  padding, no restating the ticket, no "for completeness" tangents. Length follows the work.
+- **Human- and LLM-readable.** Plain language, short sentences, scannable structure (headers,
+  tables, tight bullets). A developer skims it in minutes; a later stage parses it without
+  ambiguity. Prefer a `file:line` or an exact command over prose describing them.
+- **Complete and usable.** Someone with only this document can act on it — inputs, decisions,
+  and the next step are all present. Don't rely on unstated context.
+- **Never make things up.** Every claim traces to something you actually read (ticket, code,
+  command output). Mark unknowns `unconfirmed` or as open questions and take them to the
+  developer — never fill a gap with a plausible guess. Uncertain-but-flagged beats confident-and-wrong.
+
 ## Build adapter — projects differ; detect once, confirm, persist
 
 SAP Commerce projects vary: CCv2 vs on-prem, gradle wrapper vs raw ant, `core-customize/`
