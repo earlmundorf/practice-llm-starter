@@ -1,0 +1,22 @@
+# ---------------------------------------------------------------------------
+# Test fixture — customer reviews for ProductReviewsIntegrationTest.
+# Imported AFTER testdata-thinkshop.impex (products + customers must exist).
+# Online catalog version only (the integration test runs in Online).
+#
+# Coverage baked into the data:
+#   LAPTOP_PRO_15 : John (approved) + Jane (approved, BLANK alias -> name fallback)
+#                   + Bob (approved but BLOCKED -> filtered out)  => 2 visible
+#   SMARTPHONE_X  : Jane (PENDING -> filtered out)                => 0 visible
+#   HD_WEBCAM     : no rows                                       => 0 visible
+# ---------------------------------------------------------------------------
+
+#% impex.setLocale(new java.util.Locale("en"));
+
+$productCatalog = electronicsProductCatalog
+$catalogVersion = catalogVersion(catalog(id[default = $productCatalog]), version[default = 'Online'])
+
+INSERT_UPDATE CustomerReview ; product(code, $catalogVersion)[unique = true] ; user(uid)[unique = true] ; alias   ; approvalStatus(code) ; blocked ; rating ; headline           ; comment
+                             ; LAPTOP_PRO_15                                 ; john.doe@thinkshop.com   ; John D. ; approved             ; false   ; 5      ; Excellent          ; Very fast and reliable.
+                             ; LAPTOP_PRO_15                                 ; jane.smith@thinkshop.com ;         ; approved             ; false   ; 4      ; Great value        ; Happy with it overall.
+                             ; LAPTOP_PRO_15                                 ; bob.wilson@thinkshop.com ; Bob W.  ; approved             ; true    ; 2      ; Hidden             ; Blocked review, must not surface.
+                             ; SMARTPHONE_X                                  ; jane.smith@thinkshop.com ; Jane S. ; pending              ; false   ; 3      ; Awaiting approval  ; Pending review, must not surface.
