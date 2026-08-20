@@ -30,6 +30,11 @@ If not given, ask — never assume.
 - Resume support: on start, read checkboxes; trust completed checkmarks, start at the
   first unchecked task.
 - Never push to remote, deploy, or modify OOTB/platform/gensrc code.
+- **Verify the real result, not the exit code.** For test verbs, confirm the actual
+  `Tests run:` / `… succeeded` count for the class you added — a green "BUILD SUCCESSFUL"
+  with "No tests found" (or "Total time: 1 second") is a *false pass*. On a gradle-built
+  Commerce repo, if a new test class was added, run the ant `build` before
+  `ant unittests`/`ant integrationtests` so the ant runner registers it on the classpath.
 - End by printing: `Next: /cq:7_validate working-docs/<TICKET-KEY>/ — run in a FRESH session.`
 
 ## Grounding — no speculation
