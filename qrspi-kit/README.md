@@ -44,6 +44,8 @@ Stages never hardcode commands — they resolve **verbs** and **research layers*
   extensions / type-system / service / OCC / impex.
 - **`composable-storefront.json`** — **Angular Spartacus** verbs (`ng build`/`ng test`/`ng lint`) and
   the CMS → facades → NgRx → OCC research layers.
+- **`react-vite.json`** — **React + Vite + TypeScript** storefront over OCC (`npm run build` / `tsc` /
+  Playwright e2e), with the `src/services/api.ts` boundary. Pick this or `composable-storefront` per your stack.
 
 ## Learn it
 
