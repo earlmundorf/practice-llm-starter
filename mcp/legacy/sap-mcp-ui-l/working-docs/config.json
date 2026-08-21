@@ -6,74 +6,38 @@
   "packageManager": "npm",
   "framework": {
     "react": "19",
-    "router": "react-router-dom",
-    "bundler": "vite",
-    "e2e": "playwright",
-    "markdown": "react-markdown + mermaid (chat rendering)"
+    "router": "react-router-dom 7",
+    "styling": "tailwindcss 4",
+    "bundler": "vite 7",
+    "e2e": "playwright"
   },
-  "protectedPaths": [
-    "node_modules/",
-    "dist/",
-    ".env"
-  ],
+  "protectedPaths": ["node_modules/", "dist/", ".env"],
   "apiBoundary": "src/services/api.ts — all backend calls go through this module; no inline fetch/HTTP in components",
   "build": {
     "INSTALL": "npm install",
     "TYPECHECK": "npx tsc --noEmit",
     "LINT": "npm run lint",
     "BUILD": "npm run build",
+    "UNIT_TEST": "MANUAL: no unit runner configured — the gate is TYPECHECK + LINT + BUILD (plus E2E_TEST where specs exist). Add Vitest + React Testing Library, then point UNIT_TEST at 'npx vitest run' and add it to the ts|tsx mapping.",
     "E2E_TEST": "npx playwright test",
     "E2E_TEST_ONE": "npx playwright test {spec}",
     "DEV_SERVER": "npm run dev",
     "PREVIEW": "npm run preview"
   },
   "changeTypeVerbs": {
-    "ts|tsx": [
-      "TYPECHECK",
-      "LINT",
-      "BUILD"
-    ],
-    "css|styles": [
-      "BUILD"
-    ],
-    "package.json|lockfile": [
-      "INSTALL",
-      "BUILD"
-    ],
-    "vite.config|tsconfig|eslint.config": [
-      "TYPECHECK",
-      "LINT",
-      "BUILD"
-    ],
-    "tests|spec": [
-      "E2E_TEST"
-    ]
+    "ts|tsx": ["TYPECHECK", "LINT", "BUILD"],
+    "*.spec.ts|tests": ["E2E_TEST"],
+    "css|tailwind": ["BUILD"],
+    "package.json|lockfile": ["INSTALL", "BUILD"],
+    "vite.config|tsconfig|eslint.config": ["TYPECHECK", "LINT", "BUILD"]
   },
-  "jira": {
-    "mode": "manual",
-    "project": null
-  },
+  "jira": { "mode": "manual", "project": null },
   "researchLayers": [
-    {
-      "name": "routing-pages",
-      "targets": "App routes, src/pages/ (Home, Products, ProductDetail, Chat, Checkout, Orders, OrderConfirmation, Users, Architecture), navigation"
-    },
-    {
-      "name": "components",
-      "targets": "src/components/, composition, props contracts, styling"
-    },
-    {
-      "name": "state",
-      "targets": "src/contexts/ (DarkMode...), src/hooks/, URL-driven state, window events (cartUpdated/authChanged/authExpired)"
-    },
-    {
-      "name": "api-types",
-      "targets": "src/services/api.ts methods, src/types/, OCC + coremcp agent/knowledge/visual-search contracts, auth/cart lifecycle"
-    },
-    {
-      "name": "build-config",
-      "targets": "vite.config.ts (proxy, aliases), env vars, eslint/tsconfig, playwright.config.ts"
-    }
+    { "name": "routing-pages", "targets": "App.tsx routes, src/pages/, navigation patterns" },
+    { "name": "components", "targets": "src/components/, composition, props contracts, styling usage" },
+    { "name": "state", "targets": "src/contexts/, custom hooks, URL-driven state, window events" },
+    { "name": "api-types", "targets": "src/services/api.ts methods, src/types/ shapes, backend contracts, auth/session lifecycle" },
+    { "name": "build-config", "targets": "vite.config.ts (proxy, aliases), env vars, eslint/tsconfig, e2e config" }
   ],
   "questionCategories": null,
   "manualVerificationSurfaces": [
@@ -86,10 +50,11 @@
   "verbNamespaces": null,
   "triggerVocabulary": "components, pages, routing, hooks, contexts, state, API client, styling, storefront, OCC API client, cart, checkout",
   "_notes": [
-    "The repo's CLAUDE.md is authoritative for component/state/styling/API conventions.",
-    "This project HAS real e2e tests (Playwright, tests/*.spec.ts incl. visual-search) — E2E_TEST is a real verb, not MANUAL. Slice checkpoints that touch a flow with a spec should run E2E_TEST (or E2E_TEST_ONE for the relevant spec). There is no unit-test runner; TYPECHECK + LINT + BUILD + e2e is the gate.",
-    "Backend: coremcp MCP server at VITE_API_URL (SAP Commerce OCC v2 + agent/knowledge/visual-search). Chat.tsx + react-markdown/mermaid indicate the agent chat UI already exists here — research it before extending.",
-    "Set jira.mode to 'mcp' if the Atlassian connector is available."
-  ],
-  "project": "demo-frontend"
+    "Starter profile for a React + Vite + TypeScript storefront. Adjust versions to the app after install.",
+    "The repo's CLAUDE.md is authoritative: functional components + named exports, ALL backend calls through the apiBoundary (src/services/api.ts), typed responses, loading + error states on every async op, Tailwind class ordering with dark: variants.",
+    "E2E_TEST is live here — this repo has playwright.config.ts and specs in tests/ — and the changeTypeVerbs mapping for '*.spec.ts|tests' runs it. UNIT_TEST ships MANUAL because there is no unit runner; if Vitest lands, point UNIT_TEST at 'npx vitest run' and add it to the ts|tsx mapping.",
+    "A verb that runs zero tests is not a pass. Read the reported count before calling a checkpoint green.",
+    "Counterpart profile: composable-storefront (Angular Spartacus). Same qrspi skill — only the config differs.",
+    "Set jira.mode to 'mcp' if the Atlassian MCP connector is available; 'manual' otherwise; 'none' if no Jira."
+  ]
 }

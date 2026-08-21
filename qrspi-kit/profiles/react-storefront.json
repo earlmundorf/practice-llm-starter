@@ -9,7 +9,7 @@
     "router": "react-router-dom 7",
     "styling": "tailwindcss 4",
     "bundler": "vite 7",
-    "e2e": "playwright (if present)"
+    "e2e": "playwright"
   },
   "protectedPaths": ["node_modules/", "dist/", ".env"],
   "apiBoundary": "src/services/api.ts — all backend calls go through this module; no inline fetch/HTTP in components",
@@ -19,8 +19,8 @@
     "LINT": "npm run lint",
     "BUILD": "npm run build",
     "UNIT_TEST": "MANUAL: no unit runner configured — the gate is TYPECHECK + LINT + BUILD (plus E2E_TEST where specs exist). Add Vitest + React Testing Library, then point UNIT_TEST at 'npx vitest run' and add it to the ts|tsx mapping.",
-    "E2E_TEST": "MANUAL: no e2e runner wired yet — if this repo has Playwright specs, set this to 'npx playwright test' and add E2E_TEST to the spec/tests mapping below",
-    "E2E_TEST_ONE": "MANUAL: per-spec form of E2E_TEST — e.g. 'npx playwright test {spec}'",
+    "E2E_TEST": "npx playwright test",
+    "E2E_TEST_ONE": "npx playwright test {spec}",
     "DEV_SERVER": "npm run dev",
     "PREVIEW": "npm run preview"
   },
@@ -52,7 +52,7 @@
   "_notes": [
     "Starter profile for a React + Vite + TypeScript storefront. Adjust versions to the app after install.",
     "The repo's CLAUDE.md is authoritative: functional components + named exports, ALL backend calls through the apiBoundary (src/services/api.ts), typed responses, loading + error states on every async op, Tailwind class ordering with dark: variants.",
-    "UNIT_TEST and E2E_TEST both ship MANUAL because React repos vary. If this repo has Playwright specs (tests/*.spec.ts), set E2E_TEST to 'npx playwright test' and E2E_TEST_ONE to 'npx playwright test {spec}' — then slice checkpoints touching a flow with a spec should run them. If a unit runner lands, point UNIT_TEST at it.",
+    "E2E_TEST assumes Playwright, matching the changeTypeVerbs mapping for '*.spec.ts|tests'. If the target repo has no playwright.config.* or no specs, change E2E_TEST and E2E_TEST_ONE to 'MANUAL: no e2e runner' and drop the spec/tests mapping — do not leave a mapping pointing at a verb that cannot run. UNIT_TEST ships MANUAL because React repos vary; if a unit runner lands, point it at that and add it to the ts|tsx mapping.",
     "A verb that runs zero tests is not a pass. Read the reported count before calling a checkpoint green.",
     "Counterpart profile: composable-storefront (Angular Spartacus). Same qrspi skill — only the config differs.",
     "Set jira.mode to 'mcp' if the Atlassian MCP connector is available; 'manual' otherwise; 'none' if no Jira."
