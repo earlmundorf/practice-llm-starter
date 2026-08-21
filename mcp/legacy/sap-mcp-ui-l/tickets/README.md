@@ -39,8 +39,14 @@ the Jira MCP (if `jira.mode=mcp`) → paste. So the local file always wins when 
 
 ## Naming
 
-`<KEY>-<short-slug>.md` — e.g. `CHAT-01-abort-inflight-requests.md`. KEY can be a real
-Jira/GitHub id or a local prefix (CHAT, KB, PROMO, …). Keep slugs short and specific.
+`<KEY>-<short-slug>.md` where KEY is **`THINK-UI-###`** — e.g.
+`THINK-UI-004-footer-team-attribution.md`. Every ticket in this repo uses that prefix with
+a zero-padded three-digit number, incrementing across `active/` and `completed/` together.
+Keep slugs short and specific.
+
+(Tickets predating this convention use `KB-##`: `KB-01` and `KB-02` shipped and sit in
+`completed/`. `KB-03` — footer policy links + `/about` — was dropped without being built,
+so number 3 is retired. New tickets continue as `THINK-UI-004` onward.)
 
 Tracked in git (this is the shared backlog); per-ticket QRSPI scratch in `working-docs/`
 is not. Both `active/` and `completed/` keep a `.gitkeep` so the empty dirs persist.
