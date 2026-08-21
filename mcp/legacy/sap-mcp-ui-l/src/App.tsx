@@ -63,8 +63,10 @@ export const App = () => {
               <Route path="/help/:uid" element={<HelpDetail />} />
             </Routes>
           </div>
-          <footer className="hidden md:block text-center py-3 text-xs text-gray-400 dark:text-gray-600">
-            Powered by SAP Commerce
+          <footer className="text-center pt-3 pb-20 md:py-3 px-4 text-xs text-gray-500 dark:text-gray-400">
+            <span className="whitespace-nowrap">Produced by the Capgemini SAP CX team</span>{' '}
+            <span aria-hidden="true">·</span>{' '}
+            <span className="whitespace-nowrap">Powered by SAP Commerce</span>
           </footer>
         </div>
       </Router>
