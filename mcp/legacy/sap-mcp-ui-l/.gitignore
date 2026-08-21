@@ -31,3 +31,5 @@ test-results/
 # QRSPI per-ticket working artifacts — only the shared build-adapter config is tracked
 working-docs/*
 !working-docs/config.json
+!working-docs/findings/
+!working-docs/findings/**

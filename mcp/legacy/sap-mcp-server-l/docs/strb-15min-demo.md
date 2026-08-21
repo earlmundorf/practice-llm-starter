@@ -20,7 +20,7 @@ cd ../../sap-mcp-ui-l && npm run dev       # http://localhost:5173
 # 3. Tabs queued in order:
 #    [1] Storefront chat:      http://localhost:5173
 #    [2] Backoffice:           https://localhost:9002/backoffice  (admin/nimda — already logged in)
-#    [3] VS Code:              .claude/skills/commerce-qrspi/WALKTHROUGH.md
+#    [3] VS Code:              .claude/skills/qrspi/WALKTHROUGH.md
 #    [4] VS Code:              core-customize/dev-config/local.properties
 #    [5] Terminal:             cd core-customize, ready to re-run smoke if asked
 #    [6] Photo on phone:       laptop / mug / headphones — anything in the catalog

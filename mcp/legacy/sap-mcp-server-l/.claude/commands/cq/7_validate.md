@@ -7,8 +7,12 @@
 
 1. Run every **Automated** success criterion from `design.md` verbatim. Record command,
    result, and evidence in `validation.md`. Any failure → stop, fix via stage 6, re-run.
-2. List every **Manual** criterion with concrete steps (Backoffice path, storefront URL,
-   expected behavior) and who verifies. Do not claim manual criteria as passed.
+   A check that ran nothing (zero tests, skipped suite) counts as a failure, not a pass —
+   record the real counts.
+2. List every **Manual** criterion with concrete steps, drawn from
+   `manualVerificationSurfaces` in `working-docs/config.json` (admin console path, UI
+   route/viewport, API endpoint call), and who verifies. Do not claim manual criteria as
+   passed.
 3. Confirm all `plan.md` checkboxes are checked; explain any that aren't.
 4. **Code ownership gate:** present the full diff summary (files + stats) and ask the
    developer to confirm: "Have you read this diff and do you own it?" Do not proceed to
@@ -24,10 +28,10 @@
    wrong, what to carry into the next ticket.
 8. **Feed the findings loop.** If this ticket surfaced anything the workflow or a future
    ticket should know — a wrong/missing verb mapping, a research category the stages
-   missed, a recurring codebase quirk, a tier mis-call — write a
-   `findings/YYYY-MM-DD-{slug}.md` in the skill from `TEMPLATE.md`. Summarize new findings
-   to the developer and propose which to **promote** into the stage commands / SKILL.md /
-   verb config / repo CLAUDE.md (user-approved; mark promoted ones `status: promoted`).
+   missed, a recurring codebase quirk, a tier mis-call — write
+   `working-docs/findings/YYYY-MM-DD-{slug}.md` from `TEMPLATE.md`. Summarize new findings
+   and propose which to **promote** into the config, the repo's CLAUDE.md, or the kit's
+   canonical stage commands (user-approved; mark promoted ones `status: promoted`).
    Nothing worth carrying forward? Say so and skip — don't manufacture findings.
 9. **Retire the ticket file.** If this ticket came from `tickets/active/`, move that file to
    `tickets/completed/` so `active/` reflects the real remaining backlog.

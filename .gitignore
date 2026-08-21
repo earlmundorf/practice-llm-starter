@@ -36,3 +36,7 @@ logs/
 
 # Riptide workspace local overrides
 .humanlayer/workspace.local.json
+kits/dist/
+
+# superpowers brainstorm scratch (local session state)
+.superpowers/

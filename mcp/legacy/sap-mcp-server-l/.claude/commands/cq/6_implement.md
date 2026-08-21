@@ -19,22 +19,21 @@ If not given, ask — never assume.
    `working-docs/config.json`; `MANUAL:` verbs mean print instructions and wait for the
    developer to confirm) → if it fails, diagnose and fix, re-verify; **never skip or
    proceed on red**.
-3. Commit once per completed slice (conventional message referencing the ticket key).
+3. **Verify the check actually ran.** A pass with zero tests executed, zero files compiled,
+   or a skipped suite is not a pass — read the output, confirm the real count, and treat
+   "nothing ran" as red. Config `_notes` may record stack-specific traps here.
+4. Commit once per completed slice (conventional message referencing the ticket key).
    Check off tasks in `plan.md` as completed.
-4. If the plan can't be followed (expected vs. actual mismatch), STOP. Present the
+5. If the plan can't be followed (expected vs. actual mismatch), STOP. Present the
    mismatch and ask. Fundamental issue → route back: `Re-run /cq:5_plan (or 3_design).`
-5. Optional: offer `git worktree` isolation before starting if the branch is shared.
+6. Optional: offer `git worktree` isolation before starting if the branch is shared.
 
 ## Both modes
 
 - Resume support: on start, read checkboxes; trust completed checkmarks, start at the
   first unchecked task.
-- Never push to remote, deploy, or modify OOTB/platform/gensrc code.
-- **Verify the real result, not the exit code.** For test verbs, confirm the actual
-  `Tests run:` / `… succeeded` count for the class you added — a green "BUILD SUCCESSFUL"
-  with "No tests found" (or "Total time: 1 second") is a *false pass*. On a gradle-built
-  Commerce repo, if a new test class was added, run the ant `build` before
-  `ant unittests`/`ant integrationtests` so the ant runner registers it on the classpath.
+- Never push to remote, deploy, or modify any path in `protectedPaths`
+  (`working-docs/config.json`); never commit `.env` or secrets.
 - End by printing: `Next: /cq:7_validate working-docs/<TICKET-KEY>/ — run in a FRESH session.`
 
 ## Grounding — no speculation

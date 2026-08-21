@@ -3,7 +3,7 @@ name: react-ecommerce
 description: |
   Reviews React e-commerce frontend code against best practices for an SAP Commerce storefront. Applies judgment about component architecture, TypeScript usage, API integration, state management, accessibility, performance, and Tailwind styling patterns.
 
-  Trigger this skill when the user asks to review frontend code, check React best practices, audit UI components, or asks "is this right?" about React/TypeScript/Tailwind code. Also trigger with: "review frontend", "review UI", "react best practices", "frontend audit", or "check my component". This is the REVIEW skill — for development how-to use react-typescript, for backend/OCC integration contracts use commerce-storefront, for structured ticket workflows use storefront-qrspi.
+  Trigger this skill when the user asks to review frontend code, check React best practices, audit UI components, or asks "is this right?" about React/TypeScript/Tailwind code. Also trigger with: "review frontend", "review UI", "react best practices", "frontend audit", or "check my component". This is the REVIEW skill — for development how-to use react-typescript, for backend/OCC integration contracts use commerce-storefront, for structured ticket workflows use qrspi.
 context: fork
 agent: Explore
 allowed-tools: [Read, Grep, Glob, Bash(find *), Bash(wc *), Bash(npx tsc *)]

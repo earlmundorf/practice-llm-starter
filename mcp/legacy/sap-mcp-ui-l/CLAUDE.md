@@ -67,14 +67,20 @@ ThinkShop-UI/
 | Skill (`.claude/skills/`) | Use it for |
 |---|---|
 | `react-ecommerce` | Code review against this repo's conventions |
-| `storefront-qrspi` | Structured ticket workflow — `/cq:go <TICKET> [tier]` (trivial/simple/full/comprehensive) |
+| `qrspi` | Structured ticket workflow — `/cq:go <TICKET> [tier]` (trivial/simple/full/comprehensive). Stack-neutral; this project's specifics live in `working-docs/config.json` |
 
 QRSPI verification verbs + research layers resolve from `working-docs/config.json`
-(committed; the rest of `working-docs/` is gitignored per-ticket scratch). This project
-has **real Playwright e2e** (`tests/*.spec.ts`), so `E2E_TEST` (`npx playwright test`) is
-a live checkpoint verb — there's no unit runner, so the gate is TYPECHECK + LINT + BUILD +
-e2e. The skill learns across tickets via `storefront-qrspi/findings/` (stage 1 loads
-matching findings; stage 7 captures + proposes promotion).
+(committed, along with `working-docs/findings/`; the rest of `working-docs/` is gitignored
+per-ticket scratch). This project has **real Playwright e2e** (`tests/*.spec.ts`), so
+`E2E_TEST` (`npx playwright test`) is a live checkpoint verb — there's no unit runner, so
+the gate is TYPECHECK + LINT + BUILD + e2e. The skill learns across tickets via
+`working-docs/findings/` (stage 1 loads matching findings; stage 7 captures + proposes
+promotion).
+
+`.claude/skills/qrspi/` and `.claude/commands/cq/` are **installed** by the QRSPI kit
+(`qrspi-kit/install.sh react-storefront`, or `install.ps1` on Windows) and replaced wholesale
+on update — never hand-edit a stage there; edit `qrspi-kit/skills/qrspi/commands/` and
+re-install. `.installed-from` records the profile and kit version behind this copy.
 
 ## Documentation Convention
 

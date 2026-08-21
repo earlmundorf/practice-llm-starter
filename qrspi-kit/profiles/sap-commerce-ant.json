@@ -1,0 +1,81 @@
+{
+  "profile": "sap-commerce-ant",
+  "profileVersion": "2026-08-20",
+  "stack": "sap-commerce-ant",
+  "workingDir": "hybris/bin/platform",
+  "buildTool": "ant",
+  "protectedPaths": [
+    "**/gensrc/",
+    "hybris/bin/platform/",
+    "hybris/bin/modules/",
+    "hybris/config/",
+    "**/build/",
+    "**/*.log"
+  ],
+  "apiBoundary": "OCC controllers (commercewebservices) delegate to *Facade beans; business logic lives in the ServiceLayer (*Service/*Strategy/DAO), never in controllers — see the repo CLAUDE.md",
+  "build": {
+    "BUILD": ". ./setantenv.sh && ant build",
+    "CLEAN": ". ./setantenv.sh && ant clean",
+    "FULL_BUILD": ". ./setantenv.sh && ant clean all",
+    "SERVER_CONFIG": ". ./setantenv.sh && ant server   # regenerate the Tomcat config after a *.properties or localextensions.xml change",
+    "TYPE_SYSTEM_UPDATE": ". ./setantenv.sh && ant updatesystem   # run with the server STOPPED",
+    "JUNIT_TENANT_INIT": ". ./setantenv.sh && ant yunitinit   # re-run after any *-items.xml change, before integration tests",
+    "UNIT_TEST": ". ./setantenv.sh && ant build && ant unittests -Dtestclasses.extensions=<ext>   # server stopped; 'ant build' first so a newly-added test class is on the runner's classpath (otherwise: 'No tests found' false pass)",
+    "INTEGRATION_TEST": ". ./setantenv.sh && ant build && ant integrationtests -Dtestclasses.extensions=<ext>   # server stopped; run JUNIT_TENANT_INIT first if *-items.xml changed",
+    "WEB_TEST": ". ./setantenv.sh && ant allwebtests -Dtestclasses.extensions=<ext>   # server stopped",
+    "SERVER_START": "./hybrisserver.sh start",
+    "SERVER_STOP": "./hybrisserver.sh stop",
+    "SERVER_RESTART": "./hybrisserver.sh stop ; sleep 5 ; ./hybrisserver.sh start",
+    "SERVER_DEBUG": "./hybrisserver.sh debug   # JVM debug agent on 8000",
+    "IMPEX_IMPORT": "MANUAL: import the file through the HAC ImpEx console (https://localhost:9002/hac → Console → ImpEx Import), paste or upload, then check the result log for rejected rows",
+    "ADDON_INSTALL": "MANUAL: . ./setantenv.sh && ant addoninstall -Daddonnames=\"<addon>\" -DaddonStorefront.yacceleratorstorefront=\"<storefront-ext>\" — then FULL_BUILD; confirm the addon list with the developer first",
+    "EXTENSION_GEN": "MANUAL: . ./setantenv.sh && ant extgen (interactive — it prompts for template, name, and package); then add the extension to localextensions.xml and run FULL_BUILD",
+    "INITIALIZE": "MANUAL: DESTRUCTIVE — '. ./setantenv.sh && ant initialize' drops and recreates the schema and wipes all data. Never run this as part of a slice checkpoint. Ask the developer, confirm the target tenant, and confirm they have a backup or don't need one."
+  },
+  "changeTypeVerbs": {
+    "*-items.xml": ["FULL_BUILD", "TYPE_SYSTEM_UPDATE", "JUNIT_TENANT_INIT", "SERVER_RESTART"],
+    "*-beans.xml": ["FULL_BUILD", "SERVER_RESTART"],
+    "*.java": ["BUILD", "SERVER_RESTART"],
+    "*-spring.xml": ["BUILD", "SERVER_RESTART"],
+    "*.jsp|*.tag|*-web-spring.xml": ["BUILD", "SERVER_RESTART"],
+    "*.impex": ["IMPEX_IMPORT"],
+    "*.properties|local.properties": ["SERVER_CONFIG", "SERVER_RESTART"],
+    "localextensions.xml|extensioninfo.xml": ["FULL_BUILD", "SERVER_CONFIG", "SERVER_RESTART"]
+  },
+  "jira": { "mode": "manual", "project": null },
+  "researchLayers": [
+    { "name": "extensions", "targets": "extensioninfo.xml dependency graph, config/localextensions.xml, bin/custom/* layout, addon wiring" },
+    { "name": "type-system", "targets": "*-items.xml custom types/relations/enums, deployment tables, generated model usage" },
+    { "name": "service-layer", "targets": "*-spring.xml beans + aliases, *Service/*Strategy/DAO impls, interceptors, converters/populators" },
+    { "name": "web-occ", "targets": "commercewebservices controllers, *-beans.xml WsDTO/Data, OCC field sets, *Facade beans, accelerator storefront controllers/JSP if present" },
+    { "name": "impex-data", "targets": "resources/impex/, essentialdata/projectdata load order, catalog versions, Solr config" }
+  ],
+  "questionCategories": null,
+  "manualVerificationSurfaces": [
+    "Backoffice — the affected type's editor area and list view",
+    "HAC (https://localhost:9002/hac) — ImpEx console, FlexibleSearch console, type-system update log, Monitoring → Logs",
+    "OCC endpoint — call it directly (curl/Postman) with a real baseSite and auth token",
+    "Storefront URL — the page or flow the change surfaces on",
+    "Tomcat console output — hybris/log/tomcat/ or the terminal running hybrisserver.sh"
+  ],
+  "sliceExample": "Slice 1: *-items.xml type + service interface/stub + unit test (FULL_BUILD, TYPE_SYSTEM_UPDATE, JUNIT_TENANT_INIT, UNIT_TEST). Slice 2: business logic in the ServiceLayer + any impex data (BUILD, UNIT_TEST, IMPEX_IMPORT). Slice 3: *-beans.xml DTO + OCC endpoint + integration test (FULL_BUILD, SERVER_RESTART, INTEGRATION_TEST).",
+  "verbNamespaces": null,
+  "triggerVocabulary": "items.xml, impex, OCC, Backoffice, hybris, gensrc, FlexibleSearch, extension, ServiceLayer, facade, type system, ant, setantenv, hybrisserver, HAC, addon, accelerator",
+  "_notes": [
+    "Starter profile for an SAP Commerce (Hybris) backend built with raw ant — the most common on-prem setup. Set <ext> to your custom extension(s) after install.",
+    "Every verb sources the environment first ('. ./setantenv.sh') because each command runs in a fresh shell — the export does not persist between verbs. Do not strip it.",
+    "workingDir is hybris/bin/platform, which is where setantenv.sh, build.xml, and hybrisserver.sh all live. CCv2-style layout with a wrapper directory? Set workingDir to 'core-customize/hybris/bin/platform'.",
+    "Windows: swap '. ./setantenv.sh' for 'setantenv.bat' and './hybrisserver.sh' for 'hybrisserver.bat'; keep the ant targets identical.",
+    "'ant build' compiles; 'ant all' also regenerates models/extensions ('ant clean all' is the safe full rebuild). Use FULL_BUILD after any *-items.xml or *-beans.xml change, because both generate Java sources into gensrc/.",
+    "Run TYPE_SYSTEM_UPDATE and all test verbs with the server STOPPED: updatesystem needs the server down, and the junit tenant shuts down Solr on 8983, which is shared with the live server.",
+    "Run 'ant build' before 'ant unittests'/'ant integrationtests' whenever a test class was added — otherwise the runner never sees it and reports a false pass with zero tests. Always read the real test count.",
+    "Re-run JUNIT_TENANT_INIT ('ant yunitinit') after any *-items.xml change or integration tests will run against a stale junit tenant schema.",
+    "Scope tests to custom extensions with -Dtestclasses.extensions=<ext>; never run the full platform suite unless asked.",
+    "INITIALIZE is destructive and deliberately MANUAL — it wipes the database. It must never appear in a slice checkpoint.",
+    "ImpEx has no reliable ant target here; IMPEX_IMPORT is MANUAL through the HAC console. If your project wraps imports in a custom ant target, point the verb at it.",
+    "Never edit gensrc/, platform/, or OOTB modules — override in custom extensions. Use the Spring alias pattern (defaultMyBean -> myBean). OCC Data/WsDTO classes are generated from *-beans.xml.",
+    "Gradle-wrapper project instead (CCv2 with ./gradlew)? Use the sap-commerce-gradle profile.",
+    "Pair with the sap-commerce, impex, sap-best-practices, and java-best-practices knowledge skills if this repo carries them.",
+    "Set jira.mode to 'mcp' if the Atlassian MCP connector is available in your Claude Code session; 'manual' if Jira exists but is unreachable (paste ticket in; updates written paste-ready); 'none' if there is no Jira."
+  ]
+}

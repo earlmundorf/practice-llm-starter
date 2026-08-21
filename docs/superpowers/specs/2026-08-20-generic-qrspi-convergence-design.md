@@ -1,7 +1,7 @@
 # One generic QRSPI skill, personality in config
 
 **Date:** 2026-08-20
-**Status:** Approved design, ready for implementation planning
+**Status:** Implemented — see "Implementation notes" at the end for deviations and open items
 **Reference model:** [`rice-qrspi`](https://github.com/earlmundorf/rice-qrspi) — local clone at
 `/Users/emundorf/development/mundo-dev/projects/rice-qrspi`
 
@@ -330,3 +330,65 @@ Ordered. Step 2 must precede step 3 or the findings are silently lost.
 | Kit and installed skill drift apart locally | The monorepo drift check (decision 8) is authoritative; a target's local kit is a convenience copy, and `.installed-from` records what produced the install |
 | Profile improvements don't reach existing repos | Accepted by decision 3. `profileVersion` makes the gap visible; re-installing emits a reviewable `config.json.new` |
 | A future stack needs an unanticipated field | `_notes` absorbs prose-shaped knowledge; new mechanics go through the findings-promotion contract |
+
+---
+
+## Implementation notes (2026-08-20)
+
+Built as designed, with these deliberate deviations — all decided during implementation.
+
+### Changed from the design
+
+1. **`sap-commerce` split into two profiles.** Ant is the more common SAP Commerce build, and
+   its verb table is materially different rather than a swap list, so it is now
+   `sap-commerce-ant` (17 verbs: `setantenv` sourcing on every verb, `clean`/`build`/`all`,
+   `server`, `updatesystem`, `yunitinit`, `allwebtests`, `hybrisserver.sh` start/stop/debug,
+   `addoninstall`, `extgen`, and `initialize` gated behind `MANUAL:` because it wipes the
+   database) alongside `sap-commerce-gradle`. Six profiles ship, not five.
+2. **Three zips, not two.** Domain skills are split by tier and version on their own clock:
+   `qrspi-kit.zip` (workflow), `backend-skills-kit.zip` (5 SAP skills, jdk21 migration among
+   them), `frontend-skills-kit.zip` (9 Spartacus + 4 React skills). Built by
+   `kits/make-kits.sh` into gitignored `kits/dist/`. The old bundled
+   `sap-commerce-claude-kit.zip` and its `.bak` are deleted.
+3. **No canonical directory for the skills kits.** `make-kits.sh` assembles them from
+   designated source projects instead, so no skill is duplicated in the repo merely to be
+   packaged — that duplication is what made the old bundled zip drift.
+4. **`qrspi-kit/backend/` and `qrspi-kit/ui/` deleted.** Verified byte-identical to the
+   in-repo copies first. The one unique file, an Angular Spartacus starter `CLAUDE.md`, is
+   preserved at `qrspi-kit/reference/claude-md-composable-storefront.md`.
+5. **Two more workflow variants retired.** `commerce-rpi-code` and `commerce-rpi-cowork`
+   (an "RPI — Research, Plan, Implement" workflow) were found in `sap-llm-template` and
+   `mcp/jdk21/sap-mcp-server` and deleted from both, with their dangling cross-references
+   cleaned up. Seven workflow-skill copies were retired in total, not five.
+6. **`qrspi-readme.md` deleted** — it was the roadmap for this work, now superseded by this
+   spec and the kit docs.
+
+### Verified
+
+Zero stack tokens in the canonical stages · the 8 `/cq:` files byte-identical across all
+three projects · installed skill matches canonical in all three (zero diff outside the
+rendered trigger line) · all 5 findings tracked at their new paths · every tuned config
+preserved (the `ant build &&` fix, all 7 SAP `_notes`, the real Playwright `E2E_TEST`) ·
+`install.sh` end-to-end from the built zip: list, install, re-install idempotence, config
+never overwritten, `.gitignore` single entry, undefined-verb and unknown-key detection, bad
+profile exits non-zero, `--target` mode skips the gitignore step.
+
+### Open items
+
+- **`install.ps1` has not been executed.** No PowerShell is available on this machine, so the
+  Windows path is reviewed but untested. The "both installers agree" check in the
+  verification table above remains unrun. Three defects were caught by review and fixed
+  (`$Profile` shadowing PowerShell's automatic `$PROFILE`, backslash paths breaking `pwsh` on
+  non-Windows, `Write-Error` under `ErrorActionPreference=Stop` skipping the intended exit
+  code) — but running it on a real Windows box is still required before shipping the zip.
+- **Skill copies diverge and were not reconciled.** All five backend skills differ slightly
+  between `sap-mcp-server-l` and `sap-llm-template`; `react-ecommerce` differs between
+  `sap-ui-template-react` and `sap-mcp-ui-l`. `make-kits.sh` picks a designated source and
+  documents the choice; deciding which content is right is a separate content question.
+- **Two more projects are candidate QRSPI targets.** `sap-llm-template` (SAP backend +
+  Spartacus skills) and `mcp/jdk21/sap-mcp-server` carry no QRSPI skill and no
+  `working-docs/config.json`. Installing there is a one-command change, deliberately not done
+  unbidden.
+- **The demo baseline still needs re-cutting.** `qrspi-demo-baseline`, `qrspi-demo-v1`, and
+  `qrspi-demo-v2` point at commits containing the retired skills, and no `reset.sh` exists
+  anywhere in the repo despite a note referencing `demo/qrspi-demo/reset.sh`.

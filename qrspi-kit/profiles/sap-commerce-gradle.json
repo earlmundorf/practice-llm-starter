@@ -1,0 +1,64 @@
+{
+  "profile": "sap-commerce-gradle",
+  "profileVersion": "2026-08-20",
+  "stack": "sap-commerce-ccv2",
+  "workingDir": "core-customize",
+  "buildTool": "gradle",
+  "protectedPaths": [
+    "**/gensrc/",
+    "hybris/bin/platform/",
+    "hybris/bin/modules/",
+    "hybris/config/",
+    "**/build/",
+    "**/*.log"
+  ],
+  "apiBoundary": "OCC controllers (commercewebservices) delegate to *Facade beans; business logic lives in the ServiceLayer (*Service/*Strategy/DAO), never in controllers — see the repo CLAUDE.md",
+  "build": {
+    "INSTALL": "./gradlew bootstrapPlatform",
+    "BUILD": "./gradlew yclean ybuild",
+    "FULL_BUILD": "./gradlew yclean yall",
+    "TYPE_SYSTEM_UPDATE": "./gradlew yupdatesystem   # run with the server STOPPED",
+    "UNIT_TEST": "cd hybris/bin/platform && . ./setantenv.sh && ant build && ant unittests -Dtestclasses.extensions=<ext>   # stop the server first; 'ant build' first so a newly-added test class is registered on the ant runner (a bare gradle ybuild leaves it off → 'No tests found' false pass); the gradle passthrough drops -D and runs the whole platform suite",
+    "INTEGRATION_TEST": "cd hybris/bin/platform && . ./setantenv.sh && ant build && ant integrationtests -Dtestclasses.extensions=<ext>   # server stopped; 'ant build' first (register new test classes); re-run 'ant yunitinit' after any *-items.xml change",
+    "IMPEX_IMPORT": "./gradlew impex -Pfile=<path>",
+    "SERVER_RESTART": "./gradlew stopServer startServer"
+  },
+  "changeTypeVerbs": {
+    "*-items.xml": ["BUILD", "TYPE_SYSTEM_UPDATE", "SERVER_RESTART"],
+    "*-beans.xml": ["BUILD", "SERVER_RESTART"],
+    "*.java": ["BUILD", "SERVER_RESTART"],
+    "*-spring.xml": ["BUILD", "SERVER_RESTART"],
+    "*.impex": ["IMPEX_IMPORT"],
+    "manifest.json|localextensions.xml": ["FULL_BUILD", "SERVER_RESTART"]
+  },
+  "jira": { "mode": "manual", "project": null },
+  "researchLayers": [
+    { "name": "extensions", "targets": "extensioninfo.xml dependency graph, dev-config/localextensions.xml, bin/custom/* layout" },
+    { "name": "type-system", "targets": "*-items.xml custom types/relations/enums, deployment tables, generated model usage" },
+    { "name": "service-layer", "targets": "*-spring.xml beans + aliases, *Service/*Strategy/DAO impls, interceptors, converters/populators" },
+    { "name": "occ-web", "targets": "commercewebservices controllers, *-beans.xml WsDTO/Data, OCC field sets, *Facade beans" },
+    { "name": "impex-data", "targets": "resources/impex/, essentialdata/projectdata load order, catalog versions, Solr config" }
+  ],
+  "questionCategories": null,
+  "manualVerificationSurfaces": [
+    "Backoffice — the affected type's editor area and list view",
+    "HAC (https://localhost:9002/hac) — ImpEx console, FlexibleSearch console, type-system update log",
+    "OCC endpoint — call it directly (curl/Postman) with a real baseSite and auth token",
+    "Storefront URL — the page or flow the change surfaces on"
+  ],
+  "sliceExample": "Slice 1: *-items.xml type + service interface/stub + unit test (BUILD, TYPE_SYSTEM_UPDATE, UNIT_TEST). Slice 2: business logic in the ServiceLayer + any impex data (BUILD, UNIT_TEST, IMPEX_IMPORT). Slice 3: *-beans.xml DTO + OCC endpoint + integration test (BUILD, SERVER_RESTART, INTEGRATION_TEST).",
+  "verbNamespaces": null,
+  "triggerVocabulary": "items.xml, impex, OCC, Backoffice, hybris, CCv2, gensrc, FlexibleSearch, extension, ServiceLayer, facade, type system",
+  "_notes": [
+    "Starter profile for an SAP Commerce (Hybris) CCv2 backend driven by the gradle wrapper. Set <ext> to your custom extension(s) after install.",
+    "Building with raw ant instead? Use the sap-commerce-ant profile — it is a full ant verb table (setantenv sourcing, clean/build/all, server target, yunitinit, hybrisserver.sh control, addon install), not a swap list. Ant is the more common setup.",
+    "Note this profile is gradle-for-build, ant-for-tests on purpose: ./gradlew yunittests/yintegrationtests drop -D flags, so the test verbs use the ant form directly. If there is no core-customize/ wrapper directory, set workingDir to 'hybris'.",
+    "Always 'yclean' before 'ybuild' — incremental Java compilation is unreliable here and can leave stale .class files on a green build.",
+    "Run TYPE_SYSTEM_UPDATE and all tests with the server STOPPED: yupdatesystem needs the server down (a running server makes ant attempt a JMX wrapper restart that fails), and the junit tenant shuts down Solr on 8983, which is shared with the live server.",
+    "Run 'ant build' before 'ant unittests'/'ant integrationtests' whenever a test class was added — a bare gradle ybuild leaves it off the ant runner's classpath and the suite reports a false pass with zero tests run. Always read the real test count.",
+    "Scope tests to custom extensions only; never run the full platform suite unless asked. Do NOT use ./gradlew yunittests/yintegrationtests with -D flags (the plugin drops them) — use the ant form above.",
+    "Never edit gensrc/, platform/, or OOTB modules — override in custom extensions. Use the Spring alias pattern (defaultMyBean -> myBean). OCC Data/WsDTO classes are generated from *-beans.xml.",
+    "Pair with the sap-commerce, impex, sap-best-practices, and java-best-practices knowledge skills if this repo carries them.",
+    "Set jira.mode to 'mcp' if the Atlassian MCP connector is available in your Claude Code session; 'manual' if Jira exists but is unreachable (paste ticket in; updates written paste-ready); 'none' if there is no Jira."
+  ]
+}

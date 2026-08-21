@@ -82,7 +82,7 @@ SAP-UI-Template/
 | `react-typescript` | Development how-to: stack, npm toolchain, add-a-page/context/API-method recipes |
 | `commerce-storefront` | Backend integration: OCC contracts, auth/cart lifecycle, the coremcp agent/knowledge/visual-search endpoints |
 | `react-ecommerce` | Code review against this repo's conventions |
-| `storefront-qrspi` | Structured ticket workflow — `/cq:go <TICKET> [tier]` (trivial/simple/full/comprehensive) |
+| `qrspi` | Structured ticket workflow — `/cq:go <TICKET> [tier]` (trivial/simple/full/comprehensive). Stack-neutral; this project's specifics live in `working-docs/config.json`. Installed by the QRSPI kit (`qrspi-kit/install.sh react-storefront`) — never hand-edit `.claude/skills/qrspi/` |
 | `spartacus-storefront` | **Explicitly chosen Angular path** — SAP Composable Storefront (Spartacus 6.x) knowledge with 9 topic references. Never applies to this repo's React code; moves to the Composable Storefront repo when it exists |
 
 QRSPI verification verbs resolve from `working-docs/config.json` (committed; the rest

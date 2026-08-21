@@ -1,5 +1,6 @@
 {
   "profile": "springboot",
+  "profileVersion": "2026-08-20",
   "stack": "java-spring-boot",
   "workingDir": ".",
   "buildTool": "maven",
@@ -29,12 +30,23 @@
     { "name": "config-security", "targets": "@Configuration, SecurityFilterChain, application-*.yml profiles, beans" },
     { "name": "build", "targets": "pom.xml (or build.gradle), plugins, Spring Boot version, profiles, CI" }
   ],
+  "questionCategories": null,
+  "manualVerificationSurfaces": [
+    "Endpoint call — curl/Postman against the running app (./mvnw spring-boot:run), checking status, body, and headers",
+    "OpenAPI/Swagger UI, if exposed — the contract matches what the DTO declares",
+    "Application logs — no stack traces, and the expected log lines at the expected level",
+    "Actuator health/metrics, if enabled"
+  ],
+  "sliceExample": "Slice 1: entity/repository (or client interface) + migration + its test (COMPILE, INTEGRATION_TEST). Slice 2: service logic with unit tests (COMPILE, UNIT_TEST). Slice 3: controller + request/response DTOs + validation + integration test (COMPILE, UNIT_TEST, INTEGRATION_TEST).",
+  "verbNamespaces": null,
+  "triggerVocabulary": "Spring Boot, RestController, Service, Repository, Entity, JPA, DTO, SecurityFilterChain, application.yml, Flyway, Maven, Gradle",
   "_notes": [
-    "Starter profile for a Spring Boot service (Maven). Copy to working-docs/config.json and adjust.",
+    "Starter profile for a Spring Boot service (Maven).",
     "Gradle variant: set buildTool=gradle and swap verbs — COMPILE './gradlew classes', BUILD './gradlew bootJar -x test', UNIT_TEST './gradlew test', INTEGRATION_TEST './gradlew integrationTest', RUN './gradlew bootRun', protectedPaths drop target/ keep build/.",
     "LINT is MANUAL until you add a formatter/linter (Spotless or Checkstyle are common). Once added, point the LINT verb at it and add it to the java change-type mapping.",
     "apiBoundary encodes the convention that outbound I/O lives behind typed clients, not scattered through controllers/services — adjust to match your repo's CLAUDE.md.",
     "INTEGRATION_TEST assumes @SpringBootTest / Testcontainers behind a Maven profile or a naming convention; tune the command to how your project separates slow tests.",
+    "A verb that runs zero tests is not a pass — Maven reports 'Tests run: 0' happily. Read the count.",
     "Set jira.mode to 'mcp' if the Atlassian MCP connector is available in your Claude Code session."
   ]
 }

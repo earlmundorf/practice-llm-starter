@@ -9,14 +9,14 @@ developer only spot-checks this document.
 1. Expand each slice from `structure.md` into ordered tasks. Each task:
    - `- [ ]` checkbox, imperative title
    - Exact file paths to create/modify
-   - Specific change description (signatures, bean wiring, impex headers — not prose essays)
+   - Specific change description (signatures, interfaces, wiring/registration, config or
+     data entries — not prose essays)
    - Verification: the slice checkpoint's verbs resolved to concrete commands from
      `working-docs/config.json` (or `MANUAL:` instructions where so configured)
-2. Respect the repo's CLAUDE.md Critical Rules — they are authoritative over this list:
-   interfaces + `impl/Default*`, alias bean pattern, DTO conventions (including any
-   sanctioned exceptions the repo documents, e.g. ADR-recorded hand-written internal
-   DTOs), extension registration in the repo's tracked config source, never touch
-   `gensrc/`/platform/OOTB.
+2. Respect the repo's CLAUDE.md conventions — they are authoritative over this list:
+   the designated boundary layer (`apiBoundary` in config — no I/O bypassing it), typed
+   responses, loading + error states, naming/structure patterns, and the `protectedPaths`
+   in config (never touch generated, vendored, or platform-owned trees).
 3. Final task is always **Documentation**: distill research into permanent flow docs
    (`context.md`, `components.md`, `diagram.md`).
 4. Jira handling per `jira.mode` in config — never create Epics, Stories, or sub-tasks;

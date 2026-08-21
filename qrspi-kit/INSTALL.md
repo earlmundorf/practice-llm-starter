@@ -1,70 +1,93 @@
-# QRSPI Kit — Install
+# QRSPI kit — install
 
-Drop-in QRSPI workflow + SAP Commerce / Angular Composable Storefront skills for Claude Code, config-driven the same way [`rice-qrspi`](https://github.com/earlmundorf/rice-qrspi) works.
+Drop-in QRSPI workflow for Claude Code, config-driven the same way
+[`rice-qrspi`](https://github.com/earlmundorf/rice-qrspi) works. **One** stack-neutral skill;
+the stack lives in a profile.
 
-Two independent sets — install whichever the target project needs (or both):
+## Install
 
-```
-qrspi-kit/
-├── backend/   → an SAP Commerce (Hybris) CCv2 or on-prem backend
-└── ui/        → an Angular SAP Composable Storefront (Spartacus)
-```
+Unzip the kit at the root of the project you want it in, list the profiles, install one:
 
-Each set contains: `.claude/skills/` (the skills), `CLAUDE.md` (project guidance), and `working-docs/` (the `config.json` template + `profiles/`).
-
-## Install (per target project)
-
-From the kit, pick the set and copy its three pieces into your project root:
+**macOS / Linux / WSL / Git Bash**
 
 ```bash
-# --- SAP Commerce backend ---
-cp -R qrspi-kit/backend/.claude       /path/to/your-commerce-repo/
-cp    qrspi-kit/backend/CLAUDE.md      /path/to/your-commerce-repo/     # or merge into an existing CLAUDE.md
-cp -R qrspi-kit/backend/working-docs   /path/to/your-commerce-repo/
-
-# --- Angular Composable Storefront ---
-cp -R qrspi-kit/ui/.claude             /path/to/your-storefront-repo/
-cp    qrspi-kit/ui/CLAUDE.md           /path/to/your-storefront-repo/
-cp -R qrspi-kit/ui/working-docs        /path/to/your-storefront-repo/
+unzip qrspi-kit.zip
+./qrspi-kit/install.sh list
+./qrspi-kit/install.sh sap-commerce-ant
 ```
 
-> If the project already has a `CLAUDE.md`, **merge** — don't overwrite. Keep the project's own conventions; add the "config-driven" + skills sections.
+**Windows PowerShell**
 
-## Configure (once per project)
+```powershell
+Expand-Archive qrspi-kit.zip -DestinationPath .
+.\qrspi-kit\install.ps1 list
+.\qrspi-kit\install.ps1 sap-commerce-ant
+```
 
-1. **Pick the profile** — copy the starter over the template:
-   ```bash
-   # backend
-   cp working-docs/profiles/sap-commerce.json working-docs/config.json
-   # storefront
-   cp working-docs/profiles/composable-storefront.json working-docs/config.json   # Angular Spartacus
-   # …or, for a React/Vite storefront:
-   # cp working-docs/profiles/react-vite.json working-docs/config.json
-   ```
-2. **Adjust `working-docs/config.json`:**
-   - Backend: set `<ext>` to your extension(s). Building with **ant** instead of gradle? Set `buildTool: "ant"` and swap the verbs per the `_notes` in the profile.
-   - Storefront: pick the matching profile — **`composable-storefront`** (Angular Spartacus) or **`react-vite`** (React/Vite) — and confirm versions. React's gate is TYPECHECK + LINT + BUILD + Playwright e2e (no unit runner by default); Angular uses `ng test` (Karma) — set `UNIT_TEST` to `npx jest` if the app uses Jest.
-   - Both: set `jira.mode` — `mcp` (Atlassian connector available), `manual` (paste tickets in), or `none`.
-3. **Publish the `/cq:*` commands** (source of truth is the skill's `commands/`):
-   ```bash
-   .claude/skills/commerce-qrspi/sync-commands.sh      # backend
-   .claude/skills/storefront-qrspi/sync-commands.sh    # storefront
-   ```
+> Blocked by the execution policy?
+> `powershell -ExecutionPolicy Bypass -File .\qrspi-kit\install.ps1 sap-commerce-ant`
+
+That's it. No Node, no Python, no `jq` — just the shell you already have.
+
+## Which profile?
+
+`install.sh list` prints all of them with a one-line summary. The short version:
+
+| Profile | Use when |
+|---|---|
+| `sap-commerce-ant` | SAP Commerce (Hybris) with `hybris/bin/platform/build.xml` + `setantenv.sh` — the common on-prem setup |
+| `sap-commerce-gradle` | SAP Commerce CCv2 with a `gradlew` wrapper and the SAP y-task plugin |
+| `react-storefront` | React + TypeScript + Vite |
+| `composable-storefront` | Angular + SAP Composable Storefront (Spartacus) |
+| `springboot` | Java + Spring Boot (Maven or Gradle) |
+| `fastapi` | Python + FastAPI (uv, pip, or Poetry) |
+
+Nothing fits? Copy the closest profile, edit it, install with that. See `profiles/README.md`.
+
+## What the installer writes
+
+```
+.claude/skills/qrspi/         the skill            GENERATED — never hand-edit
+.claude/commands/cq/          the /cq:* commands   GENERATED — never hand-edit
+working-docs/config.json      your stack's config  yours, committed
+working-docs/findings/         what tickets teach   yours, committed
+```
+
+The rule: **`.claude/` is generated, `working-docs/` is yours.** Re-installing replaces the
+first and never touches the second.
+
+- An existing `config.json` is **never overwritten**. The installer writes
+  `config.json.new` beside it instead, for you to diff and merge.
+- Existing findings are never touched; only `README.md`/`TEMPLATE.md` are seeded if missing.
+- The kit is left where you unzipped it and added to `.gitignore`. Delete it whenever you
+  like — re-unzip to switch profiles or update.
+
+## After installing
+
+1. **Fill in the placeholders** the config names. For SAP Commerce that's `<ext>` — your
+   custom extension(s) — in the test verbs.
+2. **Set `jira.mode`**: `mcp` if the Atlassian connector is live in your session, `manual` if
+   Jira exists but is unreachable (you paste tickets in; outbound updates are written
+   paste-ready), `none` if there's no Jira.
+3. **Check the verb table** against how the project really builds. This is the one file that
+   matters — the stages never hardcode commands, they resolve verbs from it.
+4. **Commit** `working-docs/config.json` and the `.claude/` install.
 
 ## Use
 
 ```
-/cq:go YOUR-TICKET            # recommends a tier, then runs the workflow
+/cq:go YOUR-TICKET
 ```
-Tiers: `trivial` (fix + verify) · `simple` (brief → implement → validate) · `full` (all stages, gates at Design/Structure/Validate) · `comprehensive` (full + worktree + mandatory tests + team review).
 
-## How it stays sharp
+The skill recommends a tier — `trivial` (fix + verify), `simple` (brief → implement →
+validate), `full` (all seven stages, gates at Design/Structure/Validate), `comprehensive`
+(full + worktree + all verbs per slice + team review) — and you confirm it. See
+`skills/qrspi/QUICKREF.md` for the one-page version and `WALKTHROUGH.md` for a worked ticket.
 
-The workflow skills self-improve: each ticket can write a note to `.claude/skills/<skill>/findings/`, and stage 7 proposes promoting durable lessons into the stage commands, `CLAUDE.md`, or the config. The kit ships with an **empty findings ledger** (README + TEMPLATE only) so your project's learnings start clean.
+## Updating, and changing the workflow
 
-## What's in each set
-
-**backend** — skills: `commerce-qrspi`, `sap-commerce`, `sap-best-practices`, `java-best-practices`, `impex`, `sap-commerce-migrate-j21`.
-**ui** — skills: `storefront-qrspi`, `spartacus-component`, `-state`, `-occ`, `-routing`, `-styling`, `-forms`, `-i18n`, `-testing`, `-upgrade`.
-
-Single QRSPI workflow per stack (`commerce-qrspi` / `storefront-qrspi`) — the older RPI variants are intentionally not included.
+The kit is the source of truth. To pick up a newer kit, unzip it over the old one and
+re-install: the skill is replaced, your config and findings survive. To change the workflow
+itself, edit `qrspi-kit/skills/qrspi/commands/` and re-install — a stage edited inside
+`.claude/skills/qrspi/` is lost on the next install and would make `/cq` behave differently
+here than everywhere else.

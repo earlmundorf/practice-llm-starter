@@ -1,8 +1,22 @@
 {
+  "profile": "react-storefront",
+  "profileVersion": "2026-08-20",
   "stack": "react-typescript-vite",
+  "workingDir": ".",
   "packageManager": "npm",
-  "project": "demo-frontend",
-  "framework": { "react": "19", "router": "react-router-dom", "bundler": "vite", "e2e": "playwright", "markdown": "react-markdown + mermaid (chat rendering)" },
+  "framework": {
+    "react": "19",
+    "router": "react-router-dom",
+    "bundler": "vite",
+    "e2e": "playwright",
+    "markdown": "react-markdown + mermaid (chat rendering)"
+  },
+  "protectedPaths": [
+    "node_modules/",
+    "dist/",
+    ".env"
+  ],
+  "apiBoundary": "src/services/api.ts — all backend calls go through this module; no inline fetch/HTTP in components",
   "build": {
     "INSTALL": "npm install",
     "TYPECHECK": "npx tsc --noEmit",
@@ -14,24 +28,68 @@
     "PREVIEW": "npm run preview"
   },
   "changeTypeVerbs": {
-    "ts|tsx": ["TYPECHECK", "LINT", "BUILD"],
-    "css|styles": ["BUILD"],
-    "package.json|lockfile": ["INSTALL", "BUILD"],
-    "vite.config|tsconfig|eslint.config": ["TYPECHECK", "LINT", "BUILD"],
-    "tests|spec": ["E2E_TEST"]
+    "ts|tsx": [
+      "TYPECHECK",
+      "LINT",
+      "BUILD"
+    ],
+    "css|styles": [
+      "BUILD"
+    ],
+    "package.json|lockfile": [
+      "INSTALL",
+      "BUILD"
+    ],
+    "vite.config|tsconfig|eslint.config": [
+      "TYPECHECK",
+      "LINT",
+      "BUILD"
+    ],
+    "tests|spec": [
+      "E2E_TEST"
+    ]
   },
-  "jira": { "mode": "manual", "project": null },
+  "jira": {
+    "mode": "manual",
+    "project": null
+  },
   "researchLayers": [
-    { "name": "routing-pages", "targets": "App routes, src/pages/ (Home, Products, ProductDetail, Chat, Checkout, Orders, OrderConfirmation, Users, Architecture), navigation" },
-    { "name": "components", "targets": "src/components/, composition, props contracts, styling" },
-    { "name": "state", "targets": "src/contexts/ (DarkMode...), src/hooks/, URL-driven state, window events (cartUpdated/authChanged/authExpired)" },
-    { "name": "api-types", "targets": "src/services/api.ts methods, src/types/, OCC + coremcp agent/knowledge/visual-search contracts, auth/cart lifecycle" },
-    { "name": "build-config", "targets": "vite.config.ts (proxy, aliases), env vars, eslint/tsconfig, playwright.config.ts" }
+    {
+      "name": "routing-pages",
+      "targets": "App routes, src/pages/ (Home, Products, ProductDetail, Chat, Checkout, Orders, OrderConfirmation, Users, Architecture), navigation"
+    },
+    {
+      "name": "components",
+      "targets": "src/components/, composition, props contracts, styling"
+    },
+    {
+      "name": "state",
+      "targets": "src/contexts/ (DarkMode...), src/hooks/, URL-driven state, window events (cartUpdated/authChanged/authExpired)"
+    },
+    {
+      "name": "api-types",
+      "targets": "src/services/api.ts methods, src/types/, OCC + coremcp agent/knowledge/visual-search contracts, auth/cart lifecycle"
+    },
+    {
+      "name": "build-config",
+      "targets": "vite.config.ts (proxy, aliases), env vars, eslint/tsconfig, playwright.config.ts"
+    }
   ],
+  "questionCategories": null,
+  "manualVerificationSurfaces": [
+    "Dev server route — npm run dev, then the specific path the change affects",
+    "Responsive check — mobile and desktop widths, plus dark-mode variant if the app has one",
+    "Browser console + network tab — no errors, and the expected request/response shape",
+    "Loading and error states — exercise both, not just the happy path"
+  ],
+  "sliceExample": "Slice 1: types + api method in the apiBoundary (TYPECHECK, LINT). Slice 2: the component consuming it, with loading + error states wired (TYPECHECK, LINT, BUILD). Slice 3: the route/page it lands on plus its e2e spec (BUILD, E2E_TEST).",
+  "verbNamespaces": null,
+  "triggerVocabulary": "components, pages, routing, hooks, contexts, state, API client, styling, storefront, OCC API client, cart, checkout",
   "_notes": [
     "The repo's CLAUDE.md is authoritative for component/state/styling/API conventions.",
     "This project HAS real e2e tests (Playwright, tests/*.spec.ts incl. visual-search) — E2E_TEST is a real verb, not MANUAL. Slice checkpoints that touch a flow with a spec should run E2E_TEST (or E2E_TEST_ONE for the relevant spec). There is no unit-test runner; TYPECHECK + LINT + BUILD + e2e is the gate.",
     "Backend: coremcp MCP server at VITE_API_URL (SAP Commerce OCC v2 + agent/knowledge/visual-search). Chat.tsx + react-markdown/mermaid indicate the agent chat UI already exists here — research it before extending.",
     "Set jira.mode to 'mcp' if the Atlassian connector is available."
-  ]
+  ],
+  "project": "demo-frontend"
 }

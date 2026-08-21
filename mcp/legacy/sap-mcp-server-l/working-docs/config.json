@@ -1,5 +1,6 @@
 {
-  "profile": "sap-commerce",
+  "profile": "sap-commerce-gradle",
+  "profileVersion": "2026-08-20",
   "stack": "sap-commerce-ccv2",
   "workingDir": "core-customize",
   "buildTool": "gradle",
@@ -23,21 +24,67 @@
     "SERVER_RESTART": "./gradlew stopServer startServer"
   },
   "changeTypeVerbs": {
-    "*-items.xml": ["BUILD", "TYPE_SYSTEM_UPDATE", "SERVER_RESTART"],
-    "*-beans.xml": ["BUILD", "SERVER_RESTART"],
-    "*.java": ["BUILD", "SERVER_RESTART"],
-    "*-spring.xml": ["BUILD", "SERVER_RESTART"],
-    "*.impex": ["IMPEX_IMPORT"],
-    "manifest.json|localextensions.xml": ["FULL_BUILD", "SERVER_RESTART"]
+    "*-items.xml": [
+      "BUILD",
+      "TYPE_SYSTEM_UPDATE",
+      "SERVER_RESTART"
+    ],
+    "*-beans.xml": [
+      "BUILD",
+      "SERVER_RESTART"
+    ],
+    "*.java": [
+      "BUILD",
+      "SERVER_RESTART"
+    ],
+    "*-spring.xml": [
+      "BUILD",
+      "SERVER_RESTART"
+    ],
+    "*.impex": [
+      "IMPEX_IMPORT"
+    ],
+    "manifest.json|localextensions.xml": [
+      "FULL_BUILD",
+      "SERVER_RESTART"
+    ]
   },
-  "jira": { "mode": "manual", "project": null },
+  "jira": {
+    "mode": "manual",
+    "project": null
+  },
   "researchLayers": [
-    { "name": "extensions", "targets": "extensioninfo.xml dependency graph, dev-config/localextensions.xml, bin/custom/* layout" },
-    { "name": "type-system", "targets": "*-items.xml custom types/relations/enums, deployment tables, generated model usage" },
-    { "name": "service-layer", "targets": "*-spring.xml beans + aliases, *Service/*Strategy/DAO impls, interceptors, converters/populators" },
-    { "name": "occ-web", "targets": "commercewebservices controllers, *-beans.xml WsDTO/Data, OCC field sets, *Facade beans" },
-    { "name": "impex-data", "targets": "resources/impex/, essentialdata/projectdata load order, catalog versions, Solr config" }
+    {
+      "name": "extensions",
+      "targets": "extensioninfo.xml dependency graph, dev-config/localextensions.xml, bin/custom/* layout"
+    },
+    {
+      "name": "type-system",
+      "targets": "*-items.xml custom types/relations/enums, deployment tables, generated model usage"
+    },
+    {
+      "name": "service-layer",
+      "targets": "*-spring.xml beans + aliases, *Service/*Strategy/DAO impls, interceptors, converters/populators"
+    },
+    {
+      "name": "occ-web",
+      "targets": "commercewebservices controllers, *-beans.xml WsDTO/Data, OCC field sets, *Facade beans"
+    },
+    {
+      "name": "impex-data",
+      "targets": "resources/impex/, essentialdata/projectdata load order, catalog versions, Solr config"
+    }
   ],
+  "questionCategories": null,
+  "manualVerificationSurfaces": [
+    "Backoffice — the affected type's editor area and list view",
+    "HAC (https://localhost:9002/hac) — ImpEx console, FlexibleSearch console, type-system update log",
+    "OCC endpoint — call it directly (curl/Postman) with a real baseSite and auth token",
+    "Storefront URL — the page or flow the change surfaces on"
+  ],
+  "sliceExample": "Slice 1: *-items.xml type + service interface/stub + unit test (BUILD, TYPE_SYSTEM_UPDATE, UNIT_TEST). Slice 2: business logic in the ServiceLayer + any impex data (BUILD, UNIT_TEST, IMPEX_IMPORT). Slice 3: *-beans.xml DTO + OCC endpoint + integration test (BUILD, SERVER_RESTART, INTEGRATION_TEST).",
+  "verbNamespaces": null,
+  "triggerVocabulary": "items.xml, impex, OCC, Backoffice, hybris, CCv2, gensrc, FlexibleSearch, extension, ServiceLayer, facade, type system",
   "_notes": [
     "Starter profile for an SAP Commerce (Hybris) CCv2 backend. Copy to working-docs/config.json and set coremcp to your extension(s).",
     "ANT variant: set buildTool=ant and swap the verbs — BUILD '. ./setantenv.sh && ant build', FULL_BUILD 'ant clean all', TYPE_SYSTEM_UPDATE 'ant updatesystem', SERVER_RESTART './hybrisserver.sh stop | ./hybrisserver.sh start', IMPEX_IMPORT 'MANUAL: import the file via the HAC ImpEx console'. UNIT_TEST/INTEGRATION_TEST already use the ant form. If there is no core-customize/ wrapper, set workingDir to 'hybris'.",

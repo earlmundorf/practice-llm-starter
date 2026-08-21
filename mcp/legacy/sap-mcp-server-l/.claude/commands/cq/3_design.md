@@ -8,7 +8,7 @@
 1. Read both inputs fully.
 2. **You MUST present questions and wait for answers BEFORE writing any design document.**
    This is structural, not optional. Present 2-5 design decisions as options:
-   `Q1: Discount evaluation — (A) new strategy bean, (B) extend DefaultX, (C) interceptor. Recommend A because …`
+   `Q1: Discount evaluation — (A) a new pluggable strategy, (B) extend the existing default implementation, (C) intercept at the boundary. Recommend A because …`
 3. Walk through the draft assumptions from `ticket.md` one by one: confirmed by research /
    contradicted (cite file:line) / still open. Open assumptions must be resolved by the
    developer or explicitly accepted as risks.
@@ -17,8 +17,11 @@
    - **Desired end state** (observable behavior, not implementation)
    - **Design decisions** (each Q with chosen option and why)
    - **Confirmed assumptions & accepted risks**
-   - **Success criteria** — split into *Automated* (gradlew commands, tests that must pass)
-     and *Manual* (Backoffice/storefront checks, who verifies)
+   - **Success criteria** — split into *Automated* (verification verbs/commands, tests
+     that must pass) and *Manual*. Manual checks come from
+     `manualVerificationSurfaces` in `working-docs/config.json` — the places a human
+     verifies this stack (admin console path, UI route/viewport, API endpoint call) — and
+     each names who verifies.
    - **Out of scope**
 5. If the developer's answers reveal missing research, stop and route back:
    `Re-run /cq:1_ticket to add questions, then /cq:2_research.`

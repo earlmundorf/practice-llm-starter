@@ -112,5 +112,5 @@ as a complete non-streamed response (the documented fallback). Abort with
 
 - **react-typescript** — general React/TS/npm how-to in this repo
 - **react-ecommerce** — review skill (includes API-integration review patterns)
-- **storefront-qrspi** — `/cq:go` ticket workflow; backend changes pair with the
-  `commerce-qrspi` workflow in `sap-mcp-server-l`
+- **qrspi** — `/cq:go` ticket workflow. The backend uses the same `qrspi` skill with its
+  own `working-docs/config.json` (profile `sap-commerce-gradle`)

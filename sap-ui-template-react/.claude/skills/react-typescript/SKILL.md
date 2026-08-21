@@ -8,12 +8,12 @@ description: |
   project's way. Use this skill for "how do I do X in this frontend?" questions and
   hands-on coding tasks. For code REVIEW use react-ecommerce; for backend/OCC
   integration specifics use commerce-storefront; for structured ticket workflows use
-  storefront-qrspi.
+  qrspi.
 
   Trigger this skill when the user asks how to build or modify something in this React
   app, or mentions: component, page, route, hook, context, props, useState, useEffect,
   Vite, tsconfig, eslint, npm script, Tailwind, dark mode, React Router. Do NOT trigger
-  for pure review requests (react-ecommerce) or ticket workflows (storefront-qrspi).
+  for pure review requests (react-ecommerce) or ticket workflows (qrspi).
 allowed-tools: [Read, Write, Edit, Grep, Glob, Bash(npm *), Bash(npx tsc *), Bash(find *)]
 ---
 
@@ -115,4 +115,4 @@ existing utilities before reaching for a library. Env config goes through
 
 - **react-ecommerce** — code review against these conventions (invoke for "review this")
 - **commerce-storefront** — OCC/agent backend integration contracts and patterns
-- **storefront-qrspi** — `/cq:go` structured ticket workflow
+- **qrspi** — `/cq:go` structured ticket workflow

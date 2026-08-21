@@ -45,10 +45,11 @@ patterns/examples as needed.
 ## How this fits the project family
 
 - This repo (`sap-ui-template-react`) is **React** — its skills are react-typescript,
-  react-ecommerce, commerce-storefront, storefront-qrspi. This skill exists here as the
+  react-ecommerce, commerce-storefront, qrspi. This skill exists here as the
   prepared Angular path for the planned SAP Composable Storefront sibling; when that
   repo is created, copy this skill folder there (and seed its `working-docs/config.json`
-  with `ng` verbs + Spartacus research layers for storefront-qrspi).
+  with `ng` verbs + Spartacus research layers — the QRSPI kit's `composable-storefront`
+  profile already provides exactly that).
 - The backend contracts are identical either way: SAP Commerce OCC v2 + the coremcp
   agent/knowledge/visual-search endpoints — see the `commerce-storefront` skill for
   those; Spartacus consumes them through its OCC adapter layer (`references/occ/`)

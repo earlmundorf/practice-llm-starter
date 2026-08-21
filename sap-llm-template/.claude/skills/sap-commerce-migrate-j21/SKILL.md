@@ -130,7 +130,7 @@ This skill is narrow on purpose — it doesn't re-teach SAP Commerce from scratc
 - `sap-best-practices` — platform code-review criteria
 - `java-best-practices` — Java code-review criteria
 - `impex` — ImpEx linting and patterns
-- `commerce-qrspi` — structured ticket workflow (`/cq:go`); pair it with this skill when migration phases are tracked as tickets
+- `qrspi` — structured ticket workflow (`/cq:go`); pair it with this skill when migration phases are tracked as tickets
 
 If the user asks about something that's a general Commerce question (not migration-specific), point to those skills instead of answering from within this one.
 

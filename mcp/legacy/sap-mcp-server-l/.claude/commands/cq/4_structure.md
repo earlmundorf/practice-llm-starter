@@ -6,18 +6,21 @@
 ## Instructions
 
 1. Break the work into **vertical slices** — each slice delivers one testable capability
-   end to end (e.g., Slice 1: items.xml type + service stub + unit test; Slice 2: business
-   logic + impex; Slice 3: OCC endpoint + integration test). Never horizontal layers
-   ("all type system, then all services").
+   end to end (boundary/contract + the logic behind it + the check that proves it), not a
+   horizontal layer. `sliceExample` in `working-docs/config.json` shows what a slice looks
+   like in this repo's stack; follow its shape. Never horizontal layers ("all types, then
+   all components").
 2. For each slice specify: goal (one sentence), new/changed signatures and types — like a
    C header, not implementations — files touched (paths), and a **checkpoint**: the
    verification VERBS (e.g., BUILD + UNIT_TEST) that prove the slice works, per the
    change-type mapping in `working-docs/config.json`. Verbs, not literal commands.
-3. Order slices by dependency; flag any that could run in parallel worktrees.
-4. Keep it skimmable: a developer should review this in under 10 minutes.
-5. If structuring exposes a design flaw, stop and route back: `Re-run /cq:3_design.`
-6. Present for approval; iterate until approved.
-7. End by printing: `Next: /cq:5_plan working-docs/<TICKET-KEY>/ — run in a FRESH session.`
+3. In a multi-stack repo, cut slices across the stack rather than per side, and use the
+   matching verb namespace (`verbNamespaces`) in each slice's checkpoint.
+4. Order slices by dependency; flag any that could run in parallel worktrees.
+5. Keep it skimmable: a developer should review this in under 10 minutes.
+6. If structuring exposes a design flaw, stop and route back: `Re-run /cq:3_design.`
+7. Present for approval; iterate until approved.
+8. End by printing: `Next: /cq:5_plan working-docs/<TICKET-KEY>/ — run in a FRESH session.`
 
 ## Grounding — no speculation
 
