@@ -284,13 +284,15 @@ Authoritative ref: `references/sap-docs/05-tomcat.md`.
 
 ### Phase D — OAuth / Auth Server  (Gate 4)
 
-Authoritative refs: `references/sap-docs/08-oauth-authorization-server.md`, `references/sap-docs/09-resource-server.md`, `references/sap-docs/10-resttemplate-removal.md`.
+Authoritative refs: `references/sap-docs/08-oauth-authorization-server.md`, `references/sap-docs/09-resource-server.md`, `references/sap-docs/10-resttemplate-removal.md`. Curated make-it-work path + client cookbook: `references/oauth-migration-guide.md`.
 
 Skip this phase if project has no OAuth dependency.
 
 - [ ] New Spring Authorization Server extensions enabled
 - [ ] `grep -rnE "authorizedGrantTypes.*(password|implicit)" core-customize/hybris/bin/custom --include="*.impex"` → zero matches expected. If hits: remove `password`/`implicit` from the grant list — both flows are **removed** in the new OAuth implementation; `yinitialize` fails at create-data with `InterceptorException` from `DefaultOAuthClientDetailsValidator` otherwise. Callers using the password grant must move to authorization_code + PKCE or client_credentials. See `findings/2026-04-30-password-grant-removed-from-new-oauth.md` + `sap-docs/08-oauth-authorization-server.md`.
 - [ ] `grep -nE "oauth2\.webroot" core-customize/dev-config/local*.properties core-customize/hybris/config/local*.properties 2>/dev/null` → zero matches expected. If hits: remove — the property belonged to the removed `oauth2` extension; the new `authorizationserver` extension hardcodes its webroot in `extensioninfo.xml`.
+- [ ] `grep -rnE 'authorization_code[^;]*;[^;]*;\s*$' core-customize/hybris/bin/custom --include="*.impex"` → zero matches expected. If hits: an `authorization_code` client has an empty `registeredRedirectUri` (validator precondition 3). Add a redirect URI, or drop `authorization_code` if the client is server-to-server. See `known-incidents.md` #3 + `oauth-migration-guide.md` §4.
+- [ ] For every `OAuthClientDetails` row with an intentionally empty `clientSecret` (SPA / mobile-native public clients): confirm `public=true` AND `requireProofKey=true` are set — the validator treats `public=false` (default) + empty secret as an invalid confidential client. See `known-incidents.md` #9 + `oauth-migration-guide.md` §3.4.
 - [ ] OAuth client registrations re-validated (stricter redirect-URI rules)
 - [ ] `RestTemplate` / `OAuth2RestTemplate` usages migrated to replacement (per `10-resttemplate-removal.md`)
 - [ ] Resource server config aligned with OCC endpoints

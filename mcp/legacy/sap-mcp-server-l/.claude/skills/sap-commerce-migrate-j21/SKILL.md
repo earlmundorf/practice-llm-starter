@@ -74,6 +74,8 @@ Steps:
    - `14-update-release-2211.46.md` — specific point-release notes
 
    Also authoritative: `references/additional-changes.md` — items verbatim from SAP's framework-update .docx that don't have their own dedicated SAP Help page. Covers detailed Spring 6 sub-topics, Apache libraries, caching, JVM/language housekeeping, Olingo, DdlUtils, orphaned types, LocalizedHybrisConstraintViolation, and yacceleratorstorefront-specific jakarta steps. Treat this file as peer-authoritative to `sap-docs/`.
+
+   Curated companion (not a SAP mirror): `references/oauth-migration-guide.md` — the ordered make-it-work path for the new Spring Authorization Server OAuth, the 8 client-validation preconditions, a validated `OAuthClientDetails` cookbook, and SAML SSO impact. Load it during Phase D planning alongside `sap-docs/08-oauth-authorization-server.md`.
 7. **Write the plan.** Start from `references/phase-guide.md`. Write to the target project's `migration-docs/migration-plan.md`. **Substitute all `{{...}}` placeholders from `migration-docs/intake.md`** — see the substitution map at the bottom of the intake template (e.g., `{{IN_PLACE | COPY}}` from intake 2.1, `{{LEGACY_PROJECT_DIR}}` from 3.2, `{{TARGET_COMMERCE_VERSION}}` from 1.1). Phases run A→H as in the guide; skip any that don't apply to the detected state. For Phase 0, copy ONLY the subsection matching the chosen strategy (`Phase 0-inplace` or `Phase 0-copy`); drop the other. **For Phase 0-prep Steps 0.0a/b**: tailor based on intake 4.1 (persistence scenario) — see the conditional branches inline in `phase-guide.md`. Every step must link to a specific `references/sap-docs/*.md` (and, if relevant, to `references/known-incidents.md` entries).
 8. **Record supporting-skill findings.** Write `migration-docs/supporting-skill-findings.md` in the target project alongside the plan. This captures what the skill wants to learn FROM this run — e.g., "I didn't know whether extension X uses OAuth2RestTemplate; confirm during Phase D and update `decision-tree.md` Branch 3".
 9. **Stop.** Tell the user the plan is ready at `migration-docs/migration-plan.md` and wait for approval to proceed to Phase 2.
@@ -130,7 +132,7 @@ This skill is narrow on purpose — it doesn't re-teach SAP Commerce from scratc
 - `sap-best-practices` — platform code-review criteria
 - `java-best-practices` — Java code-review criteria
 - `impex` — ImpEx linting and patterns
-- `commerce-qrspi` — structured ticket workflow (`/cq:go`); pair it with this skill when migration phases are tracked as tickets
+- `qrspi` — structured ticket workflow (`/cq:go`); pair it with this skill when migration phases are tracked as tickets
 
 If the user asks about something that's a general Commerce question (not migration-specific), point to those skills instead of answering from within this one.
 

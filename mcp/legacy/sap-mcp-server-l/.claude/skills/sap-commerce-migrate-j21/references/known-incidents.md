@@ -40,12 +40,18 @@ These are summaries. The authoritative cases require SAP customer login.
 - **First diagnostic:** enable Spring MVC tracing; check which handler mapping is selected; grep `*-web-spring.xml` for `AntPathMatcher`/`patternParser` references.
 - **SAP case:** 002075129500011585642025
 
-## 3. OAuth registered redirect URI issue
+## 3. OAuth client validation rejects legacy client configs (redirect URI, PKCE, public/confidential)
 
-- **Symptom:** OAuth login fails with "invalid_redirect_uri" or similar even when the URI matches.
-- **Likely cause:** Under the new Spring Authorization Server, redirect URI registration is stricter — absolute URIs, no wildcards except where explicitly permitted, PKCE requirements on public clients.
-- **First diagnostic:** consult `sap-docs/08-oauth-authorization-server.md` sections on "Relative Redirect URI for OAuth Clients", "Public Clients", and "Client Validation".
-- **SAP case:** 002075129500012671912025
+- **Symptom:** OAuth login fails with "invalid_redirect_uri", or `yinitialize`/Backoffice save fails with `InterceptorException` from `DefaultOAuthClientDetailsValidator` (e.g. "redirect uri attribute needs to be configured for authorization_code flow", or "confidential client should have a client secret").
+- **Likely cause:** the new Spring Authorization Server validator enforces 8 preconditions that legacy platforms tolerated. Legacy "do-everything" clients (e.g. `trusted_client` listing every grant type) trip them.
+- **The 8 preconditions** (see `sap-docs/08-oauth-authorization-server.md` "Client Validation"):
+  1. ≥1 authorized grant type. 2. ≥1 authority. 3. authorization_code ⇒ ≥1 redirect URI.
+  4. public client has no secret. 5. public client has PKCE on. 6. public client has no client_credentials.
+  7. confidential client has a secret. 8. converts cleanly to a Spring `RegisteredClient`.
+- **First diagnostic:** `grep -rnE 'authorization_code[^;]*;[^;]*;\s*$' core-customize/hybris/bin/custom --include="*.impex"` (authorization_code rows with an empty trailing redirect URI — the most common hit).
+- **Fix:** review each `OAuthClientDetails` row against the 8 preconditions. Fast path: if a server-to-server client carries `authorization_code` as cruft, drop it (make it `client_credentials`-only); if it genuinely needs the flow, add a redirect URI. See `oauth-migration-guide.md` §4 and the cookbook §5.
+- **Dev workaround for large catalogs:** `authserver.client.validation.dry.run=true` (logs instead of throwing).
+- **Source:** SAP case 002075129500012671912025; field-observed 2026-04-30/05-01; promoted from `findings/2026-04-30-oauth-validator-redirect-uri-required.md`.
 
 ## 4. POST mappings not working after jdk21 upgrade
 
@@ -114,9 +120,22 @@ These are summaries. The authoritative cases require SAP customer login.
 - **Symptom:** Phase F `yinitialize` fails at the create-data phase with `InterceptorException` from `DefaultOAuthClientDetailsValidator`, typically citing an OAuth client defined in `essentialdata-*.impex`.
 - **Likely cause:** legacy sample/essential data ships `password` (and sometimes `implicit`) in `authorizedGrantTypes`. Per `sap-docs/08-oauth-authorization-server.md`: *"The password flow and implicit flows are not available in the new implementation."* The new validator rejects the record at ImpEx load time, and create-data now fails hard on unsuccessful phases.
 - **First diagnostic:** `grep -rnE "authorizedGrantTypes.*(password|implicit)" core-customize/hybris/bin/custom --include="*.impex"`
-- **Fix:** remove `password`/`implicit` from every `INSERT_UPDATE OAuthClientDetails` row. Supported grants on confidential clients: `authorization_code,refresh_token,client_credentials` (+ `custom_saml_token` where SAML is used). **Every caller using the password grant must change** — storefront login flows, smoke-test scripts, MCP/stdio bridges, e2e harnesses — to authorization_code + PKCE (user flows) or client_credentials (service flows).
+- **Fix:** remove `password`/`implicit` from every `INSERT_UPDATE OAuthClientDetails` row. Supported grants on confidential clients: `authorization_code,refresh_token,client_credentials` (+ `saml_token` where SAML is used). **Every caller using the password grant must change** — storefront login flows, smoke-test scripts, MCP/stdio bridges, e2e harnesses — to authorization_code + PKCE (user flows) or client_credentials (service flows).
 - **Also check:** `resourceIds` column (soft-deprecated, tolerated) and dead `oauth2.webroot=` properties.
 - **Source:** Field-observed 2026-04-30 (Phase D) on upgrade-21-mcp-server-g; promoted from `findings/2026-04-30-password-grant-removed-from-new-oauth.md`.
+
+## 9. Adding a public OAuth client (SPA / mobile-native) is rejected as confidential
+
+- **Symptom:** `INSERT_UPDATE OAuthClientDetails` with an empty `clientSecret` is rejected with "confidential client should have a client secret" — even with `requireProofKey=true` set.
+- **Likely cause:** `OAuthClientDetails` has a separate `public` boolean (default `false`). Public vs confidential is NOT inferred from an empty secret or from PKCE; it is read from the `public` attribute directly.
+- **First diagnostic:** `SELECT {clientId},{public},{requireProofKey} FROM {OAuthClientDetails}` — a public client showing `public=false` is the bug.
+- **Fix:** set BOTH `public=true` AND `requireProofKey=true` on the row:
+  ```impex
+  INSERT_UPDATE OAuthClientDetails;clientId[unique=true];...;clientSecret;registeredRedirectUri;public;requireProofKey
+  ;client-side;...;;https://your.host/auth/callback;true;true
+  ```
+- **Reference:** `oauth-migration-guide.md` §3.4 + cookbook §5; `sap-docs/08-oauth-authorization-server.md` "Public Clients" / "Client Validation".
+- **Source:** Field-observed 2026-05-01; promoted from `findings/2026-05-01-public-oauth-client-needs-public-true.md`.
 
 ## How to use these during a migration
 
