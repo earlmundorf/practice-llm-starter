@@ -53,3 +53,9 @@ working-docs/*
 !working-docs/config.json
 !working-docs/findings/
 !working-docs/findings/**
+# QRSPI kit — local tool copy, not part of the project
+/qrspi-kit/
+# Kit build outputs and local archives — regenerated, never tracked
+/qrspi-kit.zip
+/backend-skills-kit.zip
+/archive_2026-08-19/
