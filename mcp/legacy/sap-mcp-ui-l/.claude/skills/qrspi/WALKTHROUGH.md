@@ -7,6 +7,30 @@ Ticket: **THINK-142 — "Shoppers can't tell which help articles are new."**
 
 ---
 
+## 0. Setup (once per repo)
+
+```bash
+qrspi-kit/install.sh list                              # see the profiles
+qrspi-kit/install.sh <profile> --target /path/to/repo  # skill + /cq:* + config seed
+```
+
+That writes `working-docs/config.json` from the profile — or, if one already exists, leaves
+yours alone and drops the profile at `config.json.new` to diff. Then **edit the config so
+its verbs are this repo's real commands**: that file is the only thing standing between the
+seven stages and your toolchain.
+
+Before working a ticket, confirm the verbs actually run — a checkpoint that can't execute is
+discovered at stage 6 otherwise:
+
+```bash
+# whatever your config's build table names, e.g.
+npx tsc --noEmit && npm run lint && npm run build
+```
+
+Open the repo in Claude Code. Typing `/cq` autocompletes `0_go … 7_validate`.
+
+---
+
 ## `/cq:go THINK-142`
 
 No tier given, so the skill recommends one:
@@ -104,6 +128,24 @@ Only after your yes does it open the PR. Then the retro, and the findings loop:
 > the reviewer asked about. Promote to `working-docs/config.json`?
 
 ---
+
+## The other tiers, in one line each
+
+The walkthrough above is `full`. The same ticket at another tier:
+
+- **trivial** — `/cq:go "fix the typo in the help empty-state" trivial` → edit, run the
+  change type's verbs, show the diff, you own it. No workflow, no artifacts.
+- **simple** — `/cq:go THINK-142 simple` → one-page `brief.md` (problem, assumptions,
+  success criteria, task checklist; the assumptions *are* the gate) → implement → validate
+  lite. A reasonable call here if the "what counts as new" question were already settled.
+- **comprehensive** — `full` plus worktree isolation, every checkpoint verb per slice
+  rather than the change-type subset, and `design.md` + `structure.md` shared for team
+  review before stage 5 starts. For migrations, cross-cutting changes, unfamiliar areas.
+
+Tier changes the ceremony, never the safety rails: verification verbs, the diff-ownership
+gate, `protectedPaths`, and the boundary convention apply at all four. Promote mid-flight
+when something turns out bigger than it looked — the artifacts are compatible, so the
+skipped stages just run late.
 
 ## What made this work
 
