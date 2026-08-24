@@ -1,6 +1,6 @@
 profile: sap-commerce-gradle
 profileVersion: 2026-08-20
 kitVersion: 1.0.0
-installedAt: 2026-08-21
+installedAt: 2026-08-24
 source: qrspi-kit/skills/qrspi
 note: generated directory — edit the kit and re-install, never edit here

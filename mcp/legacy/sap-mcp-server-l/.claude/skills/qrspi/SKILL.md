@@ -1,18 +1,15 @@
 ---
 name: qrspi
 description: >
-  Generic QRSPI workflow for Claude Code — Ticket/Questions, Research, Design, Structure,
-  Plan, Implement, Validate. One stack-neutral skill; everything project-specific
-  (build/verification verbs, research layers, protected paths, Jira mode) lives in
-  working-docs/config.json, so the same skill serves a React/Vite frontend, an Angular
-  Composable Storefront, an SAP Commerce backend, or a Spring Boot / FastAPI service with
-  only a different config (or "profile"). Use when a developer wants to work a Jira ticket
-  against a codebase with structured stages: decompose a ticket into research questions;
-  run blind layered codebase research; align on design, assumptions, and success criteria;
-  break work into vertical slices; produce a tactical plan; implement manually or via
-  Claude with toolchain verification; validate against success criteria. Triggers on
-  QRSPI, "work this ticket", and research/design/plan/implement intent against any
-  codebase — as well as: items.xml, impex, OCC, Backoffice, hybris, CCv2, gensrc, FlexibleSearch, extension, ServiceLayer, facade, type system
+  Generic QRSPI workflow — Ticket/Questions, Research, Design, Structure, Plan, Implement,
+  Validate. One stack-neutral skill: verification verbs, research layers, protected paths
+  and Jira mode all live in working-docs/config.json, so the same skill serves a React/Vite
+  or Angular frontend, an SAP Commerce backend, or a Spring Boot / FastAPI service with only
+  a different config ("profile"). Use when a developer wants to work a ticket through
+  structured stages — blind codebase research, developer gates on design and structure,
+  vertical slices, toolchain-verified implementation. Triggers on QRSPI, "work this ticket",
+  and research/design/plan/implement intent against any codebase — as well as:
+  items.xml, impex, OCC, Backoffice, hybris, CCv2, gensrc, FlexibleSearch, extension, ServiceLayer, facade, type system
 ---
 
 # QRSPI
@@ -33,7 +30,7 @@ Developers remember `/cq:go <TICKET-KEY> [tier]` and four tier names:
 **trivial** (no workflow — just fix and verify), **simple** (brief → implement →
 validate-lite), **full** (all stages; 1+2 auto-chained), **comprehensive** (full +
 worktree + mandatory full verification per slice + team review of design/structure).
-`commands/0_go.md` holds the recommendation heuristics and tier mechanics. Recommend a
+[`commands/0_go.md`](./commands/0_go.md) holds the recommendation heuristics and tier mechanics. Recommend a
 tier, confirm it, record it. The numbered stages below are the machinery behind
 full/comprehensive — developers can still invoke them directly, but don't have to.
 
@@ -41,20 +38,20 @@ full/comprehensive — developers can still invoke them directly, but don't have
 
 | # | Command | Reads | Writes | Dev gate? |
 |---|---------|-------|--------|-----------|
-| 0 | `commands/0_go.md` | ticket/description | tier decision | confirm tier |
-| 1 | `commands/1_ticket.md` | Jira ticket / text | `ticket.md`, `questions.md` | skim |
-| 2 | `commands/2_research.md` | `questions.md` only — **never ticket.md** | `research.md` | no |
-| 3 | `commands/3_design.md` | `ticket.md` + `research.md` | `design.md` (~200 lines) | ★ YES |
-| 4 | `commands/4_structure.md` | `design.md` | `structure.md` (~2 pages) | ★ YES |
-| 5 | `commands/5_plan.md` | all artifacts | `plan.md` (checkboxes) | spot-check |
-| 6 | `commands/6_implement.md` | `structure.md` + `plan.md` | code, 1 commit/slice | no |
-| 7 | `commands/7_validate.md` | `design.md` success criteria | validation report, PR | ★ YES |
+| 0 | [`commands/0_go.md`](./commands/0_go.md) | ticket/description | tier decision | confirm tier |
+| 1 | [`commands/1_ticket.md`](./commands/1_ticket.md) | Jira ticket / text | `ticket.md`, `questions.md` | skim |
+| 2 | [`commands/2_research.md`](./commands/2_research.md) | `questions.md` only — **never ticket.md** | `research.md` | no |
+| 3 | [`commands/3_design.md`](./commands/3_design.md) | `ticket.md` + `research.md` | `design.md` (~200 lines) | ★ YES |
+| 4 | [`commands/4_structure.md`](./commands/4_structure.md) | `design.md` | `structure.md` (~2 pages) | ★ YES |
+| 5 | [`commands/5_plan.md`](./commands/5_plan.md) | all artifacts | `plan.md` (checkboxes) | spot-check |
+| 6 | [`commands/6_implement.md`](./commands/6_implement.md) | `structure.md` + `plan.md` | code, 1 commit/slice | no |
+| 7 | [`commands/7_validate.md`](./commands/7_validate.md) | `design.md` success criteria | validation report, PR | ★ YES |
 
 Artifacts live in `working-docs/<TICKET-KEY>/`.
 
 ## Tier selection — recommend the lightest sufficient path
 
-Heuristics live in `commands/0_go.md`. When in doubt, recommend the lower tier and say
+Heuristics live in [`commands/0_go.md`](./commands/0_go.md). When in doubt, recommend the lower tier and say
 what would bump it. Promotion mid-flight is fine — run the skipped stages then. **Tier
 changes ceremony, never safety:** verification verbs, the diff-ownership gate, and the
 `protectedPaths` protections apply at every tier.
