@@ -49,12 +49,34 @@ Nothing fits? Copy the closest profile, edit it, install with that. See `profile
 ```
 .claude/skills/qrspi/         the skill            GENERATED — never hand-edit
 .claude/commands/cq/          the /cq:* commands   GENERATED — never hand-edit
+.github/prompts/cq-*.md       Copilot launchers    GENERATED — never hand-edit
 working-docs/config.json      your stack's config  yours, committed
 working-docs/findings/         what tickets teach   yours, committed
 ```
 
-The rule: **`.claude/` is generated, `working-docs/` is yours.** Re-installing replaces the
-first and never touches the second.
+The rule: **`.claude/` and the generated `.github/prompts/cq-*` are generated,
+`working-docs/` is yours.** Re-installing replaces the first and never touches the second.
+
+## Which editor sees what
+
+| | Claude Code | Copilot in VS Code | Cursor |
+|---|---|---|---|
+| the `qrspi` skill (`.claude/skills/`) | ✅ | ✅ | ✅ |
+| the seven stages | `/cq:1_ticket` | `/cq-1-ticket` | via the skill |
+| launcher directory read | `.claude/commands/cq/` | `.github/prompts/` | — |
+
+`.claude/skills/` is a shared search path — Copilot and Cursor both read it, so the skill
+itself needs no export. Only the stage launchers differ, because Copilot does not read
+`.claude/commands/` and colons are illegal in its command names, so `/cq:1_ticket` becomes
+`/cq-1-ticket`. The prompt files are thin: each points at the same
+`.claude/skills/qrspi/commands/*.md` the Claude commands use, so there is one copy of every
+stage instruction and no chance of the two drifting.
+
+Two limits worth knowing. Prompt files are not consumed by VS Code's **Agent Host**
+sessions (skills are), and **Cursor does not read `.github/prompts/`** — in Cursor, invoke
+the skill (`/qrspi`, or Option+Enter to pin it for the session) and name the stage you
+want. Only `cq-*.prompt.md` is regenerated, so your own prompt files in that folder are
+left alone.
 
 - An existing `config.json` is **never overwritten**. The installer writes
   `config.json.new` beside it instead, for you to diff and merge.

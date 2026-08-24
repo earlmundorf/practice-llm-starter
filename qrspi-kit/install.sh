@@ -5,6 +5,12 @@
 #   ./install.sh list                      show available profiles
 #   ./install.sh <profile>                 install into the kit's parent directory
 #   ./install.sh <profile> --target <dir>  install into <dir> instead
+#   ./install.sh <profile> --for claude    only the /cq:* commands (Claude Code)
+#   ./install.sh <profile> --for copilot   only .github/prompts (Copilot in VS Code)
+#                                          default is both; "github" == "copilot"
+#
+# --for selects only which STAGE LAUNCHERS are written. The skill itself always goes to
+# .claude/skills/qrspi/ because Copilot and Cursor read that path too.
 #
 # Nothing is ever deleted outside .claude/skills/qrspi and .claude/commands/cq.
 # An existing working-docs/config.json is never overwritten.
@@ -113,10 +119,66 @@ cmd_install() {
   grep -q '{{TRIGGER_VOCABULARY}}' "$skill" && die "placeholder substitution failed in SKILL.md"
   printf '  SKILL.md frontmatter             rendered from triggerVocabulary\n'
 
-  # ---- 3. publish the /cq: commands ---------------------------------------------
-  mkdir -p "$target/.claude/commands/cq"
-  cp "$KIT_DIR/skills/qrspi/commands/"*.md "$target/.claude/commands/cq/"
-  printf '  .claude/commands/cq/             published (/cq:go … /cq:7_validate)\n'
+  # ---- 3. publish the /cq: commands (Claude Code) --------------------------------
+  if [ "$INSTALL_FOR" = claude ] || [ "$INSTALL_FOR" = both ]; then
+    mkdir -p "$target/.claude/commands/cq"
+    cp "$KIT_DIR/skills/qrspi/commands/"*.md "$target/.claude/commands/cq/"
+    printf '  .claude/commands/cq/             published (/cq:go … /cq:7_validate)\n'
+  else
+    printf '  .claude/commands/cq/             skipped (--for %s)\n' "$INSTALL_FOR"
+  fi
+
+  # ---- 3b. publish GitHub Copilot prompt files ------------------------------------
+  # Copilot in VS Code does not read .claude/commands/, so the /cq: stages are
+  # invisible there. It does read .github/prompts/*.prompt.md as slash commands, and
+  # it reads .claude/skills/ — so these are thin launchers that point at the same
+  # stage files rather than copies of them. Claude Code ignores .github/prompts/ and
+  # Copilot ignores .claude/commands/, so the two sets coexist without colliding.
+  # Colons are not legal in these names: /cq:1_ticket becomes /cq-1-ticket.
+  if [ "$INSTALL_FOR" = copilot ] || [ "$INSTALL_FOR" = both ]; then
+  prompts="$target/.github/prompts"
+  mkdir -p "$prompts"
+  rm -f "$prompts"/cq-*.prompt.md          # generated: replace ours, leave any others
+  n_prompts=0
+  for stage in "$KIT_DIR/skills/qrspi/commands/"*.md; do
+    base=$(basename "$stage" .md)                       # e.g. 1_ticket
+    slug="cq-$(printf '%s' "$base" | tr '_' '-')"       # e.g. cq-1-ticket
+    # Description from the stage's own H1. Stage titles already read "Stage N — Title",
+    # so prefix them bare; the 0_go entry point gets its own wording.
+    title=$(head -1 "$stage" | sed 's/^# *//')
+    case $title in
+      Stage*) desc="QRSPI $title" ;;
+      *)      desc="QRSPI entry point — recommend a tier, then run the stages" ;;
+    esac
+    cat > "$prompts/$slug.prompt.md" <<PROMPT
+---
+name: $slug
+description: '$desc'
+argument-hint: '<TICKET-KEY or description>'
+agent: agent
+---
+
+Follow [\`.claude/skills/qrspi/commands/$base.md\`](../../.claude/skills/qrspi/commands/$base.md)
+exactly — it is the canonical instruction for this stage. Do not summarize or
+reorder it.
+
+Resolve every verification VERB, research layer, protected path and manual-check
+surface from [\`working-docs/config.json\`](../../working-docs/config.json); never
+hardcode a build command. Prior learnings are in
+[\`working-docs/findings/\`](../../working-docs/findings/) — load the ones whose
+area matches before starting.
+
+Stage artifacts belong in \`working-docs/<TICKET-KEY>/\`. Honor every developer gate
+the stage declares: stop and wait rather than continuing past one.
+
+The ticket key or task description follows this command.
+PROMPT
+    n_prompts=$((n_prompts + 1))
+  done
+  printf '  .github/prompts/                 published (%s files: /cq-go … /cq-7-validate)\n' "$n_prompts"
+  else
+    printf '  .github/prompts/                 skipped (--for %s)\n' "$INSTALL_FOR"
+  fi
 
   # ---- 4. the config: never overwrite -------------------------------------------
   mkdir -p "$target/working-docs"
@@ -207,9 +269,17 @@ main() {
 
   profile=$1; shift
   target=$(dirname "$KIT_DIR")
+  INSTALL_FOR=both
   while [ $# -gt 0 ]; do
     case $1 in
       --target) [ $# -ge 2 ] || die "--target needs a directory"; target=$2; shift 2 ;;
+      --for)    [ $# -ge 2 ] || die "--for needs one of: claude | copilot | both"
+                case $2 in
+                  claude|both)     INSTALL_FOR=$2 ;;
+                  copilot|github)  INSTALL_FOR=copilot ;;   # "github" is an accepted alias
+                  *) die "--for must be claude, copilot (or github), or both — got: $2" ;;
+                esac
+                shift 2 ;;
       *)        die "unknown argument: $1" ;;
     esac
   done
