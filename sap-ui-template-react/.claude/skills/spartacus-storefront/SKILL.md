@@ -28,15 +28,15 @@ bundles nine topic references, each with a guide, patterns, and worked examples.
 
 | Topic | Read | Covers |
 |---|---|---|
-| CMS components | `references/component/` | CMS component mapping, CmsComponentData injection, feature modules, lazy loading, outlets/slots, smart vs presentational splits |
-| Forms | `references/forms/` | Reactive forms, CustomFormValidators, cx-form-errors, checkout form customization, accessibility |
-| i18n | `references/i18n/` | Translation chunks, cxTranslate pipe, key namespacing, ICU pluralization, locale formatting |
-| OCC integration | `references/occ/` | Custom OCC adapters, endpoint configuration, converters/normalizers/serializers, interceptors, ConverterService |
-| Routing | `references/routing/` | CMS-driven routing, configurable routes, CmsPageGuard, SemanticPathService, cxUrl, custom URL matchers, PageMetaResolver |
-| State | `references/state/` | NgRx via the facade → connector → adapter → normalizer pipeline; actions, reducers, effects, selectors, StateUtils |
-| Styling | `references/styling/` | SCSS theming, CSS custom properties, placeholder selector overrides, breakpoints, the cx- design system |
-| Testing | `references/testing/` | Unit tests for components/facades/effects/adapters: CmsComponentData mocks, I18nTestingModule, MockStore, provideMockActions |
-| Upgrades | `references/upgrade/` | Stepwise major-version upgrades (2.x → 2211.x), Angular alignment, schematics, common migration fixes |
+| CMS components | [guide](./references/component/guide.md) · [patterns](./references/component/patterns.md) · [examples](./references/component/examples.md) | CMS component mapping, CmsComponentData injection, feature modules, lazy loading, outlets/slots, smart vs presentational splits |
+| Forms | [guide](./references/forms/guide.md) · [patterns](./references/forms/patterns.md) · [examples](./references/forms/examples.md) | Reactive forms, CustomFormValidators, cx-form-errors, checkout form customization, accessibility |
+| i18n | [guide](./references/i18n/guide.md) · [patterns](./references/i18n/patterns.md) · [examples](./references/i18n/examples.md) | Translation chunks, cxTranslate pipe, key namespacing, ICU pluralization, locale formatting |
+| OCC integration | [guide](./references/occ/guide.md) · [patterns](./references/occ/patterns.md) · [examples](./references/occ/examples.md) | Custom OCC adapters, endpoint configuration, converters/normalizers/serializers, interceptors, ConverterService |
+| Routing | [guide](./references/routing/guide.md) · [patterns](./references/routing/patterns.md) · [examples](./references/routing/examples.md) | CMS-driven routing, configurable routes, CmsPageGuard, SemanticPathService, cxUrl, custom URL matchers, PageMetaResolver |
+| State | [guide](./references/state/guide.md) · [patterns](./references/state/patterns.md) · [examples](./references/state/examples.md) | NgRx via the facade → connector → adapter → normalizer pipeline; actions, reducers, effects, selectors, StateUtils |
+| Styling | [guide](./references/styling/guide.md) · [patterns](./references/styling/patterns.md) · [examples](./references/styling/examples.md) | SCSS theming, CSS custom properties, placeholder selector overrides, breakpoints, the cx- design system |
+| Testing | [guide](./references/testing/guide.md) · [patterns](./references/testing/patterns.md) · [examples](./references/testing/examples.md) | Unit tests for components/facades/effects/adapters: CmsComponentData mocks, I18nTestingModule, MockStore, provideMockActions |
+| Upgrades | [guide](./references/upgrade/guide.md) · [patterns](./references/upgrade/patterns.md) · [examples](./references/upgrade/examples.md) | Stepwise major-version upgrades (2.x → 2211.x), Angular alignment, schematics, common migration fixes |
 
 Each topic directory has three files: `guide.md` (the how and why), `patterns.md`
 (canonical code shapes), `examples.md` (worked examples). Read the guide first; pull
@@ -52,7 +52,7 @@ patterns/examples as needed.
   profile already provides exactly that).
 - The backend contracts are identical either way: SAP Commerce OCC v2 + the coremcp
   agent/knowledge/visual-search endpoints — see the `commerce-storefront` skill for
-  those; Spartacus consumes them through its OCC adapter layer (`references/occ/`)
+  those; Spartacus consumes them through its OCC adapter layer ([guide](./references/occ/guide.md) · [patterns](./references/occ/patterns.md) · [examples](./references/occ/examples.md))
   instead of a hand-rolled api.ts.
 
 ## Ground rules when on the Spartacus path
@@ -65,4 +65,4 @@ patterns/examples as needed.
 - Match Spartacus' own naming and module layout for custom feature libs; keep features
   lazy-loaded.
 - Versions matter: this material targets Spartacus 6.x — check the target project's
-  version before applying patterns, and use `references/upgrade/` when they differ.
+  version before applying patterns, and use [guide](./references/upgrade/guide.md) · [patterns](./references/upgrade/patterns.md) · [examples](./references/upgrade/examples.md) when they differ.
