@@ -177,3 +177,15 @@ records which profile and kit version produced this copy.
 Deploy, push without consent, modify `protectedPaths` (generated/vendored/OOTB code),
 write design.md before the stage-3 Q&A, proceed past failed verification, or run more
 ceremony than the ticket warrants.
+
+## Bundled docs
+
+Linked so a skills-compatible agent can load them on demand — unlinked files are never
+loaded by progressive disclosure.
+
+- [QUICKREF.md](./QUICKREF.md) — one-page cheat sheet: commands, tiers, gates
+- [WALKTHROUGH.md](./WALKTHROUGH.md) — one ticket start to finish, plus setup and the tiers
+- [README.md](./README.md) — what this directory is, the contract, adding a stack
+- [findings-seed/README.md](./findings-seed/README.md) and
+  [findings-seed/TEMPLATE.md](./findings-seed/TEMPLATE.md) — copied to
+  `working-docs/findings/` on install; write findings there, never here

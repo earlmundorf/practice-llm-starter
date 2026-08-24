@@ -1,9 +1,9 @@
 ---
 name: sap-commerce
 description: |
-  SAP Commerce Cloud (Hybris) development knowledge base and coding assistant. Provides deep reference knowledge of SAP Commerce architecture, coding patterns, and tooling — including the type system (items.xml), ImpEx data import/export, FlexibleSearch queries, Spring configuration, extension development, the Service/Facade/Controller layered architecture, OCC REST APIs, and build/deployment with Gradle. Use this skill for "how do I do X in Commerce?" questions and hands-on coding tasks. For structured ticket workflows (research/design/plan/implement), use qrspi instead.
+  SAP Commerce Cloud (Hybris) development knowledge base and coding assistant — the type system (items.xml), ImpEx import/export, FlexibleSearch, Spring configuration, extension development, the Service/Facade/Controller layers, OCC REST APIs, and ant/Gradle builds. Use it for "how do I do X in Commerce?" questions and hands-on coding tasks.
 
-  Use this skill whenever the user asks how to do something in SAP Commerce, needs help writing or modifying Commerce code, or mentions SAP Commerce, Hybris, SAP CX, Commerce Cloud, or any of these concepts: items.xml, ImpEx, FlexibleSearch, extensions, backoffice, HAC, OCC API, Spartacus, SmartEdit, accelerator, storefront, cronjob, solr indexing, type system, or hybris platform. Also trigger when working with Java files that import from `de.hybris.platform.*` packages, or XML files following hybris conventions (*-items.xml, *-spring.xml, *-beans.xml). Do NOT trigger for structured ticket workflows — use qrspi (Claude Code) for those.
+  Trigger whenever the user needs help writing or modifying Commerce code, or mentions SAP Commerce, Hybris, SAP CX, Commerce Cloud, or any of: items.xml, ImpEx, FlexibleSearch, extensions, backoffice, HAC, OCC API, SmartEdit, accelerator, storefront, cronjob, solr indexing, type system, hybris platform. Also trigger on Java files importing `de.hybris.platform.*`, and on XML following hybris conventions (*-items.xml, *-spring.xml, *-beans.xml). For structured ticket workflows (research/design/plan/implement) use qrspi instead.
 allowed-tools: [Read, Grep, Glob, Bash(find *), Bash(ant *)]
 ---
 
@@ -19,12 +19,12 @@ This skill bundles detailed reference docs. Read the relevant ones based on what
 
 | User's task | Read this reference |
 |---|---|
-| Creating/modifying extensions, understanding project structure | `references/architecture.md` |
-| Writing or debugging items.xml, type system, relations, enums | `references/items-xml.md` |
-| Writing ImpEx scripts for data import/export | `references/impex.md` |
-| Writing or optimizing FlexibleSearch queries | `references/flexiblesearch.md` |
-| Spring bean config, dependency injection, aliasing | `references/spring-config.md` |
-| Code quality, layer separation, naming, performance | `references/best-practices.md` |
+| Creating/modifying extensions, understanding project structure | [`references/architecture.md`](./references/architecture.md) |
+| Writing or debugging items.xml, type system, relations, enums | [`references/items-xml.md`](./references/items-xml.md) |
+| Writing ImpEx scripts for data import/export | [`references/impex.md`](./references/impex.md) |
+| Writing or optimizing FlexibleSearch queries | [`references/flexiblesearch.md`](./references/flexiblesearch.md) |
+| Spring bean config, dependency injection, aliasing | [`references/spring-config.md`](./references/spring-config.md) |
+| Code quality, layer separation, naming, performance | [`references/best-practices.md`](./references/best-practices.md) |
 
 Read the reference file **before** writing code for that topic. For complex tasks spanning multiple areas (e.g., "add a new product attribute end-to-end"), read all relevant references.
 
