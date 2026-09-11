@@ -34,6 +34,10 @@ core-customize/.gradle/
 # Claude Code local settings
 .claude/settings.local.json
 
+# Local HAC credentials
+hac.env
+!hac.env.example
+
 # IDE
 .idea/
 *.iml
