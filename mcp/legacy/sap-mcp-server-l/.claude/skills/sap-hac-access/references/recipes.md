@@ -2,6 +2,16 @@
 
 For investigative tasks, start with [Commerce diagnostics](./commerce-diagnostics.md) and choose the first query by hypothesis before using these repeatable recipes.
 
+## Set up the skill in a project
+
+Use when the user asks to set up or configure the skill, asks what it needs, or when a task requires `hac.env` or `project-knowledge/` and it is missing.
+
+1. Load [Project setup](./setup.md).
+2. Report what exists and what you will create; create only what is missing.
+3. Never overwrite an existing file, and never ask for or write a credential value.
+4. Confirm `hac.env` is gitignored.
+5. Optionally verify with a read-only query: `./scripts/hac-flexquery.sh --content "SELECT {pk}, {uid} FROM {BaseSite}" --max-count 10`.
+
 ## Author a HAC artifact
 
 Use this recipe when the user asks to write, draft, generate, review, or improve a FlexibleSearch query, HAC Groovy script, or ImpEx file, even if they are not ready to run it.

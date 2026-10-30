@@ -30,6 +30,16 @@
 
 ## Releases
 
+### 0.6.0 — 2026-06-10
+
+**Promotion catch-up + deadline currency:**
+
+- Executed the two pending promotions (password-grant → incident #8 + Phase D greps + overview; detect-state CCv2 note → overview). Promotion log above is now accurate (it previously said "none" despite 9 promoted findings).
+- Deadline context added to overview + SKILL.md: SAP adopt-by 2026-06-30; **no new Java-17 CCv2 builds after 2026-08-31**; 2211-jdk21 line at .10 (May 2026) — plans target the latest patch, not the first-validated one.
+- Overview incident inventory corrected (was "five SAP incidents"; now nine entries: 0–8).
+- Peer-skill reference updated: commerce-rpi-code (removed) → commerce-qrspi.
+- Skill installed into sap-mcp-server-l (project-level copy); canonical home note added to INSTALL.md.
+
 ### 0.5.0 — 2026-05-01
 
 **Intake template + scenario-conditional safety net:**
@@ -93,7 +103,9 @@
 
 Findings promoted into `references/` (with `status: promoted` in their frontmatter):
 
-- (none yet)
+- 2026-04-30 batch (promoted 2026-04-30/05-01): ant-requires-setantenv, gradle-8-clean-ambiguous, missing-integrations-pack, mockito-matchers-removed (commit 4f4f247), oauth2-extension-replaced, phase-ordering-vs-openrewrite, sap-commerce-build-plugin-works-on-jdk21, yunittests-ignores-extension-filter (→ Phase E rewrite), junit-tenant-stock-needs-atp-formula (→ phase-guide)
+- 2026-06-10: **password-grant-removed-from-new-oauth** → known-incidents #8 + phase-guide Phase D grep items + overview callout
+- 2026-06-10: **detect-state-ccv2-layout-bug** → overview CCv2-layout note (script already fixed in-tree 2026-05-01)
 
 ## Known unknowns
 

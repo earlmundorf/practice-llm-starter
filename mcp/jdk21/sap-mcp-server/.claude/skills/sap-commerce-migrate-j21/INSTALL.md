@@ -26,6 +26,11 @@ cp -r path/to/sap-commerce-migrate-j21 <your-sap-commerce-project>/.claude/skill
 
 Per-project shadows user-level — if both exist, the project copy wins for that project.
 
+**Multiple project-level copies (e.g., one per Java-17 repo in a monorepo):** the copy in
+`sap-llm-template` is the canonical home. Findings generated during a run in another
+project's copy should be contributed back there so the next project benefits — the
+self-improvement loop only works if findings flow to one place.
+
 ## Prerequisites on the target machine
 
 Before invoking the skill, the project's host machine needs:

@@ -7,7 +7,9 @@ applies_to:
   spring_from: 5.x
   commerce_from: 2211.50
 kind: new-incident
-status: open
+status: promoted
+promoted_2026-06-10:
+  target: references/known-incidents.md #8 + references/phase-guide.md Phase D grep items + references/00-overview.md structural-changes callout
 related_refs:
   - references/sap-docs/08-oauth-authorization-server.md (line 416)
   - references/known-incidents.md (incident 0 already documents the extension rename)

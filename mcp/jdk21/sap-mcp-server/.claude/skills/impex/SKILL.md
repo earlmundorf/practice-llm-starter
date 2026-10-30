@@ -20,6 +20,15 @@ Before running `hac-impex.sh` to import data against a live server, **always ask
 
 ## Validation Tools
 
+This skill bundles two scripts: [scripts/lint-impex.sh](scripts/lint-impex.sh) and
+[scripts/hac-import.sh](scripts/hac-import.sh). Both live in the `scripts/` folder
+next to this file.
+
+The commands below use `${CLAUDE_SKILL_DIR}`, which Claude Code expands to this
+skill's directory and matches against `allowed-tools` so the scripts run without a
+permission prompt. In any tool that does not substitute that variable, resolve the
+paths relative to this skill's own folder instead.
+
 You have two validation tools available. Use them in this order:
 
 ### 1. Offline Lint (always run first)

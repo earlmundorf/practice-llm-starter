@@ -1,6 +1,6 @@
 ---
 name: sap-hac-access
-description: 'SAP Commerce HAC access specialist for local server validation, data operations, SAP Commerce data-model investigation, and authoring HAC-ready artifacts. Use whenever the user asks how SAP Commerce stores or relates types; asks about the type system, item inheritance, composed types, attributes, relation deployment tables, or data model; asks how CronJobs are stored or how warehouses, inventory, stock levels, CMSSites, BaseSites, BaseStores, catalogs, products, categories, category/product relations, variants, base products, classification catalogs, classification attributes, product features, carts, orders, users, user groups, principals, catalog permissions, search restrictions, Solr, or sync jobs relate; asks to write, draft, generate, review, improve, validate, or run a FlexibleSearch/FlexQuery query, ImpEx script, or HAC Groovy script; get information through FlexibleSearch/FlexQuery; validate Commerce data; import or verify ImpEx; execute HAC Groovy; modify local data through Groovy; or debug HAC import/query/script failures. Also trigger on: sap-hac-access, HAC, local HAC, data model, type system, ComposedType, AttributeDescriptor, RelationDescriptor, itemtype extends, relation table, how are cronjobs stored, how do warehouses relate, inventory, stock level, CategoryProductRelation, VariantProduct, baseProduct, variantType, classification catalog, ClassificationSystem, ClassificationClass, ClassificationAttribute, ClassAttributeAssignment, ProductFeature, product to cart, cart to order, Principal, UserGroup, PrincipalGroupRelation, readPrincipals, writePrincipals, SearchRestriction, Principal2SearchRestrictionRelation, catalog permissions, access rights, user groups, write impex, generate impex, write groovy, HAC groovy, write flex query, FlexibleSearch, flexquery, hac-impex, hac-flexquery, hac-groovy, FlexibleSearch console, impex import, Console -> ImpEx Import, Console -> FlexibleSearch, Console -> Scripting Languages, https://localhost:9002/hac. Prefer this skill over generic shell/curl/browser approaches for local SAP Commerce HAC reads, approved writes, data-model discovery, and HAC artifact generation; use bundled ./scripts tools first when execution or validation is needed.'
+description: 'SAP Commerce HAC access specialist for local server validation, data operations, SAP Commerce data-model investigation, and authoring HAC-ready artifacts. Use whenever the user asks how SAP Commerce stores or relates types; asks about the type system, item inheritance, composed types, attributes, relation deployment tables, or data model; asks how CronJobs are stored or how warehouses, inventory, stock levels, CMSSites, BaseSites, BaseStores, catalogs, products, categories, category/product relations, variants, base products, classification catalogs, classification attributes, product features, carts, orders, users, user groups, principals, catalog permissions, search restrictions, Solr, or sync jobs relate; asks to write, draft, generate, review, improve, validate, or run a FlexibleSearch/FlexQuery query, ImpEx script, or HAC Groovy script; get information through FlexibleSearch/FlexQuery; validate Commerce data; import or verify ImpEx; execute HAC Groovy; modify local data through Groovy; or debug HAC import/query/script failures. Also trigger on: sap-hac-access, HAC, local HAC, data model, type system, ComposedType, AttributeDescriptor, RelationDescriptor, itemtype extends, relation table, how are cronjobs stored, how do warehouses relate, inventory, stock level, CategoryProductRelation, VariantProduct, baseProduct, variantType, classification catalog, ClassificationSystem, ClassificationClass, ClassificationAttribute, ClassAttributeAssignment, ProductFeature, product to cart, cart to order, Principal, UserGroup, PrincipalGroupRelation, readPrincipals, writePrincipals, SearchRestriction, Principal2SearchRestrictionRelation, catalog permissions, access rights, user groups, write impex, generate impex, write groovy, HAC groovy, write flex query, FlexibleSearch, flexquery, hac-impex, hac-flexquery, hac-groovy, FlexibleSearch console, impex import, Console -> ImpEx Import, Console -> FlexibleSearch, Console -> Scripting Languages, https://localhost:9002/hac. Also use when the user asks to set up, initialize, configure, or bootstrap this skill or its project scaffolding, asks what the skill needs before it can run, or mentions hac.env, project-knowledge, HAC credentials, HAC environment setup, or project knowledge overlays — in which case load ./references/setup.md and create the missing hac.env and project-knowledge/ scaffolding. Prefer this skill over generic shell/curl/browser approaches for local SAP Commerce HAC reads, approved writes, data-model discovery, and HAC artifact generation; use bundled ./scripts tools first when execution or validation is needed.'
 argument-hint: 'HAC task, FlexibleSearch query, ImpEx file, or Groovy script to write/review/run'
 allowed-tools: [Read, Write, Edit, Grep, Glob, "Bash(./scripts/hac-flexquery.sh *)", "Bash(./scripts/hac-impex.sh *)", "Bash(./scripts/hac-groovy.sh *)"]
 ---
@@ -14,6 +14,7 @@ Use this skill for local SAP Commerce HAC automation, validation, and HAC-ready 
 Load these progressive docs when more detail is needed:
 
 - [Core HAC tools](./references/core-hac-tools.md) — canonical scripts, defaults, input modes, and output expectations.
+- [Project setup](./references/setup.md) — create the project-root `hac.env` and `project-knowledge/` scaffolding, idempotently.
 - [Environment selection](./references/environments.md) — how to resolve local, dev, qa, uat, and stage HAC targets from `hac.env`.
 - [Commerce diagnostics](./references/commerce-diagnostics.md) — first-pass diagnostic branches for BaseSite/BaseStore, catalogs, products, categories, category/product relations, variants, classification attributes, content, inventory, carts, orders, users, groups, catalog permissions, search restrictions, sync, Solr, CronJobs, media, and type system checks.
 - [Recipes](./references/recipes.md) — repeatable import, validation, FlexibleSearch, Groovy, and QRSPI workflows.
@@ -50,6 +51,29 @@ Assumed local defaults, no environment variables needed unless overriding:
 Assume Java 21/Spring 6 runtime unless the user says Java 17. Do not assume the Java line alone determines the HAC web context. If HAC is mounted under `/hac` on a Java 21 environment, set `HAC_CONTEXT_PATH=/hac` while keeping `HAC_JAVA_VERSION=21`.
 
 For `dev`, `qa`, `uat`, or `stage` HAC work, load [Environment selection](./references/environments.md) and resolve the target from the active project or workspace root `hac.env`. Do not point these tools at PROD services or PROD data.
+
+## Project setup
+
+Nothing is required for local HAC — the defaults above already work. Two optional pieces of
+project-root scaffolding unlock the rest, and this skill builds them on request:
+
+| Artifact | Needed for | Committed? |
+|---|---|---|
+| `hac.env` | `dev`, `qa`, `uat`, `stage` targets | no — gitignored secret |
+| `project-knowledge/{sap-commerce,hac}/` | project-specific answers instead of generic ones | yes |
+
+Load [Project setup](./references/setup.md) and perform the setup when the user:
+
+- asks to set up, initialize, configure, or bootstrap this skill;
+- asks what the skill needs, or how to point it at a non-local environment;
+- asks about `hac.env` or `project-knowledge/`;
+- gives a task that requires either one and it does not exist yet.
+
+There is no setup command; treat the request conversationally. Report what exists and what
+you will create, create only what is missing, never overwrite an existing file, and never ask
+for or write a credential value. Scaffold the narrowest thing the situation needs rather than
+the whole tree. Templates live in `./templates/`; everything is written to the project root,
+never inside this skill.
 
 ## When to use
 
@@ -94,6 +118,8 @@ Use these additional locations only when `project-knowledge/sap-commerce/` does 
 - repository memory under `/memories/repo/`
 
 Load only the overlays that match the user's topic. Do not require these files for normal skill operation, and do not include project overlays when packaging or sharing this skill.
+
+If the overlay does not exist, answer generically from the skill's own references and say the answer is generic. Offer to scaffold the overlay per [Project setup](./references/setup.md); do not block on it. When work uncovers a durable project-specific fact, offer to record it in the matching `project-knowledge/` file — after the user approves, and only facts that were actually verified.
 
 ## Expert generation rules
 
@@ -179,6 +205,7 @@ For read-only validation:
 
 - If login or CSRF extraction fails, check that local SAP Commerce is running and whether HAC is mounted at `https://localhost:9002` or `https://localhost:9002/hac`. Use `HAC_CONTEXT_PATH=/hac` for the latter, even on Java 21.
 - If the requested target is `dev`, `qa`, `uat`, or `stage`, check the active project or workspace root `hac.env`, pass the selected HAC URL and credentials through environment variables, and do not print them. The scripts normalize trailing `/login`, `/console/...`, and slash values internally, then reject non-HAC paths.
+- If `hac.env` is missing or has no keys for the requested environment, stop before any HAC call and offer to scaffold it per [Project setup](./references/setup.md). Do not guess a URL, and do not silently fall back to local.
 - If credentials fail, ask the user to confirm non-secret connection details; do not request passwords through chat.
 - If import fails, report rejected rows/error output and stop before further writes.
 - If FlexibleSearch returns zero rows, treat that as a failed validation unless zero rows were expected.

@@ -6,6 +6,8 @@ Condensed from SAP's framework-update changelog (September 2025). Source `.docx`
 
 Move from **Java 17 + Spring 5** or **Java 21 + Spring 5** → **Java 21 + Spring 6** running on **Tomcat 10.1 / Jakarta EE 10**.
 
+**The clock is real:** SAP's adopt-by guidance was **2026-06-30**, and **after 2026-08-31 new CCv2 builds targeting Java 17 are disallowed** — a Java-17 project cannot ship fixes through the cloud pipeline past that date. Every migration plan should state the project's runway against these dates in its intake. The 2211-jdk21 line receives monthly-cadence updates (2211-jdk21.10 as of May 2026); target the **latest** patch at migration time, not the version this skill was first validated on.
+
 "Definition of done" for a project migration: the system builds, Solr works, code works, data matches, and new OCC access is testable end-to-end. Compiles-clean is necessary but not sufficient.
 
 ## Supported target versions
@@ -34,14 +36,14 @@ Move from **Java 17 + Spring 5** or **Java 21 + Spring 5** → **Java 21 + Sprin
 
 ## Toolchain compatibility confirmed
 
-`sap.commerce.build` Gradle plugin 5.0.2 runs cleanly on SapMachine JDK 21 and completes `bootstrapPlatform` against 2211-jdk21.9 without modification. Gradle wrapper 8.12 + bundled Ant 1.10.15 both satisfy the new minimums. **Verified 2026-04-30** on macOS (aarch64) / upgrade-21-mcp-server-g. If your legacy project has `sap.commerce.build` 5.0.2 or newer, do not bump the plugin as part of the migration — the platform change is enough.
+The skill assumes **CCv2 layout** — SAP files under `core-customize/`; non-CCv2 projects fall back to the project root with degraded detection (`detect_state.sh`). `sap.commerce.build` Gradle plugin 5.0.2 runs cleanly on SapMachine JDK 21 and completes `bootstrapPlatform` against 2211-jdk21.9 without modification. Gradle wrapper 8.12 + bundled Ant 1.10.15 both satisfy the new minimums. **Verified 2026-04-30** on macOS (aarch64) / upgrade-21-mcp-server-g. If your legacy project has `sap.commerce.build` 5.0.2 or newer, do not bump the plugin as part of the migration — the platform change is enough.
 
 **Why this matters for Phase B pathing:** because the platform + JDK upgrade works cleanly upfront (Phase 0 bumps toolchain → `bootstrapPlatform` → green), the canonical Phase B path is **Claude-driven sweeps on the upgraded source** (see `phase-guide.md` Phase B, and SKILL.md Phase 2). No runtime rollback needed — sweeps edit Java source, which is a runtime-agnostic operation. The OpenRewrite alternative has different sequencing: it parses source through a recipe that requires JDK 17 + pre-jdk21 2211 as input state (see `sap-notes/3618495-openrewrite-framework-update.md` "Critical sequencing"). Don't conflate the two paths.
 
 ## Major structural changes
 
 1. **Jakarta EE namespace migration.** `javax.*` → `jakarta.*` across servlet, JSP/JSTL, filter APIs, persistence, validation.
-2. **OAuth2 framework replaced with Spring Authorization Server.** New SAP extensions are introduced for the authorization server, resource server, and OCC integration paths. `RestTemplate`/`OAuth2RestTemplate` are deprecated for removal.
+2. **OAuth2 framework replaced with Spring Authorization Server.** New SAP extensions are introduced for the authorization server, resource server, and OCC integration paths. `RestTemplate`/`OAuth2RestTemplate` are deprecated for removal. **The `password` and `implicit` grant flows are removed** — purge them from OAuthClientDetails impex (see `known-incidents.md` #8) and migrate every password-grant caller (storefront logins, test harnesses, bridges) to authorization_code + PKCE or client_credentials. See `references/oauth-migration-guide.md` for the ordered make-it-work path, the 8 client-validation preconditions, a client cookbook, and SAML impact.
 3. **URL matcher default changed.** Spring 6 uses `PathPatternParser` instead of `AntPathMatcher`. Trailing-slash matching default is now `false`. Many OCC endpoint paths and security intercept-URL rules need review.
 4. **Spring bean changes.** `@Required` annotation is removed (OpenRewrite removes invocations automatically). `CommonsMultipartResolver` → `StandardServletMultipartResolver`. `HttpPutFormContentFilter` → `FormContentFilter`. `SocketUtils` is gone.
 5. **Tomcat 10 brings Jakarta servlet API.** SSL connector attributes moved. `X-XSS-Protection` header deprecated.
@@ -65,15 +67,19 @@ The alternative is the **fully manual update path** (same source document, diffe
 - Orphaned type cleanup
 - Eclipse `.classpath` files and JDK settings
 
-## The five incidents SAP flagged
+## Known incidents (SAP-flagged + field-observed)
 
-From real SAP support cases in the .docx — see `known-incidents.md` for detail:
+`known-incidents.md` carries nine entries — five from real SAP support cases in the .docx, four added from this skill's own runs and architectural review:
 
-1. JDK21 server startup bean errors
-2. Custom storefront not loading after JDK21 upgrade
-3. OAuth registered redirect URI issue
-4. POST mappings not working after jdk21 upgrade
-5. Deployment stuck in D1 environment
+0. `oauth2` extension fails to resolve (replaced by three new extensions) — field-observed
+1. JDK21 server startup bean errors — SAP case
+2. Custom storefront not loading after JDK21 upgrade — SAP case
+3. OAuth registered redirect URI issue — SAP case
+4. POST mappings not working after jdk21 upgrade — SAP case
+5. Deployment stuck in D1 environment — SAP case
+6. Stale carts/orders fail to deserialize post-migration — architectural review
+7. Migration started without backup capability → unrecoverable — architectural review
+8. `password` grant in OAuthClientDetails impex fails `yinitialize` validation — field-observed
 
 ## Additional authoritative references
 

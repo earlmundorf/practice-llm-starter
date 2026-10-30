@@ -20,15 +20,16 @@ die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 # Source of truth for each kit's contents.
 #
 # qrspi     — qrspi-kit/ is itself the canonical source; zipped as-is.
-# backend   — mcp/legacy/sap-mcp-server-l is the actively-maintained backend project and
-#             carries the newest sap-commerce-migrate-j21. NOTE: sap-llm-template has
-#             copies of all five that differ slightly; they have not been reconciled.
+# backend   — mcp/legacy/sap-mcp-server-l is the actively-maintained backend project, is the
+#             only home of sap-hac-access, and carries the newest sap-commerce-migrate-j21.
+#             NOTE: sap-llm-template has copies of the other five that differ slightly; they
+#             have not been reconciled.
 # frontend  — spartacus-* come from sap-llm-template (the Angular/Spartacus template);
 #             the React skills come from sap-ui-template-react. NOTE: sap-mcp-ui-l has a
 #             react-ecommerce that differs from the template's; the template wins here.
 # ---------------------------------------------------------------------------------
 BACKEND_SRC="$ROOT/mcp/legacy/sap-mcp-server-l/.claude/skills"
-BACKEND_SKILLS="sap-commerce impex sap-best-practices java-best-practices sap-commerce-migrate-j21"
+BACKEND_SKILLS="sap-commerce impex sap-best-practices java-best-practices sap-commerce-migrate-j21 sap-hac-access"
 
 SPARTACUS_SRC="$ROOT/sap-llm-template/.claude/skills"
 SPARTACUS_SKILLS="spartacus-component spartacus-forms spartacus-i18n spartacus-occ spartacus-routing spartacus-state spartacus-styling spartacus-testing spartacus-upgrade"

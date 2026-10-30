@@ -8,7 +8,9 @@ applies_to:
   commerce_from: any
   layout: CCv2 (any project where SAP files are under core-customize/)
 kind: new-incident
-status: unpromoted
+status: promoted
+promoted_2026-06-10:
+  target: references/00-overview.md CCv2-layout note (script fix was already in-tree)
 related_refs:
   - scripts/detect_state.sh
 promotion_target: scripts/detect_state.sh (already fixed 2026-05-01) + a one-liner in 00-overview.md noting CCv2 layout assumption

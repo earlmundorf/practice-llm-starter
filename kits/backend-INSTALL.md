@@ -8,6 +8,7 @@ kit and version on their own clock; install either, or both.
 |---|---|
 | `sap-commerce` | Core dev assistant — type system, ImpEx, FlexibleSearch, Spring, OCC, layered architecture, build/deploy |
 | `impex` | ImpEx specialist — syntax, header modes, catalog versioning, ordering; includes lint + HAC-import scripts |
+| `sap-hac-access` | HAC automation — run FlexibleSearch, ImpEx imports and Groovy against a live server; data-model investigation |
 | `sap-best-practices` | Commerce code review — layer separation, Spring wiring, OCC conventions, performance |
 | `java-best-practices` | General Java review (Effective Java / Pragmatic Programmer) |
 | `sap-commerce-migrate-j21` | Migration to Java 21 + Spring 6 + Tomcat 10.1 / Jakarta EE 10 (2211-jdk21.x) |
@@ -38,8 +39,14 @@ That's all — no configuration. Claude Code discovers them on the next session.
 
 - Copying **merges** into `.claude/skills/`: any skills already there are untouched unless
   they share a name, in which case they're replaced. Nothing else in the project is modified.
-- `impex` ships shell scripts (`scripts/lint-impex.sh`, `scripts/hac-import.sh`). Check they
-  are executable after copying: `chmod +x .claude/skills/impex/scripts/*.sh`.
+- `impex` and `sap-hac-access` ship shell scripts. Zip archives don't reliably preserve the
+  executable bit, so restore it after copying:
+  `chmod +x .claude/skills/impex/scripts/*.sh .claude/skills/sap-hac-access/scripts/*.sh`.
+- `sap-hac-access` defaults to local HAC (`https://localhost:9002`, `admin`/`nimda`, Java 21),
+  so local work needs no configuration. For `dev`/`qa`/`uat`/`stage`, and for project-specific
+  answers, ask it to *"set up the HAC skill"* — it scaffolds a gitignored `hac.env` and a
+  `project-knowledge/{sap-commerce,hac}/` overlay at your project root, creating only what's
+  missing. You fill in the credentials yourself; the skill never asks for or prints a secret.
 - `sap-commerce-migrate-j21` keeps its own `findings/` directory and accumulates knowledge
   across migrations — that content is part of the skill, not per-project state.
 

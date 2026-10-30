@@ -82,6 +82,7 @@ public class AgentController
 			}
 
 			final Map<String, Object> request = objectMapper.readValue(body, Map.class);
+
 			final List<Map<String, Object>> messages = (List<Map<String, Object>>) request.get("messages");
 
 			final String validationError = validateMessages(messages);

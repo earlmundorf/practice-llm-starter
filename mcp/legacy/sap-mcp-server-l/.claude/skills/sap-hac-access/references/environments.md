@@ -22,6 +22,8 @@ For `dev`, `qa`, `uat`, or `stage`, read the environment-specific values from th
 
 In a multi-root workspace, choose the root that owns the user's current HAC task. If that is unclear, prefer the workspace folder containing the file or artifact being validated, then look for `hac.env` at that folder root. Do not assume the skill directory is the project root.
 
+If `hac.env` does not exist, or exists without keys for the requested environment, do not guess a URL and do not fall back to local. Stop and offer to scaffold it from [Project setup](./setup.md).
+
 Expected key pattern:
 
 | Environment | URL key | User key | Password key |

@@ -26,7 +26,7 @@ When in doubt during execution, ask: *which of the five "done" criteria does thi
 
 This skill runs a SAP Commerce Cloud migration to the **2211-jdk21.x update line** (first release September 2025; monthly cadence since — 2211-jdk21.10 as of May 2026): Java 21, Spring 6.2.10+, Tomcat 10.1, Jakarta EE 10. Target the latest patch at migration time. **Deadline context:** no new Java-17 CCv2 builds after **2026-08-31** — factor the runway into every plan.
 
-For version pins, validation history, and changelog, see [[`CHANGELOG.md`](./CHANGELOG.md)](./CHANGELOG.md) next to this file.
+For version pins, validation history, and changelog, see [`CHANGELOG.md`](./CHANGELOG.md) next to this file.
 
 ## Before anything else
 

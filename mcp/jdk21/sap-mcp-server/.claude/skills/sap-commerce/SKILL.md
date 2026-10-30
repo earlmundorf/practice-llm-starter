@@ -1,9 +1,9 @@
 ---
 name: sap-commerce
 description: |
-  SAP Commerce Cloud (Hybris) development knowledge base and coding assistant. Provides deep reference knowledge of SAP Commerce architecture, coding patterns, and tooling — including the type system (items.xml), ImpEx data import/export, FlexibleSearch queries, Spring configuration, extension development, the Service/Facade/Controller layered architecture, OCC REST APIs, and build/deployment with Gradle. Use this skill for "how do I do X in Commerce?" questions and hands-on coding tasks.
+  SAP Commerce Cloud (Hybris) development knowledge base and coding assistant. Covers the type system (items.xml), ImpEx import/export, FlexibleSearch, Spring configuration, extension development, the Service/Facade/Controller layered architecture, OCC REST APIs, and Gradle build/deployment.
 
-  Use this skill whenever the user asks how to do something in SAP Commerce, needs help writing or modifying Commerce code, or mentions SAP Commerce, Hybris, SAP CX, Commerce Cloud, or any of these concepts: items.xml, ImpEx, FlexibleSearch, extensions, backoffice, HAC, OCC API, Spartacus, SmartEdit, accelerator, storefront, cronjob, solr indexing, type system, or hybris platform. Also trigger when working with Java files that import from `de.hybris.platform.*` packages, or XML files following hybris conventions (*-items.xml, *-spring.xml, *-beans.xml).
+  Use this skill whenever the user asks how to do something in SAP Commerce, needs help writing or modifying Commerce code, or mentions Hybris, SAP CX, Commerce Cloud, backoffice, HAC, Spartacus, SmartEdit, accelerator, storefront, cronjob, solr indexing, or hybris platform. Also trigger on Java files importing `de.hybris.platform.*`, or XML following hybris conventions (*-items.xml, *-spring.xml, *-beans.xml).
 allowed-tools: [Read, Grep, Glob, Bash(find *), Bash(ant *)]
 ---
 
@@ -17,12 +17,12 @@ This skill bundles detailed reference docs. Read the relevant ones based on what
 
 | User's task | Read this reference |
 |---|---|
-| Creating/modifying extensions, understanding project structure | `references/architecture.md` |
-| Writing or debugging items.xml, type system, relations, enums | `references/items-xml.md` |
-| Writing ImpEx scripts for data import/export | `references/impex.md` |
-| Writing or optimizing FlexibleSearch queries | `references/flexiblesearch.md` |
-| Spring bean config, dependency injection, aliasing | `references/spring-config.md` |
-| Code quality, layer separation, naming, performance | `references/best-practices.md` |
+| Creating/modifying extensions, understanding project structure | [references/architecture.md](references/architecture.md) |
+| Writing or debugging items.xml, type system, relations, enums | [references/items-xml.md](references/items-xml.md) |
+| Writing ImpEx scripts for data import/export | [references/impex.md](references/impex.md) |
+| Writing or optimizing FlexibleSearch queries | [references/flexiblesearch.md](references/flexiblesearch.md) |
+| Spring bean config, dependency injection, aliasing | [references/spring-config.md](references/spring-config.md) |
+| Code quality, layer separation, naming, performance | [references/best-practices.md](references/best-practices.md) |
 
 Read the reference file **before** writing code for that topic. For complex tasks spanning multiple areas (e.g., "add a new product attribute end-to-end"), read all relevant references.
 
